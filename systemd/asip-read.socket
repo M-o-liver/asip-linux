@@ -1,0 +1,12 @@
+[Unit]
+Description=ASIP read-only inspection socket (cannot execute or mutate)
+
+[Socket]
+ListenStream=/run/asip/read.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=asip-read
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

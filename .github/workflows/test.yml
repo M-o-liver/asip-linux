@@ -1,0 +1,65 @@
+name: test
+
+on:
+  workflow_call:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  fedora:
+    name: Fedora 44 / Core and source gate
+    runs-on: ubuntu-latest
+    container: fedora:44
+    steps:
+      - name: Install checkout prerequisite
+        run: dnf install -y git
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install release-gate tools
+        run: dnf install -y python3 python3-pip ShellCheck gzip tar shadow-utils
+      - name: Create test-only ASIP group
+        run: groupadd --system asip
+      - name: Install the pinned MCP adapter contract
+        run: python3 -m pip install --disable-pip-version-check .
+      - name: Run the non-privileged release gate
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          ./scripts/release_gate.sh
+
+  distro-contract:
+    name: ${{ matrix.name }} / package contract
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 24.04
+            image: ubuntu:24.04
+            setup: apt-get update && apt-get install -y git python3
+            packages: apt-cache show
+          - name: Debian 13
+            image: debian:13
+            setup: apt-get update && apt-get install -y git python3
+            packages: apt-cache show
+          - name: Arch
+            image: archlinux:latest
+            setup: pacman -Sy --noconfirm git python
+            packages: pacman -Si
+    container: ${{ matrix.image }}
+    steps:
+      - name: Install checkout prerequisites
+        run: ${{ matrix.setup }}
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate distro detection and package names
+        env:
+          PACKAGE_QUERY: ${{ matrix.packages }}
+        run: |
+          python3 -m unittest tests.test_installer.DistroTestCase -v
+          packages="$(python3 -c 'from installer.distro import detect; print(" ".join(detect().packages))')"
+          $PACKAGE_QUERY $packages >/dev/null

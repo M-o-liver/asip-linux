@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "id": "private-tmp-intake",
+  "version": 1,
+  "title": "Make the intake service accept an already-staged payload",
+  "required": true
+}

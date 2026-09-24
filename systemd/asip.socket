@@ -1,0 +1,12 @@
+[Unit]
+Description=ASIP privileged execution socket (group asip is root-equivalent)
+
+[Socket]
+ListenStream=/run/asip/sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=asip
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

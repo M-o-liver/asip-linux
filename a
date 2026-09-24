@@ -1,0 +1,10 @@
+#!/bin/sh
+# Optional legacy alias retained for users of the short-lived A/ experiment.
+# ASIP is the canonical human-facing command; this wrapper shares its
+# implementation and remains safe for existing local scripts.
+set -eu
+script_dir="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+if [ -x "$script_dir/asip" ]; then
+	ASIP_PROG=a exec "$script_dir/asip" "$@"
+fi
+ASIP_PROG=a exec /usr/local/bin/asip "$@"

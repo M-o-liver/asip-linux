@@ -1,0 +1,15 @@
+#!/bin/sh
+# Stable ASIP command entrypoint. The compatibility-heavy POSIX CLI lives in
+# cli/asip.sh; this launcher keeps the installed command and release contract
+# boring while allowing the implementation to live with the other CLI code.
+set -eu
+
+root="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+if [ -x "$root/cli/asip.sh" ]; then
+	ASIP_PROG="${ASIP_PROG:-${0##*/}}" ASIP_SOURCE_ROOT="$root" exec "$root/cli/asip.sh" "$@"
+fi
+if [ -x /usr/lib/asip/cli/asip.sh ]; then
+	ASIP_PROG="${ASIP_PROG:-${0##*/}}" ASIP_SOURCE_ROOT=/usr/lib/asip exec /usr/lib/asip/cli/asip.sh "$@"
+fi
+printf '%s: ASIP CLI implementation is missing (expected cli/asip.sh)\n' "${0##*/}" >&2
+exit 69

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Install ASIP
+Comment=Set up your agent-native Linux computer
+Exec=asip-installer
+Icon=org.asip.Installer
+Terminal=false
+Categories=System;Utility;

@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "id": "deleted-running-executable",
+  "version": 3,
+  "title": "Recover a deleted executable without interrupting its process",
+  "required": true
+}

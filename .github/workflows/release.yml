@@ -1,0 +1,118 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  qualification:
+    uses: ./.github/workflows/test.yml
+
+  build:
+    needs: qualification
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify the tag matches VERSION
+        run: test "$GITHUB_REF_NAME" = "v$(cat VERSION)"
+      - name: Install old-userspace build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y desktop-file-utils dpkg-dev file gir1.2-gtk-4.0 libgirepository1.0-dev libgtk-4-dev librsvg2-dev pkg-config python3-gi python3-pip python3-venv squashfs-tools wget xauth xvfb
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build locked release payload
+        run: ./scripts/build_release_candidate.sh "$RUNNER_TEMP/release"
+      - name: Verify offline MCP wheelhouse installation
+        run: scripts/test_wheelhouse.sh "$GITHUB_WORKSPACE/wheelhouse"
+      - name: Obtain pinned AppImage tools
+        run: |
+          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage -O "$RUNNER_TEMP/linuxdeploy-x86_64.AppImage"
+          wget -q https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage -O "$RUNNER_TEMP/appimagetool-x86_64.AppImage"
+          wget -q https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/7a3fbc31a9e5075073ff8790f26effbac5f84453/linuxdeploy-plugin-gtk.sh -O "$RUNNER_TEMP/linuxdeploy-plugin-gtk.sh"
+          wget -q https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64 -O "$RUNNER_TEMP/runtime-x86_64"
+          echo 'c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d  linuxdeploy-x86_64.AppImage' > "$RUNNER_TEMP/tools.sha256"
+          echo 'ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0  appimagetool-x86_64.AppImage' >> "$RUNNER_TEMP/tools.sha256"
+          echo 'b0f4cbc684a0103a9651f0955b635eaea0096b3a66c0f5a2c2aa337960375171  linuxdeploy-plugin-gtk.sh' >> "$RUNNER_TEMP/tools.sha256"
+          echo '2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64' >> "$RUNNER_TEMP/tools.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum -c tools.sha256)
+          chmod +x "$RUNNER_TEMP"/linuxdeploy* "$RUNNER_TEMP"/appimagetool*
+      - name: Build graphical installer
+        env:
+          LINUXDEPLOY: ${{ runner.temp }}/linuxdeploy-x86_64.AppImage
+          APPIMAGETOOL: ${{ runner.temp }}/appimagetool-x86_64.AppImage
+          APPIMAGE_RUNTIME: ${{ runner.temp }}/runtime-x86_64
+          SOURCE_DATE_EPOCH: '0'
+        run: |
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          PATH="$RUNNER_TEMP:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" ./packaging/appimage/build.sh "$RUNNER_TEMP/release" "$RUNNER_TEMP/release"
+      - name: Verify AppImage extraction and launcher smoke test
+        run: |
+          version="$(cat VERSION)"
+          image="$RUNNER_TEMP/release/ASIP-Installer-${version}-x86_64.AppImage"
+          (cd "$(dirname "$image")" && sha256sum -c "$(basename "$image").sha256")
+          "$image" --appimage-extract >/dev/null
+          test -x squashfs-root/AppRun
+          test -f squashfs-root/usr/share/asip-installer/release.json
+          smoke_log="$RUNNER_TEMP/appimage-smoke.log"
+          set +e
+          ASIP_INSTALLER_SMOKE=1 timeout 30s xvfb-run -a "$image" --appimage-extract-and-run >"$smoke_log" 2>&1
+          smoke_status=$?
+          set -e
+          cat "$smoke_log"
+          test "$smoke_status" -eq 0
+          grep -Fx ASIP_INSTALLER_SMOKE_OK "$smoke_log"
+      - name: Assemble release metadata and checksums
+        run: |
+          version="$(cat VERSION)"
+          release_dir="$RUNNER_TEMP/release"
+          cp VERSION LICENSE README.md SECURITY.md SUPPORT.md INSTALL.md UPGRADE.md UNINSTALL.md RELEASE_NOTES.md "$release_dir/"
+          release_commit="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["source_commit"])' "$release_dir/release.json")"
+          test "$release_commit" = "$GITHUB_SHA"
+          (cd "$release_dir" && sha256sum \
+            "asip-${version}.tar.gz" release.json \
+            "ASIP-Installer-${version}-x86_64.AppImage" \
+            "ASIP-Installer-${version}-x86_64.AppImage.sha256" \
+            "ASIP-Installer-${version}-x86_64.AppImage.json" \
+            VERSION LICENSE README.md SECURITY.md SUPPORT.md INSTALL.md UPGRADE.md UNINSTALL.md RELEASE_NOTES.md \
+            >SHA256SUMS)
+          (cd "$release_dir" && sha256sum -c SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asip-release-${{ github.sha }}
+          path: ${{ runner.temp }}/release/*
+          if-no-files-found: error
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: asip-release-${{ github.sha }}
+          path: release
+      - name: Publish GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="$(cat release/VERSION)"
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            "release/asip-${version}.tar.gz" \
+            "release/ASIP-Installer-${version}-x86_64.AppImage" \
+            "release/ASIP-Installer-${version}-x86_64.AppImage.sha256" \
+            "release/ASIP-Installer-${version}-x86_64.AppImage.json" \
+            release/release.json release/SHA256SUMS \
+            release/VERSION release/LICENSE release/README.md release/SECURITY.md release/SUPPORT.md \
+            release/INSTALL.md release/UPGRADE.md release/UNINSTALL.md release/RELEASE_NOTES.md \
+            --title "ASIP ${version}" \
+            --notes-file release/RELEASE_NOTES.md --verify-tag

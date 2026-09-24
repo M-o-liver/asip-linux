@@ -1,0 +1,13 @@
+dist/
+build/
+*.egg-info/
+wheelhouse/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.env
+.env.*
+*.pem
+id_*
+*.jsonl

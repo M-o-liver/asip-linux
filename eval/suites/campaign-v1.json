@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "id": "campaign-v1",
+  "version": 1,
+  "status": "draft",
+  "qualification_enabled": false,
+  "required_cases": [
+    "asip-discipline-baseline",
+    "deleted-running-executable",
+    "failed-service-recovery",
+    "snapshot-config-rollback",
+    "private-tmp-intake"
+  ]
+}

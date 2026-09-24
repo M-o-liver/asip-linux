@@ -1,0 +1,214 @@
+#!/bin/sh
+# asip-inspect — read-only access to ASIP's durable state.
+set -eu
+
+PROG="${0##*/}"
+
+read_version() {
+	script_dir="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
+	for candidate in "${ASIP_VERSION_FILE:-}" "$script_dir/VERSION" \
+		/usr/share/asip/VERSION /usr/lib/asip/VERSION; do
+		if [ -z "$candidate" ] || [ ! -r "$candidate" ]; then
+			continue
+		fi
+		version="$(sed -n '1{s/[[:space:]]*$//;p;q;}' "$candidate")"
+		[ -n "$version" ] && { printf '%s' "$version"; return; }
+	done
+	printf '2.0.0'
+}
+
+VERSION="$(read_version)"
+
+runtime_client() {
+	local_client="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)/core/client.py"
+	if [ -x "$local_client" ]; then
+		printf '%s' "$local_client"
+	else
+		printf '%s' /usr/lib/asip/core/client.py
+	fi
+}
+
+JSON=0
+_kept=0
+for _arg in "$@"; do
+	if [ "$_arg" = "--json" ]; then
+		JSON=1
+		continue
+	fi
+	_kept=$((_kept + 1))
+	eval "_keep_${_kept}=\$_arg"
+done
+set --
+_i=1
+while [ "$_i" -le "$_kept" ]; do
+	eval "set -- \"\$@\" \"\$_keep_${_i}\""
+	_i=$((_i + 1))
+done
+
+request() {
+	if [ "$JSON" -eq 1 ]; then
+		python3 "$(runtime_client)" --socket /run/asip/read.sock --json "$@"
+	else
+		python3 "$(runtime_client)" --socket /run/asip/read.sock "$@"
+	fi
+}
+
+usage() {
+	cat <<EOF
+$PROG $VERSION — read-only ASIP inspection.
+
+USAGE
+  $PROG [--json] change list|open|show [ID]
+  $PROG [--json] maintenance list|history|open
+  $PROG [--json] audit pending
+  $PROG [--json] verify list
+  $PROG [--json] log [JOURNAL-OR-CHANGE-ID]
+  $PROG [--json] brief
+  $PROG [--json] context [CWD]
+  $PROG [--json] policy
+  $PROG [--json] summary
+  $PROG [--json] doctor
+  $PROG [--json] recovery
+  $PROG [--json] facts [catalog|get SPEC]
+  $PROG [--json] ask list|show [ID]
+  $PROG [--json] access list|show [NAME]
+  $PROG [--json] operation ID
+  $PROG [--json] eval-evidence CHANGE-ID
+  $PROG [--json] blob SHA256 [OFFSET]
+
+--json prints the structured data object only. Human output may include
+presentation; JSON never includes the inspect banner or usage text.
+
+This client can only use /run/asip/read.sock. Membership in asip-read is not
+root-equivalent and does not grant command execution or journal mutation.
+EOF
+}
+
+case "${1:-help}" in
+change)
+	action="${2:-list}"
+	case "$action" in
+	list | open) [ "$#" -eq 2 ] || { usage >&2; exit 64; }; request --op change --action "$action" ;;
+	show) [ "$#" -eq 3 ] || { usage >&2; exit 64; }; request --op change --action show -- "$3" ;;
+	status)
+		printf '%s: change status was removed; use change show ID, change open (status=open), change list, brief, or context.\n' "$PROG" >&2
+		exit 64
+		;;
+	*) usage >&2; exit 64 ;;
+	esac
+	;;
+maintenance)
+	action="${2:-list}"
+	case "$action" in
+	list)
+		if [ "$#" -eq 1 ] || [ "$#" -eq 2 ]; then
+			request --op maintenance --action list
+		else
+			usage >&2
+			exit 64
+		fi
+		;;
+	history | open)
+		[ "$#" -eq 2 ] || { usage >&2; exit 64; }
+		request --op maintenance --action "$action"
+		;;
+	*) usage >&2; exit 64 ;;
+	esac
+	;;
+audit)
+	if [ "${2:-}" != pending ] || [ "$#" -ne 2 ]; then usage >&2; exit 64; fi
+	request --op audit-pending
+	;;
+verify)
+	if [ "${2:-list}" != list ] || [ "$#" -gt 2 ]; then usage >&2; exit 64; fi
+	request --op verify --action list
+	;;
+log)
+	[ "$#" -le 2 ] || { usage >&2; exit 64; }
+	shift
+	request --op log -- "$@"
+	;;
+brief)
+	if [ "${2:-}" = "--help" ] || [ "${2:-}" = "-h" ]; then usage; exit 0; fi
+	[ "$#" -eq 1 ] || { usage >&2; exit 64; }
+	request --op brief
+	;;
+context)
+	if [ "${2:-}" = "--help" ] || [ "${2:-}" = "-h" ]; then usage; exit 0; fi
+	[ "$#" -le 2 ] || { usage >&2; exit 64; }
+	request --op context --cwd "${2:-$(pwd)}"
+	;;
+policy)
+	[ "$#" -eq 1 ] || { usage >&2; exit 64; }
+	request --op machine-policy
+	;;
+summary)
+	[ "$#" -eq 1 ] || { usage >&2; exit 64; }
+	request --op summary
+	;;
+doctor)
+	[ "$#" -eq 1 ] || { usage >&2; exit 64; }
+	request --op doctor
+	;;
+recovery)
+	[ "$#" -eq 1 ] || { usage >&2; exit 64; }
+	request --op recovery
+	;;
+ask)
+	action="${2:-list}"
+	case "$action" in
+	list | pending)
+		[ "$#" -le 2 ] || { usage >&2; exit 64; }
+		request --op ask --action list
+		;;
+	show)
+		[ "$#" -eq 3 ] || { usage >&2; exit 64; }
+		request --op ask --action show -- "$3"
+		;;
+	*) usage >&2; exit 64 ;;
+	esac
+	;;
+access)
+	action="${2:-list}"
+	case "$action" in
+	list) [ "$#" -le 2 ] || { usage >&2; exit 64; }; request --op access --action list ;;
+	show) [ "$#" -eq 3 ] || { usage >&2; exit 64; }; request --op access --action show --name "$3" -- "$3" ;;
+	*) usage >&2; exit 64 ;;
+	esac
+	;;
+facts)
+	action="${2:-catalog}"
+	case "$action" in
+	catalog | list)
+		[ "$#" -le 2 ] || { usage >&2; exit 64; }
+		request --op facts --action catalog
+		;;
+	get)
+		if [ "$#" -eq 3 ]; then
+			request --op facts --action get -- "$3"
+		elif [ "$#" -eq 4 ]; then
+			request --op facts --action get -- "$3" "$4"
+		else
+			usage >&2
+			exit 64
+		fi
+		;;
+	*) usage >&2; exit 64 ;;
+	esac
+	;;
+operation)
+	[ "$#" -eq 2 ] || { usage >&2; exit 64; }
+	request --op operation -- "$2"
+	;;
+eval-evidence)
+	[ "$#" -eq 2 ] || { usage >&2; exit 64; }
+	request --op eval-evidence -- "$2"
+	;;
+blob)
+	if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then usage >&2; exit 64; fi
+	if [ "$#" -eq 3 ]; then request --op blob --offset "$3" -- "$2"; else request --op blob -- "$2"; fi
+	;;
+version | --version | -V) printf '%s %s\n' "$PROG" "$VERSION" ;;
+help | --help | -h) usage ;;
+*) usage >&2; exit 64 ;;
+esac

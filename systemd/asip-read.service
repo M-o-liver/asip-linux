@@ -1,0 +1,13 @@
+[Unit]
+Description=ASIP read-only inspection daemon
+
+[Service]
+ExecStart=/usr/lib/asip/core/server.py --serve-read-only
+User=root
+Group=root
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only

@@ -1,0 +1,11 @@
+[Unit]
+Description=ASIP privileged execution and record daemon
+
+[Service]
+ExecStart=/usr/lib/asip/core/server.py --serve
+User=root
+Group=root
+Restart=on-failure
+RestartSec=2s
+NoNewPrivileges=false
+PrivateTmp=true

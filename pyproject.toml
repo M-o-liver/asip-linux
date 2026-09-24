@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asip-mcp"
+dynamic = ["version"]
+description = "Optional MCP v2 adapter for ASIP"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dependencies = ["mcp==2.0.0"]
+
+[project.scripts]
+asip-mcp-inspect = "asip_mcp:inspect_main"
+asip-mcp-admin = "asip_mcp:admin_main"
+
+[tool.setuptools]
+packages = ["core"]
+py-modules = ["asip_mcp"]
+
+[tool.setuptools.dynamic]
+version = {file = ["VERSION"]}

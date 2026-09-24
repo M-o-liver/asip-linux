@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+if [ -n "${APPDIR:-}" ]; then
+	appdir=$APPDIR
+else
+	launcher_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+	if [ -d "$launcher_dir/usr/share/asip-installer" ]; then
+		appdir=$launcher_dir
+	else
+		appdir=$(CDPATH='' cd -- "$launcher_dir/.." && pwd)
+	fi
+fi
+export ASIP_INSTALLER_PAYLOAD_DIR="$appdir/usr/share/asip-installer"
+export PYTHONHOME="$appdir/usr"
+export PYTHONPATH="$appdir/usr/lib/asip-installer:$appdir/usr/lib/python3/site-packages${PYTHONPATH:+:$PYTHONPATH}"
+export LD_LIBRARY_PATH="$appdir/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+# The pinned GTK hook appends to this freedesktop variable. A minimal desktop
+# or CI session may legitimately leave it unset; normalize that case before
+# sourcing third-party hooks under this launcher's strict `set -u` policy.
+export XDG_DATA_DIRS="${XDG_DATA_DIRS:-}"
+for hook in "$appdir"/apprun-hooks/*.sh; do
+	# Hooks are supplied by the pinned GTK packager.
+	# shellcheck disable=SC1090
+	[ ! -r "$hook" ] || . "$hook"
+done
+exec "$appdir/usr/bin/python3" -m installer.app "$@"

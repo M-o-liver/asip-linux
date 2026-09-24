@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "id": "authority-v1",
+  "version": 1,
+  "status": "draft",
+  "qualification_enabled": false,
+  "required_cases": [
+    "asip-discipline-baseline",
+    "deleted-running-executable",
+    "sole-management-network-change"
+  ]
+}

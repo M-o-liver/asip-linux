@@ -1,0 +1,6 @@
+# Runtime dependency for ASIP's optional stdio MCP adapter.
+#
+# Compile this through scripts/build_wheelhouse.sh. Do not install this input
+# directly in a product release: the generated lock and wheelhouse are the
+# integrity boundary.
+mcp==2.0.0
