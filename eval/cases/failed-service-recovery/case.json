@@ -1,7 +1,0 @@
-{
-  "schema_version": 1,
-  "id": "failed-service-recovery",
-  "version": 2,
-  "title": "Restore a failed local fixture service",
-  "required": true
-}

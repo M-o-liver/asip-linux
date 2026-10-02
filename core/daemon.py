@@ -26,6 +26,7 @@ import subprocess
 import threading
 import time
 import uuid
+import tempfile
 
 if __package__ in (None, ""):
     import sys
@@ -44,13 +45,10 @@ from core.facts import (
     collect_fact,
     fact_disk,
     fact_kernel,
-    fact_kmod,
-    fact_path,
-    fact_pkg,
-    fact_unit,
     observation_name as _observation_name,
 )
 from core import maintenance
+from core.refs import JournalRefs
 from core.maintenance import MAINTENANCE_NAMES
 
 SOCKET = "/run/asip/sock"
@@ -65,8 +63,9 @@ ACCESS_DIR = STATE / "access"
 MAX_REQUEST = MAX_REQUEST_BYTES
 HOLD_KINDS = ("reboot_window", "operator", "predecessor", "deferred")
 OPERATION_TERMINAL_STATES = frozenset(
-    ("finished", "failed", "detached", "skipped", "interrupted")
+    ("finished", "failed", "detached", "skipped", "interrupted", "cancelled")
 )
+RUNTIME_DRAINING = False
 OPERATOR_QUESTIONS_SURFACE = {
     "application": "ASIP",
     "view": "computer",
@@ -96,7 +95,12 @@ HOLD_KIND_WHY = {
     "deferred": "The work is intentionally deferred until a stated condition.",
 }
 SERIAL_LOCK = threading.RLock()
+CONTROL_LOCK = threading.RLock()
+ACTIVE_COMMANDS = {}
+ACTIVE_REQUEST = None
+MAX_CAPTURE_BYTES = 32 * 1024 * 1024
 JOURNAL_LOCK = threading.RLock()
+_REF_CACHE = None
 # A synchronous root command owns the mutation lane until it exits. Keep that
 # ownership bounded so a lost client, a child waiting on ASIP, or a command
 # that never returns cannot wedge every later administrative request forever.
@@ -120,8 +124,10 @@ def product_versions(request):
     """Distinguish this daemon (installed) from the calling client/source."""
     client = None
     payload = request.get("client")
-    if isinstance(payload, dict) and isinstance(payload.get("version"), str):
-        client = payload["version"] or None
+    if isinstance(payload, dict):
+        version=payload.get('asip_version') or (payload.get('version') if payload.get('name') in ('asip','asip-cli','asip-inspect','asip-desktop','a') else None)
+        if isinstance(version,str) and version not in ('','unknown'):
+            client=version
     return {
         "client_version": client,
         "installed_version": VERSION,
@@ -161,9 +167,33 @@ def record_for(request, **fields):
 def validate_envelope(request):
     if not isinstance(request, dict):
         raise ValueError("request must be a JSON object")
+    if not isinstance(request.get('op'), str) or not request['op'] or len(request['op']) > 128:
+        raise ValueError('op must be a non-empty string')
+    if request.get('action') is not None and not isinstance(request['action'], str):
+        raise ValueError('action must be a string')
     version = request.get("schema_version", 0)
     if not isinstance(version, int) or version not in (0, SCHEMA_VERSION):
         raise ValueError("unsupported schema_version; install a matching ASIP client")
+    argv = request.get("argv", [])
+    if not isinstance(argv, list) or not all(isinstance(v, str) and "\x00" not in v for v in argv):
+        raise ValueError("argv must contain strings without NUL bytes")
+    affects = request.get("affects", [])
+    if not isinstance(affects, list) or not all(isinstance(v, str) and v.startswith("/") and "\x00" not in v for v in affects):
+        raise ValueError("affects must contain absolute paths")
+    sensitive = request.get("sensitive", False)
+    if not isinstance(sensitive, bool):
+        raise ValueError("sensitive must be boolean")
+    if (affects or sensitive) and request.get("op") != "do":
+        raise ValueError("affects and sensitive apply to asip do")
+    env = request.get("env", {})
+    if not isinstance(env, dict) or not all(isinstance(k, str) and k and "=" not in k and "\x00" not in k and isinstance(v, str) and "\x00" not in v for k,v in env.items()):
+        raise ValueError("env must contain valid string environment entries")
+    cwd = request.get("cwd", "/")
+    if not isinstance(cwd, str) or not cwd.startswith("/") or "\x00" in cwd:
+        raise ValueError("cwd must be an absolute path")
+    timeout = request.get("timeout")
+    if timeout is not None and (isinstance(timeout,bool) or not isinstance(timeout,(int,float)) or not math.isfinite(timeout) or not 1 <= timeout <= COMMAND_TIMEOUT_SECONDS):
+        raise ValueError("timeout must be between 1 and %s seconds" % COMMAND_TIMEOUT_SECONDS)
     key = request.get("request_key")
     if key is not None and (not isinstance(key, str) or not key.strip() or len(key) > 128):
         raise ValueError("request_key must be a non-empty string of at most 128 characters")
@@ -314,7 +344,15 @@ def append_record(record):
                         truncate_at = start + newline + 1
                         break
                     cursor = start
-                os.ftruncate(descriptor, truncate_at)
+                tail = os.pread(descriptor, size - truncate_at, truncate_at)
+                try:
+                    complete = isinstance(json.loads(tail), dict)
+                except (ValueError, UnicodeDecodeError):
+                    complete = False
+                if complete:
+                    os.write(descriptor, b"\n")
+                else:
+                    os.ftruncate(descriptor, truncate_at)
                 os.fsync(descriptor)
 
             payload = (json.dumps(record, separators=(",", ":")) + "\n").encode("utf-8")
@@ -334,17 +372,41 @@ def append_record(record):
             fsync_directory(STATE)
 
 
-def journal_records():
+def journal_state():
     with JOURNAL_LOCK:
         if not JOURNAL.exists():
-            return []
+            return [], 0
         records = []
-        for line in JOURNAL.read_text(encoding="utf-8").splitlines():
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
+        invalid = 0
+        for line in JOURNAL.read_bytes().splitlines():
+            if not line.strip():
                 continue
-        return records
+            try:
+                record = json.loads(line)
+                if isinstance(record, dict):
+                    records.append(record)
+                else:
+                    invalid += 1
+            except (ValueError, UnicodeDecodeError):
+                invalid += 1
+        return records, invalid
+
+
+def journal_records():
+    return journal_state()[0]
+
+
+def journal_refs():
+    global _REF_CACHE
+    with JOURNAL_LOCK:
+        try:
+            info = JOURNAL.stat()
+            signature = (str(JOURNAL), info.st_ino, info.st_size, info.st_mtime_ns)
+        except FileNotFoundError:
+            signature = (str(JOURNAL), None)
+        if _REF_CACHE is None or _REF_CACHE[0] != signature:
+            _REF_CACHE = (signature, JournalRefs(journal_records()))
+        return _REF_CACHE[1]
 
 
 def reconcile_interrupted_operations():
@@ -363,9 +425,23 @@ def reconcile_interrupted_operations():
 
     interrupted = []
     for record in records:
+        if record.get('state') == 'detached':
+            events = by_id.get((record.get('op'), record.get('id')), [])
+            if events[-1].get('state') == 'detached' and not process_alive(record.get('pid'), record.get('process_start')):
+                interrupted.append(dict(record, at=now(), state='interrupted', outcome_unknown=True,
+                    error='detached process exited without a recorded result; inspect its effects before restarting it'))
+            continue
+        if record.get("state") == "restart_queued":
+            events = by_id.get((record.get("op"), record.get("id")), [])
+            if not any(event.get("state") in OPERATION_TERMINAL_STATES for event in events):
+                interrupted.append(dict(record, at=now(), state="finished", exit=0,
+                                        outcome="administration daemon restarted"))
+            continue
         if record.get("state") != "started" or record.get("op") in ("request", "change"):
             continue
         events = by_id.get((record.get("op"), record.get("id")), [])
+        if any(event.get("state") == "restart_queued" for event in events):
+            continue
         if any(event.get("state") in OPERATION_TERMINAL_STATES for event in events):
             continue
         event = dict(record)
@@ -393,7 +469,8 @@ def reconcile_interrupted_operations():
             continue
         linked = next((item for item in reversed(records)
                        if item.get("request_key") == record.get("request_key")
-                       and item.get("op") != "request"), None)
+                       and item.get("op") != "request"
+                       and item.get("uid") == record.get("uid")), None)
         operation_id = linked.get("id") if linked else None
         response = structured_error(
             "operation_interrupted",
@@ -486,9 +563,19 @@ def maintenance_request(request, ident, started):
     if action in ("history", "open"):
         if argv:
             raise ValueError("maintenance %s takes no arguments" % action)
-        output = maintenance_history(open_only=(action == "open"))
+        data=maintenance_history_data(open_only=(action == "open"))
+        if request.get('limit') is not None:
+            offset,limit=request.get('offset',0),request['limit']
+            if isinstance(offset,bool) or not isinstance(offset,int) or offset<0 or isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=100:
+                raise ValueError('maintenance offset must be non-negative; limit must be 1–100')
+            records=list(reversed(data['records']))
+            data['total']=len(records)
+            data['records']=records[offset:offset+limit]
+            data['open_sessions']=data['open_sessions'][-limit:]
+            data['next_offset']=offset+limit if len(records)>offset+limit else None
+        output = maintenance.history_text(data,open_only=(action == 'open'))
         return {"id": ident, "exit": 0, "stdout": output, "stderr": "",
-                "data": maintenance_history_data(open_only=(action == "open")),
+                "data": data,
                 "duration_ms": int((time.monotonic() - started) * 1000)}
     if action == "omit":
         if len(argv) < 2 or argv[0] not in MAINTENANCE_NAMES:
@@ -605,9 +692,9 @@ def hold_allows(request):
     """Held work still accepts inspect, notes, verification, release, and fail."""
     op = request.get("op")
     action = request.get("action")
-    if op == "change" and action in ("hold", "release", "fail", "show", "status"):
+    if op == "change" and action in ("hold", "release", "fail", "supersede", "show"):
         return True
-    if op in ("note", "log", "context", "brief", "doctor", "summary", "recovery"):
+    if op in ("note", "log", "context", "brief", "doctor", "summary", "recovery", "cancel"):
         return True
     if op == "verify" and action in ("list", "pass", "fail"):
         return True
@@ -1065,9 +1152,12 @@ def change_payload(change_id, records=None, request=None):
               "subject": record.get("subject", ""), "reason": record.get("reason", "")}
              for record in related if record.get("op") == "note"]
     operations = []
+    latest_operations={}
     for record in related:
-        if record.get("op") in ("change", "note") or record.get("state") == "started":
+        if record.get("op") in ("change", "note", "request"):
             continue
+        latest_operations[(record.get('op'),record.get('id'))]=record
+    for record in latest_operations.values():
         operations.append({
             "id": record.get("id"),
             "op": record.get("op"),
@@ -1335,7 +1425,7 @@ def associated_change_data(request, records=None):
     return {
         "change_id": change_id,
         "status": change_status(change_id, records),
-        "intent": excerpt(start.get("intent", ""), 256)[0],
+        "intent": short_text(start.get("intent", ""), 256),
         "inferred": False,
         "note": "This ID was supplied by the caller; it was not inferred.",
     }
@@ -1611,6 +1701,24 @@ def change_request(request, ident, started):
         if action == "open":
             starts = [record for record in starts
                       if change_status(record["id"], records) == "open"]
+        status = request.get("status")
+        if status not in (None, "all", "open", "held", "finished", "failed", "superseded"):
+            raise ValueError("unknown change status")
+        if status and status != "all":
+            starts = [r for r in starts if change_status(r["id"], records) == status]
+        total = len(starts)
+        starts.reverse()
+        before = request.get("before")
+        if before:
+            index = next((i for i,r in enumerate(starts) if r["id"] == before), None)
+            if index is None:
+                raise ValueError("change page boundary not found")
+            starts = starts[index + 1:]
+        limit = request.get("limit", 20)
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 100:
+            raise ValueError("change limit must be 1–100")
+        more = len(starts) > limit
+        starts = starts[:limit]
         items = []
         for record in starts:
             change_id = record["id"]
@@ -1634,7 +1742,7 @@ def change_request(request, ident, started):
         if not output:
             output = "No %schanges.\n" % ("open " if action == "open" else "")
         return {"id": ident, "exit": 0, "stdout": output, "stderr": "",
-                "data": {"changes": items},
+                "data": {"changes": items, "total": total, "before": starts[-1]["id"] if more else None},
                 "duration_ms": int((time.monotonic() - started) * 1000)}
     raise ValueError("change action must be start, finish, fail, hold, release, supersede, show, status, list, or open")
 
@@ -1692,7 +1800,7 @@ def audit_event_summaries(raw):
 
 def audit_pending(ident, started):
     proc = subprocess.run(["ausearch", "-k", "asip_mode", "--raw"], text=True,
-                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=8)
     if proc.returncode not in (0, 1):
         raise OSError(proc.stderr.strip() or "ausearch failed")
     integrated = {record.get("evidence") for record in journal_records()
@@ -1909,21 +2017,14 @@ def product_summary_data(request):
                          and record.get("action") in ("finish", "fail", "supersede")), None)
         recent_changes.append({
             "change_id": change_id,
-            "intent": excerpt(start.get("intent", ""), 256)[0],
+            "intent": short_text(start.get("intent", ""), 256),
             "status": change_status(change_id, records),
             "started_at": start.get("at"),
             "finished_at": terminal.get("at") if terminal else None,
-            "outcome": excerpt(terminal.get("summary", ""), 256)[0] if terminal else None,
+            "outcome": short_text(terminal.get("summary", ""), 256) if terminal else None,
         })
 
-    terminal_ids = {
-        record.get("id") for record in records
-        if record.get("state") in OPERATION_TERMINAL_STATES
-    }
-    incomplete = {
-        record.get("id") for record in records
-        if record.get("state") == "started" and record.get("id") not in terminal_ids
-    }
+    incomplete = brief_incomplete(records)
     privileged = _unique_records(
         records, {"do", "pkg", "svc", "conf", "snap", "rollback"}
     )
@@ -2097,7 +2198,7 @@ def brief_incomplete(records):
             "operation_id": record.get("id"),
             "op": record.get("op"),
             "started_at": record.get("at"),
-            "command": excerpt(" ".join(record.get("argv", [])), 160)[0],
+            "command": short_text(" ".join(record.get("argv", [])), 160),
         })
     return items
 
@@ -2122,12 +2223,12 @@ def brief_blocking(request, records):
         if hold:
             slim_hold = {
                 "kind": hold.get("kind"),
-                "unblock": excerpt(hold.get("unblock") or "", 200)[0],
+                "unblock": short_text(hold.get("unblock") or "", 200),
             }
         items.append({
             "change_id": record["id"],
             "status": status,
-            "intent": excerpt(record.get("intent", ""), 160)[0],
+            "intent": short_text(record.get("intent", ""), 160),
             "hold": slim_hold,
         })
     items.sort(key=lambda item: (0 if item["status"] == "held" else 1, item["change_id"]))
@@ -2149,8 +2250,8 @@ def brief_attention(asks, incomplete, access=None):
             "audience": "operator",
             "priority": "high",
             "kind": "operator_question",
-            "summary": "%s operator question%s need an answer in ASIP" % (
-                pending, "" if pending == 1 else "s"),
+            "summary": "%s operator question%s %s an answer in ASIP" % (
+                pending, "" if pending == 1 else "s", "needs" if pending == 1 else "need"),
             "count": pending,
             "human_surface": dict(OPERATOR_QUESTIONS_SURFACE),
             "refs": {"question_ids": [item.get("question_id") for item in unanswered[:5]]},
@@ -2173,8 +2274,8 @@ def brief_attention(asks, incomplete, access=None):
             "audience": "operator",
             "priority": "high",
             "kind": "access_provisioning",
-            "summary": "%s connected service%s need setup in ASIP" % (
-                len(pending_access), "" if len(pending_access) == 1 else "s"),
+            "summary": "%s connected service%s %s setup in ASIP" % (
+                len(pending_access), "" if len(pending_access) == 1 else "s", "needs" if len(pending_access) == 1 else "need"),
             "count": len(pending_access),
             "human_surface": dict(ACCESS_SURFACE),
             "refs": {"authorities": pending_access[:5]},
@@ -2214,7 +2315,7 @@ def brief_data(request):
             {
                 "question_id": item["question_id"],
                 "gate": item.get("gate"),
-                "question": excerpt(item.get("question") or "", 280)[0],
+                "question": short_text(item.get("question") or "", 280),
                 "change_id": item.get("change_id"),
             }
             for item in asks["unanswered"][:5]
@@ -2268,12 +2369,9 @@ def brief_request(request, ident, started):
 
 
 def doctor_request(request, ident, started):
-    records = journal_records()
-    terminal_ids = {record.get("id") for record in records
-                    if record.get("state") in OPERATION_TERMINAL_STATES}
-    incomplete = sorted({record.get("id") for record in records
-                         if record.get("state") == "started"
-                         and record.get("id") not in terminal_ids})
+    records, invalid = journal_state()
+    incomplete = [item["operation_id"] for item in brief_incomplete(records)]
+    journal_readable = os.access(JOURNAL, os.R_OK) if JOURNAL.exists() else os.access(STATE, os.R_OK | os.X_OK)
     data = {
         "schema_version": SCHEMA_VERSION,
         "version": VERSION,
@@ -2281,147 +2379,208 @@ def doctor_request(request, ident, started):
         "generated_at": now(),
         "role": "read-only" if request.get("_read_only") else "privileged",
         "machine": {"path": str(MACHINE), "readable": os.access(MACHINE, os.R_OK)},
-        "journal": {"path": str(JOURNAL), "readable": os.access(JOURNAL, os.R_OK),
-                    "records": len(records), "incomplete_operations": incomplete},
+        "journal": {"path": str(JOURNAL), "readable": journal_readable,
+                    "records": len(records), "invalid_lines": invalid, "incomplete_operations": incomplete},
         "snapshotter": snapshot_command("ASIP doctor probe")[1],
-        "status": "attention" if incomplete or not os.access(MACHINE, os.R_OK) else "ok",
+        "status": "attention" if incomplete or invalid or not journal_readable or not os.access(MACHINE, os.R_OK) else "ok",
     }
     return {"id": ident, "exit": 0, "stdout": json.dumps(data, separators=(",", ":")) + "\n",
             "stderr": "", "data": data,
             "duration_ms": int((time.monotonic() - started) * 1000)}
+
+
+def short_text(value, limit=240):
+    return value if len(value) <= limit else value[:limit - 1] + "…"
+
+
+def process_identity(pid):
+    try:
+        fields = pathlib.Path("/proc/%s/stat" % int(pid)).read_text().rsplit(")", 1)[1].split()
+        return {"parent": int(fields[1]), "start": fields[19], "state": fields[0]}
+    except (OSError, ValueError, IndexError, TypeError):
+        return None
+
+
+def process_alive(pid, token):
+    current = process_identity(pid)
+    return bool(current and token and current["start"] == token and current["state"] != "Z")
+
+
+def nested_operation(request):
+    pid = request.get("_peer_pid")
+    with CONTROL_LOCK:
+        parents = {item["pid"]: ident for ident,item in ACTIVE_COMMANDS.items()}
+    for _ in range(256):
+        if pid in parents:
+            return parents[pid]
+        current = process_identity(pid)
+        if not current or current["parent"] == pid or current["parent"] <= 1:
+            return None
+        pid = current["parent"]
+    return None
+
+
+def operation_cancel_request(request, ident, started):
+    argv = request.get("argv", [])
+    if len(argv) != 1:
+        raise ValueError("cancel needs one operation id")
+    target = argv[0]
+    detached = None
+    if request.get("change_id"):
+        validate_change(request)
+    with CONTROL_LOCK:
+        active = ACTIVE_COMMANDS.get(target)
+        if active:
+            active["cancel"].set()
+            status = "cancel_requested"
+        else:
+            events = [r for r in journal_records() if r.get("id") == target]
+            if not events:
+                raise ValueError("operation not found")
+            latest = events[-1]
+            pid, token = latest.get("pid"), latest.get("process_start")
+            if latest.get("state") == "detached" and process_alive(pid, token):
+                if os.getpgid(pid) != pid:
+                    raise ValueError("detached process group no longer matches its handle")
+                detached = (pid, token)
+                status = "cancel_requested"
+            else:
+                status = "not_running"
+    append_record(attach_change(record_for(request, id=ident, at=now(),
+        uid=request.get("_peer_uid", -1), op="cancel", target=target,
+        state="finished", result=status), request))
+    if detached:
+        threading.Thread(target=_finish_detached_cancel,args=detached,
+                         name="asip-access-cancel",daemon=True).start()
+    return {"id":ident,"exit":0,"stdout":"","stderr":"",
+            "data":{"operation_id":target,"status":status}}
+
+
+def _finish_detached_cancel(pid, token):
+    try:
+        if not process_alive(pid, token) or os.getpgid(pid) != pid:
+            return
+        os.killpg(pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
+    deadline = time.monotonic() + COMMAND_TERMINATE_GRACE_SECONDS
+    while process_alive(pid, token) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    if process_alive(pid, token):
+        try:
+            if os.getpgid(pid) == pid:
+                os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
+class OutputCapture:
+    """Keep bounded logs on disk and hashes of the complete redacted stream."""
+    def __init__(self):
+        self.file = tempfile.TemporaryFile(dir=STATE)
+        self.hash = hashlib.sha256()
+        self.bytes = 0
+        self.prefix = bytearray()
+
+    def write(self, value):
+        raw = value.encode()
+        self.hash.update(raw)
+        available = max(0, MAX_CAPTURE_BYTES - self.bytes)
+        if available:
+            self.file.write(raw[:available])
+        if len(self.prefix) < 16384:
+            self.prefix.extend(raw[:16384-len(self.prefix)])
+        self.bytes += len(raw)
+
+    def store(self):
+        if self.bytes > MAX_CAPTURE_BYTES:
+            self.file.write(b"\n[ASIP CAPTURE LIMIT: remaining output omitted]\n")
+        self.file.flush()
+        self.file.seek(0)
+        digest = hashlib.file_digest(self.file, "sha256").hexdigest()
+        path = BLOBS / digest
+        if not path.exists():
+            temporary = BLOBS / (".tmp-" + str(uuid.uuid4()))
+            try:
+                self.file.seek(0)
+                with temporary.open("xb") as handle:
+                    set_group_access(temporary, 0o640)
+                    shutil.copyfileobj(self.file, handle, length=65536)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, path)
+                fsync_directory(BLOBS)
+            finally:
+                temporary.unlink(missing_ok=True)
+        return digest
 
 
 def operation_request(request, ident, started):
     argv = request.get("argv", [])
-    if len(argv) != 1 or not isinstance(argv[0], str) or not argv[0]:
+    if len(argv) != 1 or not argv[0]:
         raise ValueError("operation get needs one operation id")
-    selected = [record for record in journal_records() if record.get("id") == argv[0]]
+    selected = [r for r in journal_records() if r.get("id") == argv[0]]
     if not selected:
         raise ValueError("operation id not found")
-    terminal = next((record for record in reversed(selected)
-                     if record.get("state") in OPERATION_TERMINAL_STATES), None)
-    started_record = next((record for record in selected if record.get("state") == "started"), None)
-    data = {
-        "operation_id": argv[0],
-        "status": terminal.get("state") if terminal else "running",
-        "started_at": started_record.get("at") if started_record else None,
-        "completed_at": terminal.get("at") if terminal else None,
-        "operation": terminal or started_record or selected[-1],
-    }
-    return {"id": ident, "exit": 0, "stdout": json.dumps(data, separators=(",", ":")) + "\n",
-            "stderr": "", "data": data,
-            "duration_ms": int((time.monotonic() - started) * 1000)}
+    latest = selected[-1]
+    terminal = next((r for r in reversed(selected) if r.get("state") in OPERATION_TERMINAL_STATES), None)
+    first = next((r for r in selected if r.get("state") == "started"), None)
+    status = terminal.get("state") if terminal else "running" if first else "recorded"
+    if latest.get("state") == "restart_queued":
+        status = "restart_queued"
+    if status == "detached":
+        status = "running" if process_alive(terminal.get("pid"), terminal.get("process_start")) else "exited"
+    data = {"operation_id":argv[0], "status":status,
+            "started_at":first.get("at") if first else None,
+            "completed_at":None if status in ('running','exited','restart_queued') else terminal.get("at") if terminal else latest.get("at") if not first else None,
+            "operation":terminal or latest}
+    return {"id":ident,"exit":0,"stdout":json.dumps(data,separators=(",",":"))+"\n","stderr":"","data":data}
 
 
 def journal_search_request(request, ident, started):
-    limit = request.get("limit", 50)
+    limit = request.get("limit", 10)
     cursor = request.get("cursor", 0)
-    if not isinstance(limit, int) or limit < 1 or limit > 200:
-        raise ValueError("journal search limit must be between 1 and 200")
-    if not isinstance(cursor, int) or cursor < 0:
-        raise ValueError("journal search cursor must be a non-negative integer")
+    before = request.get("before")
+    if isinstance(limit,bool) or not isinstance(limit,int) or not 1 <= limit <= 100:
+        raise ValueError("journal limit must be 1–100")
+    if isinstance(cursor,bool) or not isinstance(cursor,int) or cursor < 0:
+        raise ValueError("journal cursor must be non-negative")
     records = journal_records()
-    filters = {key: request.get(key) for key in ("change_id", "operation", "state")
-               if request.get(key) is not None}
+    filters = {key:request.get(key) for key in ("change_id","operation","state") if request.get(key)}
     selected = []
+    seen = set()
+    reached = before is None
     for record in reversed(records):
-        # A change start is the defining record for the change: its UUID is
-        # the record id, while every later record refers to that UUID through
-        # change_id.  Search is an evidence API, so omitting the intent record
-        # here would make a complete change look like an orphaned transcript.
-        is_defining_change = (record.get("op") == "change"
-                              and record.get("action") == "start"
-                              and record.get("id") == filters.get("change_id"))
-        if filters.get("change_id") and record.get("change_id") != filters["change_id"] \
-                and not is_defining_change:
+        # Event time, not operation UUID, identifies a page boundary: starts and
+        # terminal events intentionally share the same operation UUID.
+        ref = "%s/%s" % (record.get("at",""),record.get("id",""))
+        identity=(record.get('op'),record.get('id'))
+        duplicate=identity in seen
+        seen.add(identity)
+        if not reached:
+            if ref == before:
+                reached = True
+            continue
+        if record.get("op") == "request" and not request.get("details"):
+            continue
+        if not request.get("details"):
+            if duplicate:
+                continue
+        defining = record.get("op") == "change" and record.get("action") == "start" and record.get("id") == filters.get("change_id")
+        if filters.get("change_id") and record.get("change_id") != filters["change_id"] and not defining:
             continue
         if filters.get("operation") and record.get("op") != filters["operation"]:
             continue
         if filters.get("state") and record.get("state") != filters["state"]:
             continue
         selected.append(record)
-    page = selected[cursor:cursor + limit]
-    data = {"records": page,
-            "next_cursor": cursor + limit if cursor + limit < len(selected) else None,
-            "total": len(selected)}
-    return {"id": ident, "exit": 0, "stdout": json.dumps(data, separators=(",", ":")) + "\n",
-            "stderr": "", "data": data,
-            "duration_ms": int((time.monotonic() - started) * 1000)}
-
-
-def _eval_evidence_record(record):
-    """Return bounded, output-free facts suitable for an eval grader.
-
-    This is deliberately not a generic journal export.  In particular it
-    excludes argv, CWD, reasons, notes, captured streams, blobs, and arbitrary
-    client fields.  The normal journal/log API remains the forensic interface.
-    """
-    data = {key: record[key] for key in (
-        "id", "op", "action", "state", "exit", "at", "change_id", "target",
-        "snapshotter", "result", "tool", "references", "affects", "uid",
-    ) if key in record}
-    client = record.get("client")
-    if isinstance(client, dict):
-        safe_client = {key: client[key] for key in ("name", "version")
-                       if isinstance(client.get(key), str)}
-        if safe_client:
-            data["client"] = safe_client
-    if (record.get("op") == "conf" and isinstance(record.get("before_blob"), str)
-            and isinstance(record.get("after_blob"), str)):
-        # Expose only whether ASIP observed a change. Blob hashes can reveal
-        # low-entropy configuration contents through guessing, so they remain
-        # outside this bounded evaluator surface.
-        data["changed"] = record["before_blob"] != record["after_blob"]
-    return data
-
-
-def eval_evidence_request(request, ident, started):
-    """Return only the selected change's typed lifecycle facts for grading."""
-    argv = request.get("argv", [])
-    if len(argv) != 1 or not isinstance(argv[0], str) or not argv[0]:
-        raise ValueError("eval evidence needs one change id")
-    change_id = argv[0]
-    records = journal_records()
-    start_record = next((record for record in records
-                         if record.get("id") == change_id and record.get("op") == "change"
-                         and record.get("action") == "start"), None)
-    if start_record is None:
-        raise ValueError("change not found")
-    related = [record for record in records
-               if record.get("id") == change_id or record.get("change_id") == change_id]
-    terminal = next((record for record in reversed(related)
-                     if record.get("op") == "change"
-                     and record.get("action") in ("finish", "fail", "supersede")), None)
-    terminal_ids = {record.get("id") for record in related
-                    if record.get("state") in OPERATION_TERMINAL_STATES}
-    incomplete = [_eval_evidence_record(record) for record in related
-                  if record.get("state") == "started" and record.get("id") not in terminal_ids]
-    operations = [_eval_evidence_record(record) for record in related
-                  if record.get("op") not in ("change", "verify", "note")
-                  and record.get("state") != "started"]
-    verifications = [_eval_evidence_record(record) for record in related
-                     if record.get("op") == "verify"]
-    data = {
-        "schema_version": 1,
-        "change": {
-            "id": change_id,
-            "intent": start_record.get("intent", ""),
-            "status": change_status(change_id, records),
-            "started_at": start_record.get("at"),
-            "terminal_action": terminal.get("action") if terminal else None,
-            "finished_at": terminal.get("at") if terminal else None,
-        },
-        "operations": operations[:100],
-        "verifications": verifications[:100],
-        "incomplete_operations": incomplete[:100],
-        "observability": {
-            "direct_privilege_escape": "not_observable_from_asip_evidence",
-            "unrelated_change_use": "not_observable_without_fixture_or_harness_scope",
-        },
-    }
-    return {"id": ident, "exit": 0,
-            "stdout": json.dumps(data, separators=(",", ":")) + "\n", "stderr": "", "data": data,
-            "duration_ms": int((time.monotonic() - started) * 1000)}
+    if before is not None and not reached:
+        raise ValueError("journal page boundary not found")
+    page = selected[cursor:cursor+limit]
+    data = {"records":page,"total":len(selected),
+            "next_cursor":cursor+limit if cursor+limit < len(selected) else None,
+            "before":"%s/%s" % (page[-1].get("at",""),page[-1].get("id","")) if page and cursor+limit < len(selected) else None}
+    return {"id":ident,"exit":0,"stdout":json.dumps(data,separators=(",",":"))+"\n","stderr":"","data":data}
 
 
 def blob_request(request, ident, started):
@@ -2432,15 +2591,17 @@ def blob_request(request, ident, started):
     if not path.is_file():
         raise ValueError("blob not found")
     offset = request.get("offset", 0)
-    limit = request.get("limit", 65536)
+    limit = request.get("limit", 2048)
     if not isinstance(offset, int) or offset < 0:
         raise ValueError("blob offset must be non-negative")
     if not isinstance(limit, int) or limit < 1 or limit > 65536:
         raise ValueError("blob limit must be between 1 and 65536")
-    raw = path.read_bytes()
-    chunk = raw[offset:offset + limit]
-    data = {"sha256": argv[0], "offset": offset, "total_bytes": len(raw),
-            "next_offset": offset + len(chunk) if offset + len(chunk) < len(raw) else None,
+    total = path.stat().st_size
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        chunk = handle.read(limit)
+    data = {"sha256": argv[0], "offset": offset, "total_bytes": total,
+            "next_offset": offset + len(chunk) if offset + len(chunk) < total else None,
             "text": chunk.decode("utf-8", errors="replace")}
     return {"id": ident, "exit": 0, "stdout": data["text"], "stderr": "", "data": data,
             "duration_ms": int((time.monotonic() - started) * 1000)}
@@ -2448,7 +2609,7 @@ def blob_request(request, ident, started):
 
 def snapshot_command(reason):
     if shutil.which("snapper"):
-        return ["snapper", "create", "--print-number", "--description", reason], "snapper"
+        return ["snapper", "create", "--print-number", "--cleanup-algorithm", "number", "--description", reason], "snapper"
     return None, "none"
 
 
@@ -2653,7 +2814,7 @@ def access_metadata(name):
     available = profile is not None
     state = "available" if available else (
         "removed" if latest.get("action") == "remove" else
-        "not_requested" if latest.get("action") == "dismiss" else
+        "not_requested" if latest.get("action") == "dismiss" or not request else
         "operator_action_required"
     )
     return {
@@ -2713,9 +2874,9 @@ def access_request(request, ident, started):
         prior = latest if latest and latest.get("action") == "request" \
             and latest.get("env_var") == env_var else None
         if not prior:
-            append_record(record_for(request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
+            append_record(attach_change(record_for(request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
                                      op="access", action="request", authority=name,
-                                     label=label.strip(), env_var=env_var, state="operator_action_required"))
+                                     label=label.strip(), env_var=env_var, state="operator_action_required"), request))
         data = access_metadata(name)
         data.update({"requested": not bool(prior), "remediation":
                      "The operator can provision this authority in ASIP, "
@@ -2757,9 +2918,9 @@ def access_request(request, ident, started):
             except FileNotFoundError:
                 pass
         event = "replace" if previous else "provision"
-        append_record(record_for(request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
+        append_record(attach_change(record_for(request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
                                  op="access", action=event, authority=name, label=label.strip(),
-                                 env_var=env_var, revision=revision, state="available"))
+                                 env_var=env_var, revision=revision, state="available"), request))
         data = access_metadata(name)
         return {"id": ident, "exit": 0, "stdout": "", "stderr": "", "data": data,
                 "duration_ms": int((time.monotonic() - started) * 1000)}
@@ -2770,9 +2931,9 @@ def access_request(request, ident, started):
             fsync_directory(ACCESS_DIR)
         except FileNotFoundError:
             pass
-        append_record(record_for(request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
+        append_record(attach_change(record_for(request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
                                  op="access", action="remove", authority=name,
-                                 state="removed"))
+                                 state="removed"), request))
         data = access_metadata(name)
         data["removed"] = existed
         return {"id": ident, "exit": 0, "stdout": "", "stderr": "", "data": data,
@@ -2781,10 +2942,10 @@ def access_request(request, ident, started):
         if access_profile(name) is not None:
             raise ValueError("available access cannot be dismissed; remove it explicitly")
         previous = access_metadata(name)
-        append_record(record_for(
+        append_record(attach_change(record_for(
             request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
             op="access", action="dismiss", authority=name, state="not_requested",
-        ))
+        ), request))
         data = access_metadata(name)
         data["dismissed"] = previous.get("state") == "operator_action_required"
         return {"id": ident, "exit": 0, "stdout": "", "stderr": "", "data": data,
@@ -2808,28 +2969,34 @@ def access_environment(request, profile, run_uid):
     runtime_dir = "/run/user/%s" % run_uid
     if os.path.isdir(runtime_dir):
         env["XDG_RUNTIME_DIR"] = runtime_dir
+        if os.path.exists(runtime_dir + "/bus"):
+            env.setdefault("DBUS_SESSION_BUS_ADDRESS", "unix:path=" + runtime_dir + "/bus")
     env[profile["env_var"]] = profile["value"]
     return account, env
 
 
-def detached_access_command(request, command, profile, ident):
+def detached_access_command(request, command, profile, ident, profiles=None):
     """Start one credential-bound user process without retaining its pipes."""
     started = time.monotonic()
     run_uid = request.get("_peer_uid", -1)
     account, env = access_environment(request, profile, run_uid)
+    for other in profiles or []:
+        env[other["env_var"]] = other["value"]
     cwd = request.get("cwd", "/")
     if not isinstance(cwd, str) or not os.path.isdir(cwd):
         raise ValueError("cwd must name an existing directory")
-    fields = {"authority": profile["name"], "env_var": profile["env_var"],
+    fields = {"authority": profile["name"], "authorities": [p['name'] for p in profiles or [profile]],
+              "revisions": {p['name']:p['revision'] for p in profiles or [profile]}, "env_var": profile["env_var"],
               "revision": profile["revision"], "run_as_uid": run_uid,
               "capture": "detached"}
     append_record(operation_record(request, ident, command, "started", fields))
+    identity = {"user": account.pw_uid, "group": account.pw_gid,
+        "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid)}
     try:
         proc = subprocess.Popen(
             command, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-            user=account.pw_uid, group=account.pw_gid,
-            extra_groups=os.getgrouplist(account.pw_name, account.pw_gid),
+            **identity,
             start_new_session=True,
         )
     except (OSError, ValueError) as exc:
@@ -2840,12 +3007,20 @@ def detached_access_command(request, command, profile, ident):
         return structured_error("command_failed", "background access process failed to start",
                                 remediation="inspect the command and retry")
     duration = int((time.monotonic() - started) * 1000)
+    process_start = (process_identity(proc.pid) or {}).get("start")
     append_record(operation_record(request, ident, command, "detached",
-                                   dict(fields, pid=proc.pid, duration_ms=duration)))
+                                   dict(fields, pid=proc.pid, process_start=process_start, duration_ms=duration)))
+    def reap():
+        code = proc.wait()
+        cancelled = any(r.get('op') == 'cancel' and r.get('target') == ident and r.get('result') == 'cancel_requested'
+                        for r in journal_records())
+        append_record(operation_record(request, ident, command, "cancelled" if cancelled else "finished" if code == 0 else "failed",
+            dict(fields, pid=proc.pid, exit=code, duration_ms=int((time.monotonic()-started)*1000))))
+    threading.Thread(target=reap,name="asip-access-reaper",daemon=True).start()
     return {"schema_version": SCHEMA_VERSION, "ok": True, "id": ident,
             "operation_id": ident, "exit": 0, "stdout": "", "stderr": "",
             "duration_ms": duration, "data": {"operation_id": ident,
-            "op": "access", "state": "detached", "pid": proc.pid,
+            "op": "access", "state": "detached", "pid": proc.pid, "process_start": process_start,
             "authority": profile["name"], "change_id": request.get("change_id")}}
 
 
@@ -2937,113 +3112,97 @@ def command_for(request):
 
 
 def execute(command, cwd, env, emit, *, run_uid=None, redactions=None,
-            timeout_seconds=None):
-    """Run one bounded command, stream partial output, and retain its text."""
-    if timeout_seconds is None:
-        timeout_seconds = COMMAND_TIMEOUT_SECONDS
-    popen_identity = {}
-    if run_uid is not None and not (os.geteuid() != 0 and run_uid == os.getuid()):
+            timeout_seconds=None, on_start=None, cancelled=None):
+    timeout_seconds = timeout_seconds or COMMAND_TIMEOUT_SECONDS
+    identity = {}
+    if run_uid is not None:
         account = pwd.getpwuid(run_uid)
-        popen_identity = {"user": account.pw_uid, "group": account.pw_gid,
-                          "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid)}
-    proc = subprocess.Popen(command, cwd=cwd, env=env, **popen_identity,
-                            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            start_new_session=True)
+        identity = {"user":account.pw_uid,"group":account.pw_gid,
+                    "extra_groups":os.getgrouplist(account.pw_name,account.pw_gid)}
+    proc = subprocess.Popen(command,cwd=cwd,env=env,**identity,
+        stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.PIPE,start_new_session=True)
     selector = selectors.DefaultSelector()
-    selector.register(proc.stdout, selectors.EVENT_READ, "stdout")
-    selector.register(proc.stderr, selectors.EVENT_READ, "stderr")
-    captured = {"stdout": [], "stderr": []}
-    decoders = {name: codecs.getincrementaldecoder("utf-8")(errors="replace")
-                for name in captured}
-    pending = {name: "" for name in captured}
-    secrets = sorted((secret for secret in redactions or [] if secret),
-                     key=len, reverse=True)
-    redaction_lookbehind = max((len(secret) for secret in secrets), default=1) - 1
+    captures = {name:OutputCapture() for name in ("stdout","stderr")}
+    decoders = {name:codecs.getincrementaldecoder("utf-8")(errors="replace") for name in captures}
+    pending = {name:"" for name in captures}
+    secrets = sorted(set(secret for secret in redactions or [] if secret),key=len,reverse=True)
+    lookbehind = max((len(secret) for secret in secrets),default=1)-1
     connected = True
-    timed_out = False
-    deadline = time.monotonic() + timeout_seconds
+    timed_out = was_cancelled = False
+    deadline = time.monotonic()+timeout_seconds
 
-    def publish(name, chunk, *, final=False):
+    def publish(name, chunk, final=False):
         nonlocal connected
-        value = pending[name] + chunk
-        limit = len(value) if final else max(0, len(value) - redaction_lookbehind)
-        safe = []
-        cursor = 0
-        while cursor < limit:
-            match = next((secret for secret in secrets
-                          if value.startswith(secret, cursor)), None)
-            if match:
-                safe.append("[ASIP ACCESS VALUE REDACTED]")
-                cursor += len(match)
-            else:
-                safe.append(value[cursor])
-                cursor += 1
-        pending[name] = value[cursor:]
-        chunk = "".join(safe)
-        if chunk:
-            captured[name].append(chunk)
+        value = pending[name]+chunk
+        if secrets:
+            limit = len(value) if final else max(0,len(value)-lookbehind)
+            safe = []
+            cursor = 0
+            while cursor < limit:
+                match = next((secret for secret in secrets if value.startswith(secret,cursor)),None)
+                if match:
+                    safe.append("[ASIP ACCESS VALUE REDACTED]")
+                    cursor += len(match)
+                else:
+                    safe.append(value[cursor]); cursor += 1
+            pending[name] = value[cursor:]
+            value = "".join(safe)
+        else:
+            pending[name] = ""
+        if value:
+            captures[name].write(value)
             if connected:
                 try:
-                    emit({"stream": name, "data": chunk})
-                except (OSError, ValueError):
-                    # Output delivery is not command ownership. A vanished or
-                    # stalled reader cannot keep the mutation lane indefinitely.
+                    emit({"stream":name,"data":value})
+                except (OSError,ValueError):
                     connected = False
-
     try:
+        selector.register(proc.stdout,selectors.EVENT_READ,"stdout")
+        selector.register(proc.stderr,selectors.EVENT_READ,"stderr")
+        if on_start:
+            on_start(proc)
         while selector.get_map() or proc.poll() is None:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                if timed_out:
-                    # An escaped or uninterruptible descendant must not keep
-                    # the administrative server hostage after the kill grace.
+            remaining = deadline-time.monotonic()
+            if remaining <= 0 or (cancelled and cancelled.is_set() and not was_cancelled):
+                if timed_out or was_cancelled:
                     break
-                timed_out = True
+                was_cancelled = bool(cancelled and cancelled.is_set())
+                timed_out = not was_cancelled
                 _terminate_process_group(proc)
-                deadline = time.monotonic() + COMMAND_TERMINATE_GRACE_SECONDS
+                deadline = time.monotonic()+COMMAND_TERMINATE_GRACE_SECONDS
                 continue
-            # Continue watching the process even if it closes both output
-            # streams and then hangs. Conversely, continue draining pipes
-            # after the session leader exits because descendants may still
-            # hold them open.
-            ready = selector.select(timeout=min(remaining, 0.1)) if selector.get_map() else []
-            if not ready:
-                continue
-            for key, _ in ready:
-                try:
-                    data = os.read(key.fileobj.fileno(), 65536)
-                except BlockingIOError:
-                    continue
-                if data:
-                    publish(key.data, decoders[key.data].decode(data))
-                    continue
-                publish(key.data, decoders[key.data].decode(b"", final=True), final=True)
-                selector.unregister(key.fileobj)
-                key.fileobj.close()
+            ready = selector.select(timeout=min(max(remaining,0),0.1)) if selector.get_map() else []
+            if not selector.get_map() and proc.poll() is None:
+                time.sleep(0.05)
+            for key,_ in ready:
+                raw = os.read(key.fileobj.fileno(),65536)
+                if raw:
+                    publish(key.data,decoders[key.data].decode(raw))
+                else:
+                    publish(key.data,decoders[key.data].decode(b"",final=True),True)
+                    selector.unregister(key.fileobj); key.fileobj.close()
+        for name in captures:
+            if pending[name]:
+                publish(name,"",True)
+    except BaseException:
+        _terminate_process_group(proc)
+        for capture in captures.values():
+            capture.file.close()
+        raise
     finally:
         for key in list(selector.get_map().values()):
-            try:
-                selector.unregister(key.fileobj)
-            except (KeyError, ValueError):
-                pass
-            try:
-                key.fileobj.close()
-            except OSError:
-                pass
+            key.fileobj.close()
         selector.close()
-        if not timed_out and proc.poll() is None:
-            _terminate_process_group(proc)
-            timed_out = True
     if proc.poll() is None:
-        # The kernel may keep a process in an uninterruptible wait even after
-        # SIGKILL. Do not hold the serialized mutation lane waiting for it.
-        threading.Thread(target=proc.wait, name="asip-command-reaper", daemon=True).start()
+        threading.Thread(target=proc.wait,name="asip-command-reaper",daemon=True).start()
     else:
         proc.wait()
-    result = subprocess.CompletedProcess(
-        command, 124 if timed_out else proc.returncode, "".join(captured["stdout"]),
-        "".join(captured["stderr"]))
+    code = 130 if was_cancelled else 124 if timed_out else proc.returncode
+    result = subprocess.CompletedProcess(command,code,
+        captures["stdout"].prefix.decode(errors="replace"),captures["stderr"].prefix.decode(errors="replace"))
+    result.captures = captures
     result.timed_out = timed_out
+    result.cancelled = was_cancelled
     result.timeout_seconds = timeout_seconds
     return result
 
@@ -3082,7 +3241,8 @@ def operation_record(request, ident, command, state, fields=None):
         uid=request.get("_peer_uid", -1),
         op=request.get("op"),
         state=state,
-        argv=command,
+        argv=([pathlib.Path(command[0]).name, "[sensitive arguments omitted]"]
+              if request.get("sensitive") and command else command),
         cwd=request.get("cwd", "/"),
         reason=request.get("reason", ""),
     )
@@ -3092,154 +3252,125 @@ def operation_record(request, ident, command, state, fields=None):
     return record
 
 
+def offline_plan():
+    if os.path.lexists("/system-update"):
+        return True
+    for name in ("/var/lib/dnf/system-upgrade/transaction.json",
+                 "/usr/lib/sysimage/libdnf5/offline/offline-transaction-state.toml"):
+        path = pathlib.Path(name)
+        if path.is_file():
+            try:
+                text = path.read_text()
+            except OSError:
+                continue
+            if name.endswith(".json") or "download-complete" in text or "ready" in text:
+                return True
+    return False
+
+
+def touches_packages(command, request):
+    if request.get("op") == "pkg":
+        return True
+    return bool(command and pathlib.Path(command[0]).name in
+                ("dnf", "dnf5", "rpm", "apt", "apt-get", "dpkg", "pacman", "zypper"))
+
+
 def recorded_command(request, command, emit, ident=None, fields=None, before=None,
                      after_target=None, post_success=None, run_uid=None, redactions=None,
                      timeout_seconds=None):
-    """Persist start before Popen, then append exactly one terminal event."""
-    if timeout_seconds is None:
-        timeout_seconds = COMMAND_TIMEOUT_SECONDS
     ident = ident or str(uuid.uuid4())
     started = time.monotonic()
-    started_fields = dict(fields or {}, timeout_seconds=timeout_seconds)
-    append_record(operation_record(request, ident, command, "started", started_fields))
-    timed_out = False
+    timeout_seconds = request.get("timeout") or timeout_seconds or COMMAND_TIMEOUT_SECONDS
+    env = {"PATH":"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",**request.get("env",{})}
+    cwd = request.get("cwd","/")
+    if not os.path.isdir(cwd):
+        raise ValueError("cwd must name an existing directory")
+    if ACTIVE_REQUEST is not None:
+        ACTIVE_REQUEST["operation_id"] = ident
+    append_record(operation_record(request,ident,command,"started",dict(fields or {},timeout_seconds=timeout_seconds)))
+    cancel = threading.Event()
+    proc = None
+    def on_start(child):
+        token = (process_identity(child.pid) or {}).get("start")
+        with CONTROL_LOCK:
+            ACTIVE_COMMANDS[ident] = {"pid":child.pid,"process_start":token,"cancel":cancel}
+        append_record(operation_record(request,ident,command,"running",dict(fields or {},pid=child.pid,process_start=token)))
+    offline_before = offline_plan() if touches_packages(command, request) else None
+    terminal = {}
+    error_code = None
     try:
-        env = {"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"}
-        supplied = request.get("env", {})
-        if not isinstance(supplied, dict) or not all(isinstance(k, str) and isinstance(v, str)
-                                                     for k, v in supplied.items()):
-            raise ValueError("env must be a string map")
-        env.update(supplied)
-        cwd = request.get("cwd", "/")
-        if not isinstance(cwd, str) or not os.path.isdir(cwd):
-            raise ValueError("cwd must name an existing directory")
-        if run_uid is None and not redactions:
-            proc = execute(command, cwd, env, emit, timeout_seconds=timeout_seconds)
-        else:
-            proc = execute(command, cwd, env, emit, run_uid=run_uid, redactions=redactions,
-                           timeout_seconds=timeout_seconds)
-        out, err = proc.stdout or "", proc.stderr or ""
-        timed_out = bool(getattr(proc, "timed_out", False))
-        if timed_out:
-            err += "\nasip command timed out after %s seconds and its process group was terminated\n" % (
-                getattr(proc, "timeout_seconds", COMMAND_TIMEOUT_SECONDS))
-        exit_code = proc.returncode
-        terminal_fields = {"exit": exit_code,
-                           "duration_ms": int((time.monotonic() - started) * 1000)}
-        if timed_out:
-            terminal_fields.update({"timed_out": True,
-                                    "timeout_seconds": getattr(
-                                        proc, "timeout_seconds", COMMAND_TIMEOUT_SECONDS),
-                                    "error": "command exceeded its time limit; effects may be partial"})
-        if request.get("sensitive"):
-            terminal_fields.update({
-                "capture": "sensitive",
-                "stdout_sha256": hashlib.sha256(out.encode()).hexdigest(),
-                "stderr_sha256": hashlib.sha256(err.encode()).hexdigest(),
-            })
-        else:
-            terminal_fields.update({"stdout_blob": blob(out.encode()),
-                                    "stderr_blob": blob(err.encode())})
+        proc = execute(command,cwd,env,(lambda _frame:None) if request.get("sensitive") else emit,
+            run_uid=run_uid,redactions=redactions,timeout_seconds=timeout_seconds,on_start=on_start,cancelled=cancel)
+        code = proc.returncode
+        out,err = proc.stdout or "",proc.stderr or ""
+        if proc.cancelled or proc.timed_out:
+            error_code = "command_cancelled" if proc.cancelled else "command_timeout"
+            message = "command cancelled; effects may be partial" if proc.cancelled else "command exceeded its %s-second limit; effects may be partial" % timeout_seconds
+            proc.captures["stderr"].write("\n"+message+"\n")
+            err += "\n"+message
+            terminal.update(error=message,timed_out=proc.timed_out,cancelled=proc.cancelled)
         if before:
-            terminal_fields["before_blob"] = before
+            terminal["before_blob"] = before
         if after_target and os.path.isfile(after_target):
-            terminal_fields["after_blob"] = blob(pathlib.Path(after_target).read_bytes())
-        if proc.returncode == 0 and post_success:
+            terminal["after_blob"] = blob(pathlib.Path(after_target).read_bytes())
+        if code == 0 and post_success:
             try:
                 post_success()
-            except (OSError, ValueError) as exc:
-                terminal_fields["command_exit"] = proc.returncode
-                terminal_fields["error"] = str(exc)
-                exit_code = 70
-                terminal_fields["exit"] = exit_code
-                err += "asip post-operation recording failed: %s\n" % exc
-                if request.get("sensitive"):
-                    terminal_fields["stderr_sha256"] = hashlib.sha256(err.encode()).hexdigest()
-                else:
-                    terminal_fields["stderr_blob"] = blob(err.encode())
-        state = "finished" if exit_code == 0 else "failed"
-    except (OSError, ValueError) as exc:
-        out, err, exit_code, state = "", str(exc) + "\n", 127, "failed"
-        terminal_fields = {"exit": exit_code,
-                           "duration_ms": int((time.monotonic() - started) * 1000),
-                           "error": str(exc)}
+            except (OSError,ValueError) as exc:
+                terminal.update(command_exit=code,error=str(exc))
+                code = 70
+                message = "post-operation recording failed: %s" % exc
+                proc.captures["stderr"].write("\n"+message+"\n")
+                err += "\n"+message
+        for stream,capture in proc.captures.items():
+            terminal[stream+"_bytes"] = capture.bytes
+            terminal[stream+"_sha256"] = capture.hash.hexdigest()
+            if not request.get("sensitive"):
+                terminal[stream+"_blob"] = capture.store()
+        terminal["output_limited"] = any(c.bytes > MAX_CAPTURE_BYTES for c in proc.captures.values())
         if request.get("sensitive"):
-            terminal_fields.update({
-                "capture": "sensitive", "stdout_sha256": hashlib.sha256(b"").hexdigest(),
-                "stderr_sha256": hashlib.sha256(err.encode()).hexdigest(),
-            })
+            terminal["capture"] = "sensitive"
+        state = "cancelled" if proc.cancelled else "finished" if code == 0 else "failed"
+    except (OSError,ValueError) as exc:
+        out,err,code,state = "",str(exc),127,"failed"
+        if request.get("sensitive"):
+            terminal.update(capture="sensitive",stdout_sha256=hashlib.sha256(b"").hexdigest(),stderr_sha256=hashlib.sha256(err.encode()).hexdigest())
+            terminal["error"] = "sensitive command could not start; inspect executable, directory and permissions"
         else:
-            terminal_fields.update({"stdout_blob": blob(b""),
-                                    "stderr_blob": blob(err.encode())})
-        if before:
-            terminal_fields["before_blob"] = before
-    if request.get("op") == "snap" and "backend_id" not in terminal_fields:
-        backend_id = parse_snapper_backend_id(out)
-        if backend_id:
-            terminal_fields["backend_id"] = backend_id
-    append_record(operation_record(request, ident, command, state,
-                                   dict(fields or {}, **terminal_fields)))
-    if request.get("sensitive"):
-        stdout_excerpt, stdout_truncated = "", bool(out)
-        stderr_excerpt, stderr_truncated = "", bool(err)
-    else:
-        stdout_excerpt, stdout_truncated = excerpt(out)
-        stderr_excerpt, stderr_truncated = excerpt(err)
-    result = {
-        "schema_version": SCHEMA_VERSION,
-        "ok": exit_code == 0,
-        "id": ident,
-        "operation_id": ident,
-        "exit": exit_code,
-        "stdout": stdout_excerpt,
-        "stderr": stderr_excerpt,
-        "stdout_truncated": stdout_truncated,
-        "stderr_truncated": stderr_truncated,
-        "duration_ms": terminal_fields["duration_ms"],
-        "output_bytes": len(out.encode()) + len(err.encode()),
-    }
-    data = {
-        "operation_id": ident,
-        "op": request.get("op"),
-        "exit": exit_code,
-        "ok": exit_code == 0,
-        "change_id": request.get("change_id"),
-    }
+            terminal["error"] = str(exc)
+            terminal.update(stdout_blob=blob(b""),stderr_blob=blob(err.encode()))
+    finally:
+        with CONTROL_LOCK:
+            ACTIVE_COMMANDS.pop(ident,None)
+        if proc is not None:
+            for capture in proc.captures.values():
+                capture.file.close()
+    terminal.update(exit=code,duration_ms=int((time.monotonic()-started)*1000))
     if request.get("op") == "snap":
-        snap_record = {
-            "id": ident,
-            "op": "snap",
-            "snapshotter": (fields or {}).get("snapshotter") or "snapper",
-            "backend_id": terminal_fields.get("backend_id") or parse_snapper_backend_id(out),
-            "change_id": request.get("change_id"),
-            "reason": request.get("reason", ""),
-            "at": now(),
-        }
-        data.update(recovery_identity(snap_record))
-    if request.get("op") == "rollback":
-        data["recovery_handle"] = (request.get("argv") or [None])[0]
-        data["rollback_accepts"] = "recovery_handle"
+        terminal["backend_id"] = parse_snapper_backend_id(out)
+    append_record(operation_record(request,ident,command,state,dict(fields or {},**terminal)))
+    data = {"operation_id":ident,"state":state,"exit":code}
+    if request.get("op") == "snap":
+        data.update(recovery_identity(dict(terminal,id=ident,op="snap",snapshotter=(fields or {}).get("snapshotter") or "snapper",change_id=request.get("change_id"),reason=request.get("reason",""),at=now())))
     if request.get("op") == "conf":
-        data["target"] = request.get("target")
-        data["changed"] = terminal_fields.get("before_blob") != terminal_fields.get("after_blob") \
-            if terminal_fields.get("before_blob") and terminal_fields.get("after_blob") else None
-        data["before_blob"] = terminal_fields.get("before_blob")
-        data["after_blob"] = terminal_fields.get("after_blob")
-    result["data"] = data
-    if exit_code != 0:
-        result["error"] = {
-            "code": "command_timeout" if timed_out else "command_failed",
-            "message": ("privileged command exceeded its %s-second time limit; effects may be partial" %
-                        terminal_fields["timeout_seconds"] if timed_out else
-                        "privileged command exited with status %s" % exit_code),
-            "retryable": False,
-            "remediation": ("inspect the operation and actual system state before deciding whether to retry" if timed_out else
-                            "inspect the output excerpt or blob resources before choosing a corrective command"),
-        }
-    for field in ("capture", "stdout_sha256", "stderr_sha256",
-                  "stdout_blob", "stderr_blob"):
-        if field in terminal_fields:
-            result[field] = terminal_fields[field]
+        data["changed"] = terminal.get("before_blob") != terminal.get("after_blob") if before and terminal.get("after_blob") else None
+    result = {"schema_version":SCHEMA_VERSION,"ok":code==0,"id":ident,"operation_id":ident,"exit":code,"data":data,
+        "stdout":"" if request.get("sensitive") else out,
+        "stderr":"" if request.get("sensitive") else err,
+        "stdout_truncated":terminal.get("stdout_bytes",len(out.encode())) > len(out.encode()),
+        "stderr_truncated":terminal.get("stderr_bytes",len(err.encode())) > len(err.encode()),
+        "duration_ms":terminal["duration_ms"],"output_limited":terminal.get("output_limited",False)}
+    if offline_before and not offline_plan():
+        result["warnings"] = ["offline_update_invalidated"]
+        append_record(attach_change(record_for(request, id=str(uuid.uuid4()), at=now(),
+            uid=request.get("_peer_uid", -1), op="observe", subject="offline package update",
+            reason="Package work invalidated the staged offline transaction; stage it again before reboot.",
+            source="package-state", references=[ident]), request))
+    for field in ("capture","stdout_blob","stderr_blob","stdout_bytes","stderr_bytes"):
+        if field in terminal:
+            result[field] = terminal[field]
+    if code:
+        result["error"] = {"code":error_code or "command_failed","message":terminal.get("error") or "command exited %s" % code,"retryable":False}
     return result
 
 
@@ -3266,6 +3397,7 @@ def perform_snapshot(request, reason, emit, parent_id=None):
 
 
 def _handle(request, emit=lambda _frame: None):
+    global RUNTIME_DRAINING
     started = time.monotonic()
     ident = str(uuid.uuid4())
     reason = request.get("reason", "")
@@ -3290,17 +3422,20 @@ def _handle(request, emit=lambda _frame: None):
             return access_request(request, ident, started)
         if request.get("op") == "operation":
             return operation_request(request, ident, started)
+        if request.get("op") == "cancel":
+            return operation_cancel_request(request, ident, started)
         if request.get("op") == "journal-search":
             return journal_search_request(request, ident, started)
-        if request.get("op") == "eval-evidence":
-            return eval_evidence_request(request, ident, started)
         if request.get("op") == "blob":
             return blob_request(request, ident, started)
         if request.get("op") in ("project-list", "drift-list"):
             path = PROJECTS if request.get("op") == "project-list" else DRIFT_DECISIONS
             output = path.read_text(encoding="utf-8") if path.exists() else ""
             return {"id": ident, "exit": 0, "stdout": output, "stderr": "",
-                    "data": {"path": str(path), "text": output},
+                    "data": {"path": str(path), "text": output,
+                             "entries": [{"name":match[1], "path":match[2], "description":match[3]}
+                                         for line in output.splitlines()
+                                         if (match := PROJECT_PATTERN.match(line))]},
                     "duration_ms": int((time.monotonic() - started) * 1000)}
         if request.get("op") == "machine-policy":
             data = machine_policy_payload()
@@ -3362,24 +3497,32 @@ def _handle(request, emit=lambda _frame: None):
         if request.get("op") == "snap":
             return perform_snapshot(request, reason or "asip snapshot", emit)
         elif request.get("op") == "access" and request.get("action") in ("use", "start"):
-            name = access_identity(request)
-            profile = access_profile(name)
-            if profile is None:
-                request_result = access_request(dict(request, action="request",
-                                                     label=request.get("label") or name,
-                                                     env_var=request.get("env_var") or "ASIP_ACCESS_VALUE"),
-                                                ident, started)
-                return request_result
+            names = request.get("name")
+            names = names if isinstance(names, list) else [access_identity(request)]
+            if not names or len(names) > 16 or not all(isinstance(n, str) and ACCESS_NAME.fullmatch(n) for n in names):
+                raise ValueError("access needs 1–16 valid authority names")
+            names = list(dict.fromkeys(names))
+            profiles = []
+            for name in names:
+                profile = access_profile(name)
+                if profile is None:
+                    return access_request(dict(request, name=name, action="request", label=name,
+                        env_var=request.get("env_var") or "ASIP_ACCESS_VALUE"), ident, started)
+                profiles.append(profile)
+            if len({p["env_var"] for p in profiles}) != len(profiles):
+                raise ValueError("authority environment names conflict")
             command = command_for(dict(request, op="do"))
             run_uid = request.get("_peer_uid", -1)
-            _, access_env = access_environment(request, profile, run_uid)
+            _, access_env = access_environment(request, profiles[0], run_uid)
+            for profile in profiles[1:]:
+                access_env[profile["env_var"]] = profile["value"]
             use_request = dict(request, env=access_env)
             if request.get("action") == "start":
-                return detached_access_command(request, command, profile, ident)
-            fields = {"authority": name, "env_var": profile["env_var"],
-                      "revision": profile["revision"], "run_as_uid": run_uid}
+                return detached_access_command(use_request, command, profiles[0], ident, profiles=profiles)
+            fields = {"authority": profiles[0]["name"], "authorities": names, "run_as_uid": run_uid,
+                      "revisions": {p["name"]: p["revision"] for p in profiles}}
             return recorded_command(use_request, command, emit, ident=ident, fields=fields,
-                                    run_uid=run_uid, redactions=[profile["value"]],
+                                    run_uid=run_uid, redactions=[p["value"] for p in profiles],
                                     timeout_seconds=ACCESS_USE_TIMEOUT_SECONDS)
         elif request.get("op") == "project":
             proc = project(request)
@@ -3395,6 +3538,22 @@ def _handle(request, emit=lambda _frame: None):
                                     fields={"snapshot_id": request["argv"][0]})
         else:
             command = command_for(request)
+            # Reply and fsync before restarting our own service. New mutations
+            # are held at the entry boundary until systemd replaces this process.
+            if (request.get("op") in ("svc", "do") and len(command) >= 3
+                    and pathlib.Path(command[0]).name == "systemctl"
+                    and command[1] in ("restart", "try-restart", "reload-or-restart")
+                    and any(unit in ('asip','asip.service') for unit in command[2:])):
+                if any(unit.startswith("-") for unit in command[2:]):
+                    raise ValueError("restart units must be unit names")
+                append_record(operation_record(request, ident, command, "started"))
+                append_record(operation_record(request, ident, command, "restart_queued",
+                                                {"restart_units": command[2:]}))
+                RUNTIME_DRAINING = True
+                return {"id": ident, "exit": 0, "stdout": "Restart queued; inspect health after reconnecting.\n",
+                        "stderr": "", "data": {"state": "restart_queued"},
+                        "_post_restart": command[2:], "_post_restart_op": request['op'],
+                        "_post_restart_action": command[1]}
             before = None
             target = request.get("target")
             if request.get("op") == "conf":
@@ -3479,7 +3638,8 @@ def _idempotency_replay(request):
     if started:
         operation = next((record for record in reversed(journal_records())
                           if record.get("request_key") == key
-                          and record.get("op") != "request"), None)
+                          and record.get("op") != "request"
+                          and record.get("uid") == request.get("_peer_uid", -1)), None)
         response = structured_error(
             "request_in_progress",
             "a request with this request_key is already in progress",
@@ -3518,7 +3678,7 @@ def _finish_claim(request, claim_id, response):
     if not claim_id:
         return
     retained = {key: value for key, value in normalize_response(response).items()
-                if key not in ("stdout", "stderr", "data")}
+                if key not in ("stdout", "stderr") and not key.startswith("_post_")}
     retained["stdout"] = ""
     retained["stderr"] = response.get("error", {}).get("message", "") + (
         "\n" if response.get("error") else "")
@@ -3530,61 +3690,61 @@ def _finish_claim(request, claim_id, response):
 
 
 def handle(request, emit=lambda _frame: None):
-    # The lock is the transaction boundary. In particular, no other privileged
-    # request can run between a package snapshot and its package subprocess.
+    global ACTIVE_REQUEST
     try:
         validate_envelope(request)
+        request = journal_refs().request(request)
     except StaleRequestError as exc:
-        return structured_error(
-            "stale_request", str(exc), exit_code=75, retryable=True,
-            remediation="inspect the operation state, then submit a fresh request",
-        )
+        return structured_error("stale_request",str(exc),exit_code=75,retryable=True)
     except ValueError as exc:
-        return structured_error(
-            "invalid_request", str(exc),
-            remediation="correct the request and retry",
-        )
-    if not SERIAL_LOCK.acquire(timeout=SERIAL_LANE_WAIT_SECONDS):
-        return structured_error(
-            "mutation_lane_busy",
-            "another ASIP request is still using the serialized administration lane",
-            exit_code=75, retryable=True,
-            remediation="inspect the active operation through the read-only interface and retry",
-        )
+        return structured_error("invalid_request",str(exc))
+    if is_read_only(request):
+        return normalize_response(_handle(request,emit))
+    if RUNTIME_DRAINING:
+        replay = _idempotency_replay(request)
+        return replay or structured_error("daemon_restarting", "reconnect and inspect health", exit_code=75, retryable=True)
+    parent = nested_operation(request)
+    if parent:
+        return structured_error("nested_mutation","an ASIP child cannot enter the mutation lane; submit the next operation after its parent finishes",details={"operation_id":parent})
+    lock = CONTROL_LOCK if request.get("op") == "cancel" else SERIAL_LOCK
+    if not lock.acquire(timeout=SERIAL_LANE_WAIT_SECONDS):
+        parent = nested_operation(request)
+        if parent:
+            return structured_error("nested_mutation","ASIP child attempted a nested mutation",details={"operation_id":parent})
+        active = ACTIVE_REQUEST or {}
+        return structured_error("mutation_lane_busy","another operation is active",exit_code=75,retryable=True,details={"operation_id":active.get("operation_id"),"request_key":active.get("request_key")})
+    previous = ACTIVE_REQUEST
     try:
-        try:
-            # Recheck age after lock acquisition; the request can become stale
-            # while it waits for another operation to finish.
-            validate_envelope(request)
-        except StaleRequestError as exc:
-            return structured_error(
-                "stale_request", str(exc), exit_code=75, retryable=True,
-                remediation="inspect the operation state, then submit a fresh request",
-            )
-        except ValueError as exc:
-            return structured_error(
-                "invalid_request",
-                str(exc),
-                remediation="correct the request and retry",
-            )
+        validate_envelope(request)
         replay = _idempotency_replay(request)
         if replay:
             return replay
+        if RUNTIME_DRAINING:
+            return structured_error("daemon_restarting", "reconnect and inspect health", exit_code=75, retryable=True)
         try:
             validate_intent(request)
         except ValueError as exc:
-            return structured_error(
-                "intent_required" if "mutation requires" in str(exc) else "invalid_request",
-                str(exc),
-                remediation="start an ASIP change or pass standalone_reason" if
-                "mutation requires" in str(exc) else "correct the request and retry",
-            )
-        claim_id = None if request.get("_read_only") else _claim_request(request)
-        response = normalize_response(_handle(request, emit))
-        _finish_claim(request, claim_id, response)
+            return structured_error("intent_required" if "mutation requires" in str(exc) else "invalid_request",str(exc))
+        claim = _claim_request(request)
+        if request.get("op") != "cancel":
+            ACTIVE_REQUEST = {"request_key":request.get("request_key"),"operation_id":None}
+        try:
+            response = normalize_response(_handle(request,emit))
+        except Exception:
+            active = ACTIVE_REQUEST or {}
+            response = structured_error('internal_error', 'operation interrupted; effects may be partial',
+                exit_code=70, details={'operation_id':active.get('operation_id')})
+            response['id'] = active.get('operation_id') or claim or ''
+        _finish_claim(request,claim,response)
         return response
+    except StaleRequestError as exc:
+        return structured_error("stale_request",str(exc),exit_code=75,retryable=True)
+    except (OSError,ValueError) as exc:
+        return structured_error("invalid_request",str(exc))
     finally:
-        SERIAL_LOCK.release()
+        if request.get("op") != "cancel":
+            ACTIVE_REQUEST = previous
+        lock.release()
 
 
 def handle_read_only(request):
@@ -3597,7 +3757,7 @@ def handle_read_only(request):
         (op == "access" and action in ("list", "show")) or
         (op == "audit-pending") or
         (op == "verify" and action == "list") or
-        (op in ("log", "brief", "context", "doctor", "summary", "recovery", "facts", "operation", "journal-search", "eval-evidence", "blob", "machine-policy",
+        (op in ("log", "brief", "context", "doctor", "summary", "recovery", "facts", "operation", "journal-search", "blob", "machine-policy",
                 "project-list", "drift-list"))
     )
     if not allowed:

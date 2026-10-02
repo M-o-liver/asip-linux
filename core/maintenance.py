@@ -2,7 +2,7 @@
 
 Mutation and journaling stay in the privileged daemon. This module owns the
 maintenance vocabulary and converts an explicit record sequence into bounded
-status/history views, so those rules are testable without socket or root state.
+status/history views.
 """
 
 from __future__ import annotations

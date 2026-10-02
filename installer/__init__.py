@@ -1,1 +1,0 @@
-"""Graphical ASIP bootstrap installer."""

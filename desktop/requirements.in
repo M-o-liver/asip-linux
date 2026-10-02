@@ -1,0 +1,2 @@
+# Desktop-only Python dependency. GTK4/WebKitGTK/PyGObject come from the OS.
+openai-codex==0.147.0

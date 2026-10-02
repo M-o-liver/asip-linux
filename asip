@@ -1,7 +1,5 @@
 #!/bin/sh
-# Stable ASIP command entrypoint. The compatibility-heavy POSIX CLI lives in
-# cli/asip.sh; this launcher keeps the installed command and release contract
-# boring while allowing the implementation to live with the other CLI code.
+# ASIP entrypoint for a source checkout or /usr/lib/asip installation.
 set -eu
 
 root="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"

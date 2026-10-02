@@ -14,7 +14,7 @@ read_version() {
 		version="$(sed -n '1{s/[[:space:]]*$//;p;q;}' "$candidate")"
 		[ -n "$version" ] && { printf '%s' "$version"; return; }
 	done
-	printf '2.0.0'
+	printf 'unknown'
 }
 
 VERSION="$(read_version)"
@@ -73,7 +73,6 @@ USAGE
   $PROG [--json] ask list|show [ID]
   $PROG [--json] access list|show [NAME]
   $PROG [--json] operation ID
-  $PROG [--json] eval-evidence CHANGE-ID
   $PROG [--json] blob SHA256 [OFFSET]
 
 --json prints the structured data object only. Human output may include
@@ -199,10 +198,6 @@ facts)
 operation)
 	[ "$#" -eq 2 ] || { usage >&2; exit 64; }
 	request --op operation -- "$2"
-	;;
-eval-evidence)
-	[ "$#" -eq 2 ] || { usage >&2; exit 64; }
-	request --op eval-evidence -- "$2"
 	;;
 blob)
 	if [ "$#" -lt 2 ] || [ "$#" -gt 3 ]; then usage >&2; exit 64; fi

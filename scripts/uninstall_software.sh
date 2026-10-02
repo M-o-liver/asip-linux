@@ -1,5 +1,5 @@
 #!/bin/sh
-# Complete deferred ASIP removal outside the daemon's systemd service group.
+# Run from an independent trusted root process: this stops the ASIP daemons.
 set -eu
 
 mode=${1:-}
@@ -23,8 +23,7 @@ rm -f -- /etc/systemd/system/asip-read.socket /etc/systemd/system/asip-read.serv
 rm -f -- /usr/local/bin/asip /usr/local/bin/a /usr/local/bin/asip-inspect \
 	/usr/local/sbin/asip-restore /usr/local/sbin/asip-uninstall \
 	/etc/audit/rules.d/asip.rules
-rm -rf -- /usr/lib/asip /usr/share/asip/eval /usr/share/asip/docs \
-	/usr/share/asip/mcp-source
+rm -rf -- /usr/lib/asip /usr/share/asip
 systemctl daemon-reload >/dev/null 2>&1 || true
 if [ "$mode" = --purge ]; then
 	rm -rf -- /etc/asip /var/lib/asip

@@ -11,17 +11,24 @@ import json
 import pathlib
 import socket
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Callable
 
 
 SCHEMA_VERSION = 1
 _VERSION_FILE = pathlib.Path(__file__).resolve().parents[1] / "VERSION"
-VERSION = _VERSION_FILE.read_text(encoding="utf-8").strip() if _VERSION_FILE.is_file() else "0.1.0"
+if _VERSION_FILE.is_file():
+    VERSION = _VERSION_FILE.read_text(encoding="utf-8").strip()
+else:
+    from importlib.metadata import version, PackageNotFoundError
+    try:
+        VERSION = version('asip-mcp')
+    except PackageNotFoundError:
+        VERSION = 'unknown'
 PRIVILEGED_SOCKET = "/run/asip/sock"
 READ_ONLY_SOCKET = "/run/asip/read.sock"
 MAX_REQUEST_BYTES = 1024 * 1024
-MAX_EXCERPT_BYTES = 16 * 1024
+MAX_EXCERPT_BYTES = 2 * 1024
 
 
 READ_ONLY_OPERATIONS = {
@@ -31,7 +38,6 @@ READ_ONLY_OPERATIONS = {
     "context",
     "doctor",
     "drift-list",
-    "eval-evidence",
     "facts",
     "journal-search",
     "log",
@@ -120,21 +126,19 @@ def excerpt(value: str, limit: int = MAX_EXCERPT_BYTES) -> tuple[str, bool]:
 @dataclass
 class SocketReply:
     response: dict[str, Any]
-    frames: list[dict[str, Any]] = field(default_factory=list)
 
 
 class UnixClient:
     """One-request ASIP client used by the CLI and protocol adapters."""
 
-    def __init__(self, socket_path: str = PRIVILEGED_SOCKET):
+    def __init__(self, socket_path: str = PRIVILEGED_SOCKET, timeout: float = 930):
         self.socket_path = socket_path
+        self.timeout = timeout
 
     def call(
         self,
         request: dict[str, Any],
         on_stream: Callable[[str, str], None] | None = None,
-        *,
-        retain_frames: bool = False,
     ) -> SocketReply:
         payload = dict(request)
         payload.setdefault("schema_version", SCHEMA_VERSION)
@@ -146,25 +150,26 @@ class UnixClient:
         if len(raw) > MAX_REQUEST_BYTES:
             raise ValueError("request exceeds the ASIP protocol limit")
 
-        frames: list[dict[str, Any]] = []
         response: dict[str, Any] | None = None
         pending = b""
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as conn:
+            conn.settimeout(10)
             conn.connect(self.socket_path)
+            conn.settimeout(self.timeout)
             conn.sendall(raw)
             while response is None:
                 chunk = conn.recv(65536)
                 if not chunk:
                     break
                 pending += chunk
+                if len(pending) > 4 * 1024 * 1024:
+                    raise ValueError("ASIP response frame exceeds the 4MiB limit")
                 while b"\n" in pending:
                     line, pending = pending.split(b"\n", 1)
                     if not line:
                         continue
                     frame = json.loads(line)
                     if "stream" in frame:
-                        if retain_frames:
-                            frames.append(frame)
                         if on_stream:
                             on_stream(frame["stream"], frame.get("data", ""))
                     else:
@@ -172,4 +177,4 @@ class UnixClient:
                         break
         if response is None:
             raise ConnectionError("ASIP daemon closed the socket without a response")
-        return SocketReply(response=response, frames=frames)
+        return SocketReply(response=response)

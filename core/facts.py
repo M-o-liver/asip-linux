@@ -7,12 +7,15 @@ inherit authority from the privileged request dispatcher.
 from __future__ import annotations
 
 import datetime as dt
+import json
 import os
 import pathlib
 import platform
+import pwd
 import re
 import shutil
 import subprocess
+import sys
 from typing import Any
 
 
@@ -47,10 +50,10 @@ def _run_timeout(command: list[str], timeout: int = 5, env=None):
 def fact_kernel() -> dict[str, Any]:
     running = platform.release()
     modules = pathlib.Path("/lib/modules")
-    installed = sorted(
+    installed = sorted((
         path.name for path in modules.iterdir()
         if path.is_dir() and not path.name.startswith(".")
-    ) if modules.is_dir() else []
+    ), key=_version_key) if modules.is_dir() else []
     newest = installed[-1] if installed else None
     default_boot = None
     if shutil.which("grubby"):
@@ -64,6 +67,11 @@ def fact_kernel() -> dict[str, Any]:
         "default_boot": default_boot,
         "reboot_pending": bool(newest and running != newest),
     }
+
+
+def _version_key(value: str):
+    return tuple((1, int(part)) if part.isdigit() else (0, part)
+                 for part in re.split(r'(\d+)', value))
 
 
 def fact_disk(mount: str = "/") -> dict[str, Any]:
@@ -86,11 +94,14 @@ def fact_disk(mount: str = "/") -> dict[str, Any]:
 def fact_pkg(name: str) -> dict[str, Any]:
     if not FACT_SAFE_NAME.match(name):
         raise ValueError("package name is not safe")
+    if name.startswith('-'):
+        raise ValueError("package name must not be an option")
     if shutil.which("rpm"):
         proc = _run_timeout(["rpm", "-q", "--qf", "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}\\n", name])
         if proc.returncode == 0:
             return {"name": name, "installed": True, "nevra": proc.stdout.strip(), "source": "rpm"}
-        return {"name": name, "installed": False, "nevra": None, "source": "rpm"}
+        return {"name": name, "installed": None if proc.stderr else False, "nevra": None,
+                "source": "rpm", **({"error": proc.stderr.strip()[:240]} if proc.stderr else {})}
     return {"name": name, "installed": None, "nevra": None, "source": None,
             "error": "no supported package query"}
 
@@ -98,9 +109,12 @@ def fact_pkg(name: str) -> dict[str, Any]:
 def fact_unit(name: str, user: bool = False, request=None) -> dict[str, Any]:
     if not FACT_SAFE_NAME.match(name):
         raise ValueError("unit name is not safe")
+    if name.startswith('-'):
+        raise ValueError("unit name must not be an option")
     command = ["systemctl"]
     env = None
     run_user = None
+    identity = {}
     if user:
         uid = (request or {}).get("_peer_uid")
         if isinstance(uid, int) and uid >= 0:
@@ -110,13 +124,16 @@ def fact_unit(name: str, user: bool = False, request=None) -> dict[str, Any]:
                 "DBUS_SESSION_BUS_ADDRESS": f"unix:path=/run/user/{uid}/bus",
             }
             run_user = uid
+            account = pwd.getpwuid(uid)
+            identity = {"group": account.pw_gid,
+                        "extra_groups": os.getgrouplist(account.pw_name, account.pw_gid)}
         command.append("--user")
     command.extend(["show", name, "-p", "LoadState", "-p", "ActiveState",
                     "-p", "SubState", "-p", "Result", "-p", "UnitFileState"])
     try:
         proc = subprocess.run(
             command, capture_output=True, text=True, timeout=5, check=False,
-            env=env, user=run_user,
+            env=env, user=run_user, **identity,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         proc = subprocess.CompletedProcess(command, 1, "", str(exc))
@@ -135,26 +152,49 @@ def fact_unit(name: str, user: bool = False, request=None) -> dict[str, Any]:
         "enabled": fields.get("UnitFileState"),
         "failed": fields.get("ActiveState") == "failed" or fields.get("Result") == "exit-code",
         "ok": proc.returncode == 0,
+        **({"error": (proc.stderr or "Unit inspection failed").strip()[:240]} if proc.returncode else {}),
     }
 
 
-def fact_path(path: str) -> dict[str, Any]:
+def fact_path(path: str, request=None) -> dict[str, Any]:
     if not isinstance(path, str) or not path.startswith("/"):
         raise ValueError("path must be absolute")
+    uid = (request or {}).get('_peer_uid')
+    if os.geteuid() == 0 and isinstance(uid, int) and uid > 0:
+        account = pwd.getpwuid(uid)
+        command = [sys.executable, '-c',
+                   'import sys,json;sys.path.insert(0,sys.argv[1]);from core.facts import fact_path;print(json.dumps(fact_path(sys.argv[2])))',
+                   str(pathlib.Path(__file__).resolve().parents[1]), path]
+        proc = subprocess.run(command, capture_output=True, text=True, timeout=5,
+                              env={'PATH':'/usr/bin:/bin'}, user=uid, group=account.pw_gid,
+                              extra_groups=os.getgrouplist(account.pw_name,account.pw_gid))
+        if proc.returncode:
+            return {'path':path,'exists':None,'error':'path inspection failed as the calling user'}
+        return json.loads(proc.stdout)
     target = pathlib.Path(path)
-    if not target.exists():
+    try:
+        info = target.lstat()
+    except FileNotFoundError:
         return {"path": path, "exists": False}
-    info = target.stat()
+    except PermissionError:
+        return {'path':path,'exists':None,'error':'permission_denied'}
     data = {
         "path": path,
         "exists": True,
-        "type": ("dir" if target.is_dir() else "symlink" if target.is_symlink() else
+        "type": ("symlink" if target.is_symlink() else "dir" if target.is_dir() else
                  "file" if target.is_file() else "other"),
         "size": info.st_size,
         "mtime": dt.datetime.fromtimestamp(info.st_mtime, dt.timezone.utc).isoformat(),
     }
     if target.is_file() and info.st_size <= PATH_TEXT_LIMIT:
-        raw = target.read_bytes()
+        try:
+            with target.open('rb') as handle:
+                raw = handle.read(PATH_TEXT_LIMIT+1)
+        except PermissionError:
+            data['error'] = 'permission_denied'
+            return data
+        if len(raw) > PATH_TEXT_LIMIT:
+            return data
         try:
             text = raw.decode("utf-8")
         except UnicodeDecodeError:
@@ -175,6 +215,8 @@ def fact_path(path: str) -> dict[str, Any]:
 def fact_kmod(name: str) -> dict[str, Any]:
     if not FACT_SAFE_NAME.match(name):
         raise ValueError("module name is not safe")
+    if name.startswith('-'):
+        raise ValueError("module name must not be an option")
     loaded = pathlib.Path("/sys/module", name).is_dir()
     version = None
     filename = None
@@ -188,7 +230,7 @@ def fact_kmod(name: str) -> dict[str, Any]:
     built_for = []
     modules = pathlib.Path("/lib/modules")
     if modules.is_dir():
-        for kernel_dir in sorted(path for path in modules.iterdir() if path.is_dir())[-12:]:
+        for kernel_dir in sorted((path for path in modules.iterdir() if path.is_dir()), key=lambda path:_version_key(path.name))[-12:]:
             extra = kernel_dir / "extra" / name
             if extra.is_dir() and any(extra.glob("*.ko*")):
                 built_for.append(kernel_dir.name)
@@ -217,7 +259,7 @@ def collect_fact(spec: str, request=None) -> dict[str, Any]:
     if spec.startswith("unit:"):
         return fact_unit(spec.split(":", 1)[1], user=False, request=request)
     if spec.startswith("path:"):
-        return fact_path(spec.split(":", 1)[1])
+        return fact_path(spec.split(":", 1)[1], request=request)
     if spec.startswith("kmod:"):
         return fact_kmod(spec.split(":", 1)[1])
     raise ValueError(f"unknown fact {spec}")

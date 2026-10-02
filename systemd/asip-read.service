@@ -2,12 +2,12 @@
 Description=ASIP read-only inspection daemon
 
 [Service]
-ExecStart=/usr/lib/asip/core/server.py --serve-read-only
+ExecStart=/usr/bin/python3 /usr/lib/asip/core/server.py --serve-read-only
 User=root
 Group=root
 Restart=on-failure
 RestartSec=2s
 NoNewPrivileges=true
-PrivateTmp=true
+PrivateTmp=false
 ProtectSystem=strict
 ProtectHome=read-only

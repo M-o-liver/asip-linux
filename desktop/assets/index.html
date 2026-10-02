@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>ASIP</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand"><strong>ASIP</strong></div>
+      <nav aria-label="ASIP">
+        <button data-tab="ask" class="active"><span>✦</span>Ask</button>
+        <button data-tab="computer"><span>▣</span>This computer</button>
+        <button data-tab="changes"><span>↗</span>History</button>
+        <button data-tab="settings"><span>◌</span>Settings</button>
+      </nav>
+      <section class="sidebar-conversations" aria-label="Recent conversations">
+        <p class="kicker">Conversations</p>
+        <div id="recent-conversations"><p class="sidebar-empty">Your conversations will appear here.</p></div>
+      </section>
+      <div class="connection"><i></i><span id="connection-label">Starting ASIP</span></div>
+    </aside>
+
+    <main>
+      <header class="topbar">
+        <div class="topbar-title"><span class="topbar-mark">A</span><span id="topbar-view-label">Ask</span></div>
+        <div class="topbar-actions"><span id="topbar-status" role="status">Connecting</span><button class="theme-toggle" id="theme-toggle" type="button" aria-label="Switch to dark mode">☾ Dark</button></div>
+      </header>
+      <div class="application-error" id="error-banner" role="alert" hidden><span id="application-error"></span> <button id="dismiss-error" class="quiet">Dismiss</button> <button id="retry-core" class="quiet">Retry connection</button></div>
+      <section class="view active" data-view="ask">
+        <header class="page-header">
+          <div class="ask-toolbar"><p class="kicker">Your computer</p><div class="conversation-controls"><div class="conversation-menu"><button class="conversation-trigger" id="conversation-trigger" type="button" aria-haspopup="menu" aria-expanded="false">Quick Ask <span aria-hidden="true">⌄</span></button><div class="conversation-popover" id="conversation-popover" role="menu" aria-label="Conversations" hidden></div></div><button class="quiet compact new-conversation" id="new-conversation" type="button" aria-label="Start a new conversation">+</button></div></div>
+          <h1>What would you like to do?</h1>
+          <p id="conversation-continuity">Ask naturally. ASIP keeps the work connected to durable machine history.</p>
+        </header>
+        <div class="conversation" id="conversation">
+          <div class="welcome-card">
+            <span class="agent-mark">A</span>
+            <div><strong>Let’s get to work.</strong><p id="welcome-status">Connecting to this computer…</p></div>
+          </div>
+          <div class="connect-card" id="connect-ai" hidden>
+            <p class="kicker">Connect your AI</p>
+            <div class="provider-choice"><div><strong>ChatGPT</strong><p>Use your ChatGPT account through Codex.</p></div><button class="primary" id="connect-openai">Continue with ChatGPT</button></div>
+            <div class="provider-choice"><div><strong>Google Gemini</strong><p>Choose a model available to your Google account.</p></div><button id="onboarding-connect-google">Connect Google</button></div>
+
+            <div class="provider-choice advanced"><div><strong>Other provider</strong><span>Advanced</span><p>Configure a Responses-compatible API provider.</p></div><button id="onboarding-configure-provider">Configure</button></div>
+            <p class="login-status" id="login-status" role="status"></p><button class="quiet" id="cancel-login" hidden>Cancel sign-in</button>
+          </div>
+        </div>
+        <form class="composer" id="composer">
+          <label class="sr-only" for="prompt">Ask ASIP</label>
+          <textarea id="prompt" rows="3" placeholder="Why is my computer slow today?"></textarea>
+          <button id="send-prompt" type="submit" aria-label="Send">↑</button>
+        </form>
+        <p class="composer-note">Describe the outcome. ASIP keeps the work connected to this computer.</p>
+      </section>
+
+      <section class="view" data-view="changes">
+        <header class="section-header"><div><p class="kicker">Durable history</p><h2>Changes</h2><p>What this computer did, why it did it, and how it was verified.</p></div><button class="quiet refresh">Refresh</button></header>
+        <div class="list-panel" id="changes-list"><p class="empty">Loading machine history…</p></div>
+      </section>
+
+      <section class="view" data-view="computer">
+        <header class="section-header"><div><p class="kicker">Local truth</p><h2 id="computer-name">This computer</h2><p>ASIP health, attention, recovery, and current work.</p></div><div><span class="status-pill" id="core-status">Connecting</span> <button class="quiet refresh">Refresh</button></div></header>
+        <div class="metric-grid" id="computer-metrics"></div>
+        <div class="two-column"><article class="panel"><h3>Attention</h3><div id="attention-list" class="panel-body"></div></article><article class="panel"><h3>Current work</h3><div id="current-work" class="panel-body"></div></article></div>
+        <div class="two-column"><article class="panel question-panel"><h3>Operator questions <span id="question-count" class="status-pill neutral">None</span></h3><div id="question-list" class="panel-body"></div></article><article class="panel"><h3>Continuity</h3><div id="continuity-state" class="panel-body"></div></article></div>
+        <article class="panel health-card interactive" id="health-card" tabindex="0" role="button" aria-label="Open ASIP health details"><div class="panel-heading"><h3>ASIP health</h3><span class="status-pill neutral" id="health-summary">Details</span></div><div id="health-state" class="panel-body"><p>Doctor, journal, policy, and recovery checks.</p></div></article>
+      </section>
+
+      <section class="view" data-view="settings">
+        <header class="section-header"><div><p class="kicker">Connections</p><h2>Settings</h2><p>AI provider, connected services, and advanced application detail.</p></div></header>
+        <div class="provider-grid" aria-label="AI providers">
+          <article class="provider-card"><h3>ChatGPT</h3><p>Use your ChatGPT account. Your account stays connected when you switch providers.</p><span id="chatgpt-connection" class="provider-connection">Checking connection…</span><button class="quiet" id="settings-connect-openai">ChatGPT</button></article>
+          <article class="provider-card"><h3>Google Gemini</h3><p>Uses a Google API key. Model access and quotas depend on your account.</p><span id="google-connection" class="provider-connection">Checking connection…</span><button class="quiet" id="settings-connect-google">Google Gemini</button></article>
+        </div>
+        <div class="advanced-provider"><span>Have another API provider?</span><button class="quiet" id="settings-configure-provider">Other provider — Advanced</button></div>
+        <p id="provider-action-status" role="status" class="milestone-note"></p>
+        <form id="google-form" class="authority-form" hidden autocomplete="off"><a href="https://aistudio.google.com/app/apikey">Get Google API key</a><p>Sign in, create a key, copy it, and return here.</p><label>Google model<input name="model" value="gemini-3.8-flash" required></label><input name="api_key" type="password" aria-label="Google Gemini API key" placeholder="Paste your Google Gemini API key" required><div><button type="button" class="quiet" id="cancel-google">Back</button><button type="submit" class="primary">Connect Google</button></div><p class="provider-disclosure">Review <a href="https://ai.google.dev/gemini-api/terms">Google’s API terms and data handling</a> before sending sensitive content.</p><p id="google-status" role="status"></p></form>
+        <article class="panel settings-card"><h3>AI</h3><div class="setting-row"><div><strong id="codex-provider">Codex</strong><p id="codex-detail">Checking the local runtime and account.</p></div><div class="setting-action"><span class="status-pill neutral" id="codex-status">Checking</span><button class="quiet" id="remove-provider" hidden>Disconnect active provider</button></div></div><form id="provider-form" class="authority-form" hidden autocomplete="off"><label>Provider name<input name="name" placeholder="Provider name" required></label><label>API base URL<input name="base_url" type="url" placeholder="https://api.example.com/v1" required></label><label>Model ID<input name="model" placeholder="Model ID" required></label><label>API key<input name="api_key" type="password" placeholder="API key" required></label><div><button type="button" class="quiet" id="cancel-provider">Cancel</button><button type="submit" class="primary">Connect provider</button></div><p id="provider-status">ASIP retains the API key as named authority. It never enters Codex configuration or model context.</p></form></article>
+        <article class="panel settings-card"><div class="panel-heading"><h3>Connected services</h3><button class="quiet" id="add-authority">Add service</button></div><div id="authority-list" class="panel-body"></div><form id="authority-form" class="authority-form" hidden autocomplete="off"><label>Authority name<input name="name" placeholder="Authority name (example.api)" required></label><label>Service label<input name="label" placeholder="Human label" required></label><label>Environment variable<input name="env_var" placeholder="Environment variable" required></label><label>Service credential<input name="value" type="password" placeholder="API key or token" required></label><div><button type="button" class="quiet" id="cancel-authority">Cancel</button><button type="submit" class="primary">Store securely</button></div><p id="authority-status"></p></form></article>
+      </section>
+      <section class="view detail-page" data-view="detail" id="change-detail" aria-label="Detail">
+        <button id="detail-back" type="button" class="quiet">← Back</button>
+        <div id="change-detail-body" tabindex="-1"></div>
+      </section>
+    </main>
+  </div>
+  <script src="workspace.js"></script>
+  <script src="app.js"></script>
+<dialog id="action-dialog"><form method="dialog"><h3 id="dialog-title"></h3><label id="dialog-input-label">Name<input id="dialog-input"></label><div><button value="cancel">Cancel</button><button value="confirm" class="primary">Continue</button></div></form></dialog>
+</body>
+</html>

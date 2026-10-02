@@ -14,6 +14,7 @@ import os
 import pathlib
 import socket
 import struct
+import subprocess
 import sys
 import threading
 
@@ -31,7 +32,7 @@ def serve(read_only: bool = False) -> None:
         raise SystemExit("ASIP Core must run as root")
     daemon.prepare_state(read_only)
     socket_path = daemon.READ_SOCKET if read_only else daemon.SOCKET
-    if os.environ.get("LISTEN_FDS") == "1":
+    if os.environ.get("LISTEN_FDS") == "1" and os.environ.get("LISTEN_PID") == str(os.getpid()):
         server = socket.fromfd(3, socket.AF_UNIX, socket.SOCK_STREAM)
     else:
         pathlib.Path(socket_path).parent.mkdir(mode=0o755, parents=True, exist_ok=True)
@@ -112,11 +113,33 @@ def _serve_connection(connection: socket.socket, read_only: bool) -> None:
         response = (daemon.fail(f"request read failed: {exc}") if read_only else
                     daemon.protocol_failure(peer_uid, f"request read failed: {exc}"))
     try:
-        connection.sendall((json.dumps(response, separators=(",", ":")) + "\n").encode())
+        restart_units = response.pop("_post_restart", None)
+        restart_operation = response.pop("_post_restart_op", "svc")
+        restart_action = response.pop("_post_restart_action", "restart")
+        # Keep canonical IDs for root-side lifecycle handling and the journal.
+        # Only the wire representation uses the shorter, stable references.
+        display = daemon.journal_refs().display(response)
+        connection.sendall((json.dumps(display, separators=(",", ":")) + "\n").encode())
     except OSError:
         # Domain work is already terminal and durable. A vanished reader must
         # not interrupt the privileged service.
         pass
+    finally:
+        if restart_units:
+            try:
+                # systemctl submits one job per unit. Restarting this daemon
+                # kills its child too, so submit its own job last.
+                units = sorted(restart_units, key=lambda unit: unit in ('asip', 'asip.service'))
+                subprocess.run(["systemctl", "--no-block", restart_action, *units],
+                               check=True, timeout=10, stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError):
+                daemon.RUNTIME_DRAINING = False
+                prior = next((record for record in reversed(daemon.journal_records())
+                              if record.get('id') == response['id'] and record.get('op') == restart_operation), {})
+                daemon.append_record(dict(prior, id=response['id'], at=daemon.now(),
+                    op=restart_operation, state='failed', exit=70,
+                    error='restart could not be submitted to systemd'))
 
 
 def _dispatch(raw: bytes, peer_pid: int, peer_uid: int, peer_gid: int,
@@ -140,6 +163,8 @@ def _dispatch(raw: bytes, peer_pid: int, peer_uid: int, peer_gid: int,
     except ValueError as exc:
         return (daemon.fail(str(exc)) if read_only else
                 daemon.protocol_failure(peer_uid, str(exc)))
+    except Exception:
+        return daemon.structured_error("internal_error", "ASIP could not complete the request", exit_code=70)
 
 
 def main(argv=None) -> int:

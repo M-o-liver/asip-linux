@@ -1,11 +1,11 @@
 #!/bin/sh
-# Restore the installer-level backup made before an ASIP self-upgrade.
+# Restore an installation backup from an independent trusted root process.
 # This intentionally does not depend on the installed ASIP Python runtime.
 set -eu
 
 backup=${1:-}
 [ -n "$backup" ] || {
-	printf 'Usage: %s /var/lib/asip/install-backups/<release>.tar\n' "${0##*/}" >&2
+	printf 'Usage: %s /var/lib/asip/install-backups/<installation>.tar\n' "${0##*/}" >&2
 	exit 64
 }
 [ "$(id -u)" -eq 0 ] || {

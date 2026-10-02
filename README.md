@@ -1,186 +1,159 @@
 # ASIP
 
-**Privileged operations for AI agents, with an audit trail.**
+**Privileged operations for agents.**
 
-ASIP gives an agent a local interface for Linux system changes through a
-root-owned daemon. It associates work with explicit intent and keeps a durable
-record of the caller, requested action, result, captured evidence, and recovery
-information. It is sometimes described as “sudo for agents,” but the trust
-boundary is different from a sandbox: anyone allowed to use ASIP's admin
-socket can run arbitrary commands as root.
+ASIP is the local privileged-operation layer I use for coding agents on Linux.
+It gives agents a controlled root daemon, serialized mutation path, journal,
+and compact MCP interface instead of requiring an unrestricted interactive
+sudo shell.
 
-## A first operation
+## What it is
 
-With ASIP installed, a package change can be recorded as one coherent change:
+Two systemd socket services provide privileged execution and read-only
+inspection. A CLI, optional MCP adapters and a human application use those
+sockets. Changes connect an intent to operations, notes, verification and
+recovery records. Machine policy lives in `/etc/asip/MACHINE.md`.
 
-```sh
-change_id="$(asip change start 'Install ripgrep')"
-asip --change "$change_id" pkg install ripgrep
-asip --change "$change_id" verify pass rpm 'ripgrep is installed'
-asip change finish "$change_id" 'Installed ripgrep and verified the package'
-```
+## Security model
 
-The same interface is available to agents through ASIP's local MCP adapter.
-Agents start a change, use typed tools for package, service, configuration,
-snapshot, journal, and recovery work, and use `asip_do` when no typed operation
-fits.
+- Membership in `asip` is effectively arbitrary root authority. ASIP is not a
+  sandbox against a malicious authorized caller. Machine policy guides the
+  agent; it is not an enforced command allowlist.
+- `/run/asip/sock` is `root:asip`, mode `0660`. The separate
+  `root:asip-read` socket, `/run/asip/read.sock`, cannot execute commands or
+  mutate the journal. Inspection can expose policy, metadata and captured
+  output; grant read access deliberately.
+- Requests are attributed with Linux peer credentials. Mutations require an
+  explicit change or standalone reason. Reads remain available during work;
+  cancellation has a separate control path.
+- Commands have bounded execution and capture. Timeout, cancellation and
+  crashes can leave partial effects. ASIP records uncertainty rather than
+  automatically replaying unfinished work.
+- Root can alter or erase local policy, state and journal. Ordinary captures
+  can contain secrets. Sensitive execution suppresses argument values,
+  streaming and output blobs, while retaining metadata and hashes.
+- Rollback is not universal. Snapper and captured configuration files help
+  recovery; external effects and unsnapshotted data can be irreversible.
+- The application runs a coding agent with full user access. Named credentials
+  reach authorized child processes through a local broker; those children can
+  still disclose or misuse them.
 
-## Why ASIP exists
+Read [SECURITY.md](SECURITY.md) and the [implementation](core/) before granting
+an agent access. [Architecture](docs/ARCHITECTURE.md) describes the components.
 
-An interactive root shell gives an agent broad authority with little durable
-context. ASIP makes the local privileged path explicit and leaves a record that
-the next session can inspect. It works with the host's package manager,
-systemd, Linux Audit, and configured snapshot tool rather than replacing them.
+## What I use it for
 
-## Trust model
+Package and service operations, recorded root commands, configuration changes,
+local machine inspection, explicit reboot holds, and remembering why a change
+was made. Named access attaches external credentials to a userland child
+without putting their values in the model context.
 
-ASIP is a local administration boundary, **not a sandbox or command allowlist**.
-Membership in group `asip` is equivalent to arbitrary root access. The root
-daemon accepts requests on `/run/asip/sock`, whose normal owner/group/mode is
-`root:asip` and `0660`. The kernel supplies Unix peer credentials; socket
-permissions are the authorization boundary. The separate
-`/run/asip/read.sock` and `asip-read` group permit inspection without command
-execution or journal mutation.
-
-`asip do` runs an argument vector directly, without a shell. It is deliberately
-general and can still do anything root can do. `/etc/asip/MACHINE.md` provides
-context for agents; it is not an enforced policy language. Read the full
-[security model](SECURITY.md) before granting either group.
+Useful CLI entry points are `asip brief`, `asip doctor`, `asip change`,
+`asip recovery` and `asip --help`. `asip-inspect` uses only the read socket.
 
 ## Install
 
-ASIP targets Linux systems with systemd. The first public release is tested
-through CI on Fedora 44 x86-64; package detection contracts also run in Ubuntu,
-Debian, and Arch containers. Container checks are not clean graphical VM
-qualification. See [platform status](SUPPORT.md) for the exact evidence and
-limits.
-
-For the graphical installer, download the versioned AppImage and its checksum
-from [GitHub Releases](https://github.com/M-o-liver/asip-linux/releases/latest),
-verify the checksum, make it executable, and run it:
+Linux, systemd and Python 3.11+ are required. The optional application also
+needs GTK4, WebKitGTK 6.0 and PyGObject. Optional user runtimes use Python venv
+and pip; the application installs a pinned Codex SDK. Your system packages
+and snapshot configuration may differ.
 
 ```sh
-sha256sum -c ASIP-Installer-0.1.0-x86_64.AppImage.sha256
-chmod +x ASIP-Installer-0.1.0-x86_64.AppImage
-./ASIP-Installer-0.1.0-x86_64.AppImage
+git clone https://github.com/M-o-liver/asip-linux.git
+cd asip-linux
 ```
 
-The graphical installer verifies and stages its release payload before one
-explicit system-authentication prompt. It installs the Core services, audit
-integration, groups, and selected MCP adapter. Start a fresh login session
-afterward so your agent receives the new group membership. The prompt grants
-`asip` access, which is root-equivalent.
-
-For a headless install, download and verify the source release, then install
-the user-level client:
+Read `install.sh` and `scripts/install_system.sh`. Then run this through ASIP
+if it is already installed, or from an existing trusted root session:
 
 ```sh
-release=https://github.com/M-o-liver/asip-linux/releases/download/v0.1.0
-curl -fsSLO "$release/asip-0.1.0.tar.gz"
-curl -fsSLO "$release/release.json"
-curl -fsSLO "$release/SHA256SUMS"
-sha256sum --ignore-missing -c SHA256SUMS
-tar -xzf asip-0.1.0.tar.gz
-cd asip-0.1.0
-./install.sh
+./install.sh --system --operator YOUR_LOGIN
 ```
 
-Then use the explicit local system-authentication prompt to install the
-services. On a headless host without polkit, use the system's documented root
-path for the same `asip install --privileged` command:
+The operator option grants root-equivalent group membership. A new login may
+be needed. The script backs up installed files, stages the source and enables
+the two sockets. It does not install system packages. On an existing
+installation it reports that the running daemons need an explicit restart;
+arrange an idle window for other callers first.
+
+Keep `/etc/asip/MACHINE.md` useful: record the actual machine constraints,
+durable decisions and recovery route. Software updates preserve local state.
+
+## Agent / MCP setup
+
+As your ordinary login user:
 
 ```sh
-pkexec /usr/bin/env \
-  ASIP_OPERATOR="$(id -un)" \
-  ASIP_SOURCE_ROOT="$HOME/.local/bin" \
-  "$HOME/.local/bin/asip" install --privileged
+./install.sh --user mcp
 ```
 
-Start a new login session, then run `asip doctor`. The first login must belong
-to the `asip` group only if it should have root-equivalent authority.
+Configure two stdio servers in your MCP client, with no arguments:
 
-For a headless or source install, see [INSTALL.md](INSTALL.md). Upgrades and
-removal are documented in [UPGRADE.md](UPGRADE.md) and
-[UNINSTALL.md](UNINSTALL.md).
+```text
+~/.local/bin/asip-mcp-inspect
+~/.local/bin/asip-mcp-admin
+```
 
-## What it does and what it does not do
+Use their absolute paths in client configuration. The client process needs
+the relevant groups in its effective login session. Call `asip_brief` at
+system-work entry and read `asip://machine/policy`. Start a change for coherent
+work and pass its ID on related mutations. Ordinary userland work stays
+outside root execution; `note_record` connects important paths or effects.
 
-ASIP records explicit changes and privileged operations, streams and stores
-captured command output by content hash, can capture configuration files before
-and after a command, and records verification and recovery handles. Package
-operations create a pre-change Snapper snapshot when Snapper is available.
-Foreground commands have a 15-minute limit; timed-out work is terminated where
-the operating system permits and marked as potentially partial. On daemon
-restart, incomplete operations are recorded as uncertain and are never
-automatically replayed.
+MCP deliberately minimizes context overhead: 10 inspection tools and 18
+mutation tools, short descriptions, one compact result, bounded history and
+explicit detail/output expansion. References normally look like `j9ad4c53d`;
+full journal IDs also work, and ambiguous prefixes fail. Retry keys are
+normally generated by the adapter; supply one when deliberately retrying the
+same operation. Reconnect MCP after updating its user runtime.
 
-The daemon accepts IPC connections concurrently but keeps privileged execution
-serialized. A request that cannot enter the execution lane within five seconds
-gets a retryable busy response. Standard clients' requests older than 60
-seconds are rejected rather than executed late after a restart. Synchronous
-`access_use` commands have a five-minute limit; `access_start` is for
-long-running processes.
-
-ASIP does not make arbitrary root commands safe, prevent an authorized user
-from changing networking or SSH, protect against malicious root or a
-compromised kernel, or reverse every side effect. Automated rollback currently
-uses Snapper snapshots only. A journal entry is durable evidence, not proof that
-an external effect can be undone.
-
-## Audit and recovery
-
-The root-owned journal is `/var/lib/asip/journal.jsonl`; captured output and
-configuration copies are in `/var/lib/asip/blobs/`. Records are appended and
-fsynced, but they are not cryptographically chained or tamper-proof against
-root. Use `asip change list`, `asip log`, and `asip recovery` to inspect work.
-`asip rollback HANDLE` accepts an ASIP recovery handle for a successful
-Snapper snapshot; it does not roll back ordinary commands or external effects.
-
-## Examples
+## Application
 
 ```sh
-# Restart a service and retain the operation record.
-change_id="$(asip change start 'Restart the example service')"
-asip --change "$change_id" svc restart example.service
-asip change finish "$change_id" 'Service restart completed'
-
-# Inspect the journal and available snapshots.
-asip change list
-asip log
-asip recovery
-
-# Create a named snapshot, then use its returned recovery handle if needed.
-asip --change "$change_id" snap 'Before editing the service configuration'
+./install.sh --user desktop
+~/.local/bin/asip-desktop
 ```
 
-Check the output before finishing a change. ASIP does not infer a successful
-verification from a zero exit code.
+**Ask** runs the local coding agent. **This computer** shows health, attention,
+open and held work, operator questions, maintenance and recovery.
+**History** opens changes, verification and operation output. **Settings**
+handles provider connections and local credential provisioning. Conversations
+and provider-specific agent homes are saved in private user state.
 
-## Architecture
+The application can use ChatGPT sign-in or an API provider through its local
+credential broker. Configure access in the application; do not paste stored
+credential values into agent conversations. Model availability depends on
+your provider and account.
 
-The core consists of a root-owned admin daemon and a separate read-only
-inspection daemon, reached through local systemd socket activation. The human
-CLI and the stdio MCP adapter are unprivileged clients. The full process, state,
-mutation, and recovery map is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+## Journal / recovery
 
-This release contains the single-host Core. It does not ship Fleet or the
-native Desktop application.
+The journal is `/var/lib/asip/journal.jsonl`; captured output and configuration
+copies live under `/var/lib/asip/blobs/`. Inspect one change or operation
+first, then expand details as needed. Do not publish raw machine state.
+
+`asip recovery` shows recorded handles and the live snapshot timeline.
+`asip rollback HANDLE` accepts a successful ASIP snapshot handle, not a raw
+Snapper number. Inspect actual effects before retrying interrupted work.
+Answering an operator question does not release a hold or reboot.
+
+Installation backups live under `/var/lib/asip/install-backups/`.
+`scripts/restore_install_backup.sh` is a manual recovery helper for an
+independent trusted root process when the installed runtime is unusable;
+read it before restoring. It restarts the daemons.
+
+## DYOR / project status
+
+This is software I actively use and publish as-is. It is not a supported
+cross-distro product. It runs privileged operations as root. Read the code
+and security model before using it. No compatibility or support guarantee
+is provided, and publishing an issue does not promise a response.
 
 ## Development
 
-Python 3, a POSIX shell, and systemd-related test fixtures are used by the
-project. Core runtime code uses the Python standard library; the optional MCP
-adapter and other optional components have separate pinned dependencies.
+Edit the source, use the application and inspect the resulting journal/state.
+`python3 -m compileall -q core desktop asip_mcp.py` is a useful local syntax
+check. Reinstall source to update the system payload; reinstall a user runtime
+when its adapter or dependencies change. Coordinate daemon restarts with other
+callers. Keep credentials, machine policy and journals out of Git.
 
-```sh
-python3 -m unittest discover -s tests -v
-./scripts/release_gate.sh
-```
-
-The live systemd/socket tests require a disposable Linux VM and are not run by
-pull-request CI. See [CONTRIBUTING.md](CONTRIBUTING.md) and the
-[release gate](tests/live_systemd.sh).
-
-## License
-
-ASIP is licensed under [Apache-2.0](LICENSE).
+[Apache-2.0](LICENSE).

@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+
+data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
+runtime="${ASIP_DESKTOP_ENV:-$data_home/asip/desktop-current}"
+source_root="${ASIP_DESKTOP_SOURCE:-/usr/lib/asip}"
+
+if [ ! -x "$runtime/bin/python" ]; then
+	printf '%s\n' 'ASIP runtime is not installed. Run: ./install.sh --user desktop from the source checkout.' >&2
+	exit 69
+fi
+if [ ! -r "$source_root/desktop/__main__.py" ]; then
+	printf '%s\n' 'ASIP application files are not installed. Repair the ASIP installation.' >&2
+	exit 69
+fi
+
+export PYTHONPATH="$source_root${PYTHONPATH:+:$PYTHONPATH}"
+cd "$source_root"
+exec "$runtime/bin/python" -m desktop "$@"

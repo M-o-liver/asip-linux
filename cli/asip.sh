@@ -9,8 +9,7 @@
 
 set -eu
 
-# The release launcher supplies the source root. Retain direct execution for
-# development and characterization tests, including a copied standalone CLI.
+# Resolve the source tree for local development and installed use.
 if [ -z "${ASIP_SOURCE_ROOT:-}" ]; then
 	cli_location="$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)"
 	if [ "${cli_location##*/}" = cli ]; then
@@ -31,16 +30,11 @@ read_version() {
 		version="$(sed -n '1{s/[[:space:]]*$//;p;q;}' "$candidate")"
 		[ -n "$version" ] && { printf '%s' "$version"; return; }
 	done
-	printf '2.0.0'
+	printf 'unknown'
 }
 
 VERSION="$(read_version)"
 PROG="${ASIP_PROG:-${0##*/}}"
-
-if [ -z "${HOME:-}" ]; then
-	HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"
-	export HOME="${HOME:-/}"
-fi
 
 CHANGE_ID="${ASIP_CHANGE_ID:-}"
 STANDALONE_REASON="${ASIP_STANDALONE_REASON:-}"
@@ -187,24 +181,12 @@ $PROG $VERSION — ASIP continuity and recovery for an agent-shaped Linux machin
 USAGE
   $PROG [--change ID | --standalone WHY] [--request-key KEY] [--json] <command> [arguments]
 
-The preferred human command is asip. The optional 'a' wrapper remains
-available for users of an earlier experiment and existing local scripts.
+The short alias 'a' runs the same command.
 
 COMMANDS
-  install --privileged       Install ASIP (asipd and its systemd sockets).
-  upgrade --check|           Check or perform a verified ASIP self-upgrade.
-          upgrade
-	  uninstall --software|     Remove installed software while retaining
-	           --purge          durable ASIP history; --purge also erases it.
-  desktop                     Reserved; unavailable in the Core release.
-  telemetry status|preview|  Manage opt-in aggregate telemetry; the local
-            enable|disable|send  collector is a development-only endpoint.
-            serve [OPTIONS]
-  support preview|bundle    Inspect/write a privacy-bounded support diagnostic.
-  eval list|show|start|bind|prompt|grade|status|export|suite|qualify
-                          Run local agent-evaluation fixtures; never launches a model.
+  install --privileged       Install source; an existing daemon requires an explicit restart.
+  desktop [install]          Open/install the optional local application.
   bootstrap [--harness all]  Wire agent harnesses to /etc/asip/MACHINE.md.
-  onboard [--initial]         Print machine migration or reconciliation prompt.
   change start|finish|fail    Record an intent and its outcome.
   change hold|release         Gate known work without making a planner.
   change supersede OLD NEW    Close stale intent in favour of another change.
@@ -213,7 +195,7 @@ COMMANDS
   note PATH WHY               Attach an important userland effect to a change.
   do [OPTIONS] -- COMMAND     Run privileged work; annotate effects/capture.
   pkg install|remove PKG...  Change packages; use Snapper first if available.
-  svc ACTION UNIT            Run systemctl through asipd.
+  svc ACTION [UNIT]            Run systemctl through asipd.
   conf PATH -- COMMAND       Change a config file; before/after are saved.
   observe PATH CHANGE        Journal an external change already integrated.
   maintenance [...]          Record recurring maintenance roles; omit vs unconfigured.
@@ -652,8 +634,8 @@ package, service, configuration, snapshot, audit, and recovery operations. Use
 `asip_do` only when no typed operation fits; it runs the requested command as
 root. Use ordinary unprivileged tools directly for userland work. Do not use
 `sg` to bypass socket access or change the recorded caller identity.
-Treat returned `attention` as authoritative; do not reclassify holds or live
-observations as alerts.
+If `attention` contains operator items, mention their count and that ASIP
+presents them. Do not reclassify holds or live observations as alerts.
 
 Access to group `asip` or `/run/asip/sock` grants arbitrary root authority. ASIP
 records and serializes work; it is not a sandbox or command allowlist. The
@@ -667,8 +649,8 @@ ASIP does not infer the active change from the Unix user.
 
 For external credentials, use `access_list`, `access_request`, and `access_use`
 with the authority's stable name. Never request or copy credential values into
-chat or logs. `access_start` is for a long-lived process; `access_use` is finite
-and synchronous.
+chat or logs. Use `access_use(background=true)` for a long-lived process;
+ordinary `access_use` is finite and synchronous.
 
 Read the full machine policy and inspect recovery state before acting on
 networking, remote access, or other host-critical services. ASIP does not
@@ -1054,41 +1036,9 @@ runtime_file() {
 	fi
 }
 
-release_file() {
-	local_release="${ASIP_SOURCE_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}/cli/release.py"
-	if [ -r "$local_release" ]; then
-		printf '%s' "$local_release"
-	else
-		printf '%s' /usr/lib/asip/cli/release.py
-	fi
-}
 
-telemetry_file() {
-	local_telemetry="${ASIP_SOURCE_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}/cli/telemetry.py"
-	if [ -r "$local_telemetry" ]; then
-		printf '%s' "$local_telemetry"
-	else
-		printf '%s' /usr/lib/asip/cli/telemetry.py
-	fi
-}
 
-telemetry_server_file() {
-	local_server="${ASIP_SOURCE_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}/cli/telemetry_server.py"
-	if [ -r "$local_server" ]; then
-		printf '%s' "$local_server"
-	else
-		printf '%s' /usr/lib/asip/cli/telemetry_server.py
-	fi
-}
 
-support_file() {
-	local_support="${ASIP_SOURCE_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}/cli/support.py"
-	if [ -r "$local_support" ]; then
-		printf '%s' "$local_support"
-	else
-		printf '%s' /usr/lib/asip/cli/support.py
-	fi
-}
 
 request() {
 	if [ "$JSON" -eq 1 ]; then
@@ -1136,223 +1086,10 @@ request_readonly() {
 	fi
 }
 
-release_field() {
-	key="$1"
-	printf '%s\n' "$release_status" | awk -F= -v wanted="$key" '$1 == wanted { print substr($0, length($1) + 2); exit }'
-}
 
-cmd_upgrade() {
-	check_only=0
-	if [ "${1:-}" = "--check" ]; then
-		check_only=1
-		shift
-	fi
-	[ "$#" -eq 0 ] || {
-		printf 'Usage: %s upgrade [--check]\n' "$PROG" >&2
-		return 64
-	}
-	release_status="$(python3 "$(release_file)" check)"
-	installed="$(release_field installed_version)"
-	installed_source="$(release_field installed_source)"
-	client_version="$(release_field client_version)"
-	latest="$(release_field latest_version)"
-	candidate="$(release_field candidate_version)"
-	available="$(release_field available)"
-	metadata="$(release_field metadata)"
-	mismatch="$(release_field mismatch)"
-	[ -n "$client_version" ] || client_version="$VERSION"
-	[ -n "$latest" ] || latest="${candidate:-unavailable}"
-	[ -n "$installed_source" ] || installed_source="unavailable"
-	printf 'Client/source version: %s\n' "$client_version"
-	if [ -n "$installed" ]; then
-		printf 'Installed product: %s (%s)\n' "$installed" "$installed_source"
-		printf 'Installed ASIP version: %s\n' "$installed"
-	else
-		printf 'Installed product: unavailable (%s)\n' "$installed_source"
-			printf 'Installed ASIP version: unavailable\n'
-	fi
-	printf 'Candidate: %s\n' "${candidate:-none}"
-	printf 'Latest known release: %s\n' "$latest"
-	if [ -n "$mismatch" ]; then
-		printf 'Version mismatch: %s\n' "$mismatch"
-	fi
-	if [ "$metadata" = available ]; then
-		if [ -z "$installed" ]; then
-			printf 'Upgrade eligibility: unknown (live installed version unavailable)\n'
-		elif [ "$available" = true ]; then
-			printf 'Upgrade available: %s -> %s\n' "$installed" "$latest"
-		else
-			printf 'ASIP is current; no upgrade is available.\n'
-		fi
-	else
-		printf 'Release metadata: unavailable (local execution remains independent of a release server).\n'
-		printf '  %s\n' "$(release_field message)"
-	fi
-	[ "$check_only" -eq 1 ] && return 0
-	if [ -z "$installed" ]; then
-		printf '%s: live installed version is unavailable; will not treat this checkout as installed\n' "$PROG" >&2
-		return 1
-	fi
-	if [ "$metadata" != available ] || [ "$available" != true ]; then
-		printf '%s: no verified newer release is available\n' "$PROG" >&2
-		return 1
-	fi
 
-	if ! request_readonly --op doctor >/dev/null; then
-		printf '%s: preflight health check failed. Inspection needs the asip-read group or an asip-group process token. Start a fresh login or harness from a host context that preserves the required group; do not use sg inside a confined runner.\n' "$PROG" >&2
-		return 1
-	fi
-	change="$(cmd_change start "Upgrade ASIP from $installed to $latest")"
-	stage=''
-	install_root=''
-	if ! stage_status="$(python3 "$(release_file)" prepare --json)"; then
-		cmd_change fail "$change" "Release artifact preparation or integrity validation failed"
-		return 1
-	fi
-	stage="$(printf '%s\n' "$stage_status" | python3 -c 'import json,sys; print(json.load(sys.stdin)["stage"])')"
-	install_root="$(printf '%s\n' "$stage_status" | python3 -c 'import json,sys; print(json.load(sys.stdin)["root"])')"
-	cleanup_stage() {
-		[ -n "$stage" ] && [ -d "$stage" ] && rm -rf -- "$stage"
-	}
-	# Do not use an EXIT trap here. POSIX shells may run it in command-
-	# substitution subshells such as $(runtime_file), deleting the artifact
-	# before the privileged request can consume it.
-	trap cleanup_stage 1 2 3 15
 
-	CHANGE_ID="$change"
-	STANDALONE_REASON=''
-	if ! cmd_snap "Before upgrading ASIP from $installed to $latest"; then
-		CHANGE_ID=''
-		cleanup_stage
-		cmd_change fail "$change" "Recovery snapshot preflight failed"
-		return 1
-	fi
-	if ! cmd_do -- env ASIP_OPERATOR="$(id -un)" "$install_root/asip" install --privileged --self-upgrade; then
-		CHANGE_ID=''
-		cleanup_stage
-		cmd_change fail "$change" "Verified release installation failed; existing ASIP state was retained where possible"
-		return 1
-	fi
 
-	reconnected=0
-	stable_checks=0
-	attempt=0
-	# Do not poll either ASIP socket while the deferred systemd restart is due.
-	# The privileged daemon serializes requests; a stream of summary calls can
-	# keep its socket-activated service busy and postpone the very restart we are
-	# waiting to verify. Leave the journal-safe handoff window completely quiet.
-	sleep 15
-	# systemd may defer a socket-activated service restart until the old daemon
-	# has drained its final journal response. Allow a full minute rather than
-	# classifying that safe transition as an upgrade failure.
-	while [ "$attempt" -lt 60 ]; do
-		# The old daemons remain healthy until the deferred timer fires. Require
-		# both socket roles to report the target version and pass doctor twice;
-		# this avoids accepting the read service while the privileged service is
-		# still inside the same systemd restart transaction.
-		if request_readonly --op summary 2>/dev/null | \
-				python3 -c 'import json,sys; assert json.load(sys.stdin)["version"] == sys.argv[1]' "$latest" 2>/dev/null && \
-				request_unscoped --op summary 2>/dev/null | \
-				python3 -c 'import json,sys; assert json.load(sys.stdin)["version"] == sys.argv[1]' "$latest" 2>/dev/null && \
-				request_readonly --op doctor >/dev/null 2>&1 && \
-				request_unscoped --op doctor >/dev/null 2>&1; then
-			stable_checks=$((stable_checks + 1))
-			if [ "$stable_checks" -ge 2 ]; then
-				reconnected=1
-				break
-			fi
-		else
-			stable_checks=0
-		fi
-		attempt=$((attempt + 1))
-		sleep 1
-	done
-	if [ "$reconnected" -ne 1 ]; then
-		CHANGE_ID=''
-		cleanup_stage
-		cmd_change fail "$change" "ASIP services did not report target version $latest after the deferred restart"
-		return 1
-	fi
-	CHANGE_ID="$change"
-	if ! cmd_verify pass upgrade "ASIP services reconnected and the read-only doctor check passed after upgrade"; then
-		CHANGE_ID=''
-		cleanup_stage
-		cmd_change fail "$change" "Post-upgrade verification could not be recorded"
-		return 1
-	fi
-	CHANGE_ID=''
-	if ! cmd_change finish "$change" "Upgraded ASIP from $installed to $latest and verified the daemon transition"; then
-		cleanup_stage
-		return 1
-	fi
-	trap - 1 2 3 15
-	cleanup_stage
-}
-
-cmd_uninstall() {
-	mode="${1:-}"
-	case "$mode" in
-	--software|--purge) ;;
-	--help|-h)
-		printf 'Usage: %s uninstall --software | --purge\n' "$PROG"
-		printf 'Software removal retains /etc/asip and /var/lib/asip.\n'
-		printf 'Removal starts after a short delay so the current ASIP request can finish.\n'
-		printf 'Use --purge only when intentionally erasing ASIP Core durable state.\n'
-		return 0
-		;;
-	*)
-		printf 'Usage: %s uninstall --software | --purge\n' "$PROG" >&2
-		return 64
-		;;
-	esac
-	[ "$(id -u)" -eq 0 ] || {
-		printf '%s: uninstall must run as root through the existing trusted root path\n' "$PROG" >&2
-		return 1
-	}
-	if [ "$mode" = --purge ]; then
-		printf 'This schedules ASIP software removal and permanently erases /etc/asip and /var/lib/asip.\n'
-	else
-		printf 'This schedules ASIP Core software removal; durable journal, policy, and evidence will be retained.\n'
-	fi
-	[ -x /usr/local/sbin/asip-uninstall ] || {
-		printf '%s: the installed software-removal helper is missing; reinstall ASIP before retrying\n' "$PROG" >&2
-		return 1
-	}
-	unit="asip-uninstall-$(date -u +%Y%m%d%H%M%S)-$$"
-	systemd-run --quiet --unit="$unit" --on-active=10s --collect -- \
-		/usr/local/sbin/asip-uninstall "$mode" || {
-		printf '%s: could not schedule deferred software removal; ASIP was left installed\n' "$PROG" >&2
-		return 1
-	}
-	printf 'ASIP removal is scheduled in a separate systemd job for 10 seconds from now.\n'
-	printf 'The active request can finish its journal record before the sockets and daemon stop.\n'
-}
-
-cmd_telemetry() {
-	action="${1:-}"
-	[ -n "$action" ] || {
-		printf 'Usage: %s telemetry status|preview|enable|disable|send | serve [--port PORT]\n' "$PROG" >&2
-		return 64
-	}
-	shift
-	case "$action" in
-	status|preview|enable|disable|send)
-		[ "$#" -eq 0 ] || { printf 'Usage: %s telemetry %s\n' "$PROG" "$action" >&2; return 64; }
-		python3 "$(telemetry_file)" "$action"
-		;;
-	serve|server)
-		python3 "$(telemetry_server_file)" "$@"
-		;;
-	*)
-		printf 'Usage: %s telemetry status|preview|enable|disable|send | serve [--port PORT]\n' "$PROG" >&2
-		return 64
-		;;
-	esac
-}
-
-cmd_support() {
-	python3 "$(support_file)" "$@"
-}
 
 cmd_do() {
 	affects=''
@@ -1588,18 +1325,16 @@ cmd_note() {
 }
 
 cmd_svc() {
-	action="${1:-}"; unit="${2:-}"
-	if [ -z "$action" ] || [ -z "$unit" ]; then
-		printf 'Usage: %s svc ACTION UNIT\n' "$PROG" >&2
-		return 64
-	fi
-	case "$(detect_initsys)" in
-	systemd) set -- systemctl "$action" "$unit" ;;
-	openrc) set -- rc-service "$unit" "$action" ;;
-	sysv) set -- service "$unit" "$action" ;;
-	*) printf '%s: no known init system (systemd, OpenRC, or sysvinit) found\n' "$PROG" >&2; return 1 ;;
-	esac
-	request --op "svc" --reason "service $action: $unit" "$@"
+    [ "$#" -ge 1 ] && [ "$#" -le 2 ] || { printf 'Usage: %s svc ACTION [UNIT]\n' "$PROG" >&2; return 64; }
+    action="$1"; unit="${2:-}"
+    case "$action" in
+    daemon-reload|daemon-reexec) [ -z "$unit" ] || { printf '%s takes no unit\n' "$action" >&2; return 64; } ;;
+    reset-failed) ;;
+    *) [ -n "$unit" ] || { printf '%s needs a unit\n' "$action" >&2; return 64; } ;;
+    esac
+    set -- systemctl "$action"
+    [ -z "$unit" ] || set -- "$@" "$unit"
+    request --op svc --reason "service $action: $unit" "$@"
 }
 
 cmd_conf() {
@@ -1629,12 +1364,6 @@ cmd_conf() {
 	request --op "conf" --target "$target" --reason "configuration change: $target" -- "$@"
 }
 
-cmd_eval() {
-	local_eval="${ASIP_SOURCE_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}/cli/eval.py"
-	if [ ! -r "$local_eval" ]; then local_eval=/usr/lib/asip/cli/eval.py; fi
-	[ -r "$local_eval" ] || { printf '%s: eval helper is not installed\n' "$PROG" >&2; return 69; }
-	exec python3 "$local_eval" "$@"
-}
 
 cmd_observe() {
 	subject="${1:-}"
@@ -1647,82 +1376,6 @@ cmd_observe() {
 	evidence="${ASIP_OBSERVE_EVIDENCE:-}"
 	request --op "observe" --source "$source" --evidence "$evidence" \
 		--reason "$*" -- "$subject"
-}
-
-cmd_onboard() {
-	force_initial=0
-	case "${1:-}" in
-	'') ;;
-	--initial) force_initial=1 ;;
-	*) printf 'Usage: %s onboard [--initial]\n' "$PROG" >&2; return 64 ;;
-	esac
-	journal=/var/lib/asip/journal.jsonl
-	if [ "$force_initial" -eq 0 ] && [ -r "$journal" ] &&
-		grep -q '"op":"observe".*"subject":"asip:onboarding".*"evidence":"onboarding:v1"' "$journal"; then
-		cat <<'EOF'
-ASIP ONBOARDING REVIEW
-
-Initial onboarding is recorded as complete. Read /etc/asip/MACHINE.md,
-/etc/asip/projects.md, and the ASIP journal. Inspect current agent
-configuration and the live system for durable information added since
-onboarding. Integrate new machine-wide facts and operator preferences into
-MACHINE.md through a change session, note important userland paths, and use
-`asip observe` for relevant external changes. Preserve project-specific rules
-in their projects and durable operating policy in MACHINE.md's Decision Log.
-EOF
-		return
-	fi
-	cat <<'EOF'
-ASIP INITIAL ONBOARDING
-
-Complete the initial migration of this machine into ASIP.
-
-0. Confirm that this session exposes the native `asip-inspect` and
-   `asip-admin` MCP servers. If either is missing, report an ASIP integration
-   condition and stop onboarding until the operator repairs registration and
-   relaunches the agent. Never wrap MCP in `sg` or substitute shell access.
-   The Unix socket groups remain the authority; MCP adds no new privilege.
-1. Relaunch the agent after registration. Call `asip_brief`, confirm the
-   inspect/admin separation, and verify that the native tools include
-   `asip_do`, `access_list`, `access_request`, `access_use`, and `access_start`.
-   Use `access_use` only for finite commands and `access_start` for long-lived
-   userland servers.
-2. Call `change_start` with `Initial ASIP machine onboarding`. Carry the
-   returned change ID on every following ASIP mutation.
-3. Read /etc/asip/MACHINE.md and inspect existing machine notes, dotfiles,
-   global agent instructions, hooks, privilege helpers, snapshot guards, and
-   recovery documentation.
-4. Move unique and current machine-wide facts into /etc/asip/MACHINE.md.
-   Include operator preferences such as response tone and desired detail.
-   If a separate knowledge base exists (Obsidian vault, wiki, notes repo),
-   ask what it is for relative to this file, and whether sessions with
-   lasting technical value should be offered into it proactively. If the
-   operator uses Git hosting for collaboration, ask about default repo
-   visibility and push/PR habits. Use `configuration_apply` for changes to the
-   canonical file.
-5. Identify privilege, snapshot, and agent-safety mechanisms that predate
-   ASIP. Remove or update mechanisms superseded by ASIP. Preserve unrelated
-   permissions, preferences, configuration management, and project rules.
-6. Find meaningful Git repositories and other durable projects. Register each
-   with `project_update`. Keep project-specific instructions in the project.
-7. Confirm that each installed agent harness reads /etc/asip/MACHINE.md.
-8. Review the resulting files and ASIP journal for omissions and conflicts.
-9. Call `observation_record` for `asip:onboarding` with source `onboarding`,
-   evidence `onboarding:v1`, and a concise completion description.
-10. Call `verification_record`, then `change_close` with status `finish` and a
-    concise migration outcome.
-
-Use live system state when existing documentation is stale. Do not replace
-project-local knowledge with machine-wide policy.
-EOF
-}
-
-print_install_handoff() {
-	printf '\nNEXT: OPEN CODEX OR CLAUDE CODE\n'
-	printf 'Copy and paste the entire block below into the signed-in agent.\n\n'
-	printf '%s\n' '----- BEGIN ASIP INSTALL HANDOFF -----'
-	cmd_onboard
-	printf '%s\n' '----- END ASIP INSTALL HANDOFF -----'
 }
 
 cmd_maintenance() {
@@ -2111,197 +1764,16 @@ cmd_facts() {
 
 
 cmd_mcp_install() {
-	[ "$(id -u)" -ne 0 ] || {
-		printf '%s: install the MCP adapter as the operator, not root\n' "$PROG" >&2
-		return 77
-	}
-	[ "$#" -le 1 ] || {
-		printf 'Usage: %s mcp install [SOURCE-DIRECTORY]\n' "$PROG" >&2
-		return 64
-	}
-	mcp_source="${1:-${ASIP_SOURCE_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}}"
-	mcp_source="$(CDPATH='' cd -- "$mcp_source" 2>/dev/null && pwd)" || {
-		printf '%s: MCP source directory is unavailable: %s\n' "$PROG" "$mcp_source" >&2
-		return 1
-	}
-	if [ ! -r "$mcp_source/pyproject.toml" ] && [ -r /usr/share/asip/mcp-source/pyproject.toml ]; then
-		mcp_source=/usr/share/asip/mcp-source
-	fi
-	for mcp_file in pyproject.toml asip_mcp.py VERSION; do
-		[ -r "$mcp_source/$mcp_file" ] || {
-			printf '%s: MCP source is incomplete; missing %s\n' "$PROG" "$mcp_file" >&2
-			return 1
-		}
-	done
-	[ -r "$mcp_source/core/protocol.py" ] || {
-		printf '%s: MCP source is incomplete; missing core/protocol.py\n' "$PROG" >&2
-		return 1
-	}
-	mcp_stage="$(mktemp -d "${TMPDIR:-/tmp}/asip-mcp-install.XXXXXX")" || {
-		printf '%s: could not create MCP installation staging directory\n' "$PROG" >&2
-		return 1
-	}
-	mcp_candidate=''
-	mcp_install_lock=''
-	cleanup_mcp_stage() {
-		rm -rf -- "$mcp_stage"
-		[ -z "$mcp_candidate" ] || rm -rf -- "$mcp_candidate"
-		[ -z "$mcp_install_lock" ] || rmdir -- "$mcp_install_lock" 2>/dev/null || true
-	}
-	trap cleanup_mcp_stage 0 1 2 3 15
-	cp "$mcp_source/pyproject.toml" "$mcp_source/asip_mcp.py" \
-		"$mcp_source/VERSION" "$mcp_stage/"
-	cp -R "$mcp_source/core" "$mcp_stage/core"
-
-	mcp_data_home="${XDG_DATA_HOME:-$HOME/.local/share}/asip"
-	mcp_envs="$mcp_data_home/mcp-envs"
-	mcp_python_tag="$(python3 -c 'import sys; print("%d%d" % sys.version_info[:2])')"
-	mcp_arch="$(uname -m)"
-	mcp_lock="$mcp_source/requirements/mcp-py${mcp_python_tag}-linux-x86_64.lock"
-	mcp_wheels="$mcp_source/wheelhouse/py${mcp_python_tag}-linux-x86_64"
-	mcp_common="$mcp_source/wheelhouse/common"
-	mcp_install_mode=package-index
-	mcp_bundle_present=0
-	if [ -d "$mcp_source/wheelhouse" ]; then mcp_bundle_present=1; fi
-	if [ -r "$mcp_lock" ] && [ -d "$mcp_wheels" ] && \
-			[ -d "$mcp_common" ] && [ -r "$mcp_source/wheelhouse/SHA256SUMS" ]; then
-		[ "$mcp_arch" = x86_64 ] || {
-			printf '%s: bundled MCP wheelhouse does not support architecture %s\n' "$PROG" "$mcp_arch" >&2
-			return 1
-		}
-		mcp_install_mode=wheelhouse
-	fi
-	if [ "$mcp_bundle_present" -eq 1 ] && [ "$mcp_install_mode" != wheelhouse ]; then
-		printf '%s: bundled MCP wheelhouse does not support Python %s on %s, or is incomplete\n' \
-			"$PROG" "$mcp_python_tag" "$mcp_arch" >&2
-		return 1
-	fi
-	mcp_fingerprint="$({
-		sha256sum "$mcp_source/pyproject.toml" "$mcp_source/asip_mcp.py" \
-			"$mcp_source/core/protocol.py" "$mcp_source/VERSION"
-		printf 'python=%s\nmode=%s\n' "$mcp_python_tag" "$mcp_install_mode"
-		[ "$mcp_install_mode" = package-index ] || \
-			sha256sum "$mcp_lock" "$mcp_source/wheelhouse/SHA256SUMS"
-	} | sha256sum | cut -c1-20)"
-	mcp_venv="$mcp_envs/$mcp_fingerprint"
-	mcp_adapter_version="$(sed -n '1{s/[[:space:]]*$//;p;q;}' "$mcp_source/VERSION")"
-	mkdir -p "$mcp_envs" "$HOME/.local/bin"
-	mcp_environment_valid() {
-		[ -x "$mcp_venv/bin/asip-mcp-inspect" ] && \
-			[ -x "$mcp_venv/bin/asip-mcp-admin" ] && \
-			[ "$(sed -n '1p' "$mcp_venv/bin/asip-mcp-inspect")" = "#!$mcp_venv/bin/python" ] && \
-			[ "$(sed -n '1p' "$mcp_venv/bin/asip-mcp-admin")" = "#!$mcp_venv/bin/python" ] && \
-			env -u PYTHONPATH "$mcp_venv/bin/python" -c \
-			'import sys, asip_mcp, mcp; from core.protocol import VERSION; from importlib.metadata import version; assert version("mcp") == "2.0.0"; assert VERSION == sys.argv[1] == version("asip-mcp")' \
-			"$mcp_adapter_version" \
-			>/dev/null 2>&1
-	}
-	if ! mcp_environment_valid; then
-		mcp_install_lock="$mcp_envs/.install-$mcp_fingerprint.lock"
-		mcp_lock_attempt=0
-		while ! mkdir -- "$mcp_install_lock" 2>/dev/null; do
-			if mcp_environment_valid; then
-				mcp_install_lock=''
-				break
-			fi
-			mcp_lock_attempt=$((mcp_lock_attempt + 1))
-			if [ "$mcp_lock_attempt" -ge 30 ]; then
-				printf '%s: another MCP installation did not finish within 30 seconds\n' "$PROG" >&2
-				return 1
-			fi
-			sleep 1
-		done
-	fi
-	if ! mcp_environment_valid; then
-		mcp_candidate="$mcp_envs/.build-$mcp_fingerprint-$$"
-		if ! python3 -m venv "$mcp_candidate"; then
-			printf '%s: could not create the isolated MCP environment; install the distribution python3-venv package and retry\n' "$PROG" >&2
-			return 1
-		fi
-		if [ "$mcp_install_mode" = wheelhouse ]; then
-			if ! (cd "$mcp_source/wheelhouse" && sha256sum -c SHA256SUMS >/dev/null); then
-				printf '%s: bundled MCP wheelhouse failed its SHA-256 manifest\n' "$PROG" >&2
-				return 1
-			fi
-			if ! "$mcp_candidate/bin/python" -m pip install --disable-pip-version-check \
-					--no-input --quiet --no-index --find-links "$mcp_wheels" \
-					--require-hashes --requirement "$mcp_lock"; then
-				printf '%s: offline MCP dependency installation failed; the release wheelhouse may not match this Python/platform\n' "$PROG" >&2
-				return 1
-			fi
-			set -- "$mcp_common"/asip_mcp-*.whl
-			if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
-				printf '%s: bundled wheelhouse must contain exactly one ASIP adapter wheel\n' "$PROG" >&2
-				return 1
-			fi
-			if ! "$mcp_candidate/bin/python" -m pip install --disable-pip-version-check \
-					--no-input --quiet --no-index --no-deps "$1"; then
-				printf '%s: bundled ASIP MCP adapter wheel installation failed\n' "$PROG" >&2
-				return 1
-			fi
-		else
-			if ! "$mcp_candidate/bin/python" -m pip install --disable-pip-version-check \
-					--no-input --quiet --upgrade 'mcp==2.0.0'; then
-				printf '%s: pinned MCP SDK installation failed; check network/package-index access or use a release with a bundled wheelhouse\n' "$PROG" >&2
-				return 1
-			fi
-			if ! "$mcp_candidate/bin/python" -m pip install --disable-pip-version-check \
-					--no-input --quiet --force-reinstall --no-deps "$mcp_stage"; then
-		printf '%s: ASIP MCP adapter installation failed; retry "asip mcp install"\n' "$PROG" >&2
-				return 1
-			fi
-		fi
-		if ! env -u PYTHONPATH "$mcp_candidate/bin/python" -c \
-			'import sys, asip_mcp, mcp; from core.protocol import VERSION; from importlib.metadata import version; assert version("mcp") == "2.0.0"; assert VERSION == sys.argv[1] == version("asip-mcp")' \
-			"$mcp_adapter_version"; then
-			printf '%s: staged MCP environment failed import/version validation\n' "$PROG" >&2
-			return 1
-		fi
-		printf '%s\n' "$mcp_install_mode" >"$mcp_candidate/ASIP_INSTALL_SOURCE"
-		# Python entry points contain an absolute interpreter path. Rebase the two
-		# user-facing launchers before publishing the renamed environment.
-		for mcp_launcher in "$mcp_candidate/bin/asip-mcp-inspect" \
-				"$mcp_candidate/bin/asip-mcp-admin"; do
-			mcp_shebang="$(sed -n '1p' "$mcp_launcher")"
-			[ "$mcp_shebang" = "#!$mcp_candidate/bin/python" ] || {
-				printf '%s: staged MCP launcher has an unexpected interpreter path\n' "$PROG" >&2
-				return 1
-			}
-			sed -i "1c\\#!$mcp_venv/bin/python" "$mcp_launcher"
-		done
-		if [ -e "$mcp_venv" ]; then rm -rf -- "$mcp_venv"; fi
-		if ! mv -T -- "$mcp_candidate" "$mcp_venv"; then
-			printf '%s: could not publish the validated MCP environment\n' "$PROG" >&2
-			return 1
-		fi
-		mcp_candidate=''
-		if ! mcp_environment_valid; then
-			rm -rf -- "$mcp_venv"
-			printf '%s: published MCP entry points failed final validation; existing user entry points were not changed\n' "$PROG" >&2
-			return 1
-		fi
-		rmdir -- "$mcp_install_lock"
-		mcp_install_lock=''
-	fi
-	ln -sfn "$mcp_venv/bin/asip-mcp-inspect" "$HOME/.local/bin/asip-mcp-inspect"
-	ln -sfn "$mcp_venv/bin/asip-mcp-admin" "$HOME/.local/bin/asip-mcp-admin"
-	mcp_sdk_version="$("$mcp_venv/bin/python" -c 'from importlib.metadata import version; print(version("mcp"))')" || {
-		printf '%s: MCP SDK could not be imported after installation\n' "$PROG" >&2
-		return 1
-	}
-	trap - 0 1 2 3 15
-	cleanup_mcp_stage
-	printf 'ASIP MCP adapter installed for %s (SDK %s, %s, isolated at %s).\n' \
-		"$(id -un)" "$mcp_sdk_version" "$mcp_install_mode" "$mcp_venv"
+    [ "$#" -eq 0 ] || { printf 'Usage: %s mcp install\n' "$PROG" >&2; return 64; }
+    python3 "$ASIP_SOURCE_ROOT/scripts/install_user.py" mcp
 }
 
 cmd_desktop() {
-	if [ "${1:-}" = --help ] || [ "${1:-}" = -h ]; then
-		printf 'The native ASIP Desktop is not included in the Core release.\n'
-		return 0
-	fi
-	printf '%s: the native ASIP Desktop is not included in this Core release\n' "$PROG" >&2
-	return 69
+    case "${1:-}" in
+    install) shift; python3 "$ASIP_SOURCE_ROOT/scripts/install_user.py" desktop "$@" ;;
+    '') exec "$HOME/.local/bin/asip-desktop" ;;
+    *) printf 'Usage: %s desktop [install]\n' "$PROG" >&2; return 64 ;;
+    esac
 }
 
 register_host_mcp_grok() {
@@ -2342,10 +1814,10 @@ cmd_mcp_status() {
 	if [ -x "$mcp_inspect" ] && [ -x "$mcp_admin" ] && \
 			[ "$mcp_bin" = "$(dirname -- "$mcp_admin")" ] && \
 			[ -x "$mcp_venv/bin/python" ]; then
-		mcp_sdk_version="$("$mcp_venv/bin/python" -c 'from importlib.metadata import version; print(version("mcp"))' 2>/dev/null || printf unknown)"
-		mcp_install_mode="$(sed -n '1p' "$mcp_venv/ASIP_INSTALL_SOURCE" 2>/dev/null || printf legacy)"
-		printf 'MCP adapter: installed\nSDK version: %s\nInstall source: %s\nEnvironment: %s\n' \
-			"$mcp_sdk_version" "$mcp_install_mode" "$mcp_venv"
+		mcp_sdk_version="$("$mcp_venv/bin/python" -I -c 'from importlib.metadata import version; print(version("mcp"))' 2>/dev/null || printf unknown)"
+		mcp_adapter_version="$("$mcp_venv/bin/python" -I -c 'from importlib.metadata import version; print(version("asip-mcp"))' 2>/dev/null || printf unknown)"
+		printf 'MCP adapter: %s\nSDK version: %s\nEnvironment: %s\n' \
+			"$mcp_adapter_version" "$mcp_sdk_version" "$mcp_venv"
 		return 0
 	fi
 	printf 'MCP adapter: not installed\nRun: asip mcp install\n'
@@ -2372,7 +1844,7 @@ cmd_mcp() {
 		printf '{"command":"%s","args":[],"transport":"stdio"}\n' "$command"
 		;;
 	*)
-		printf 'Usage: %s mcp install [SOURCE] | status | config inspect|admin\n' "$PROG" >&2
+		printf 'Usage: %s mcp install | status | config inspect|admin\n' "$PROG" >&2
 		return 64
 		;;
 	esac
@@ -2444,7 +1916,7 @@ cmd_bootstrap_live() {
 	harness="all"
 	if [ "${1:-}" = "--harness" ]; then harness="${2:-}"; fi
 	md=/etc/asip/MACHINE.md
-	[ -r "$md" ] || { printf '%s: %s is missing; run install --privileged first\n' "$PROG" "$md" >&2; return 1; }
+	[ -r "$md" ] || { printf '%s: %s is missing; run install.sh --system first\n' "$PROG" "$md" >&2; return 1; }
 	case "$harness" in all | claude | codex | grok) ;; *)
 		printf '%s: unknown harness "%s"\n' "$PROG" "$harness" >&2; return 64 ;;
 	esac
@@ -2483,343 +1955,14 @@ cmd_bootstrap_live() {
 }
 
 cmd_install() {
-	[ "${1:-}" = "--privileged" ] || { printf 'Usage: %s install --privileged [--self-upgrade] (run via your existing root escalation for first install)\n' "$PROG" >&2; return 64; }
-	self_upgrade=0
-	case "${2:-}" in
-	'') ;;
-	--self-upgrade) self_upgrade=1 ;;
-	*) printf 'Usage: %s install --privileged [--self-upgrade] (run via your existing root escalation for first install)\n' "$PROG" >&2; return 64 ;;
-	esac
-	[ "$#" -le 2 ] || { printf 'Usage: %s install --privileged [--self-upgrade] (run via your existing root escalation for first install)\n' "$PROG" >&2; return 64; }
-	[ "$(id -u)" -eq 0 ] || { printf '%s: install --privileged must run as root\n' "$PROG" >&2; return 1; }
-	src="${ASIP_SOURCE_ROOT:-$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)}"
-	if [ ! -r "$src/core/daemon.py" ] || [ ! -r "$src/a" ]; then
-		printf '%s: this client is not an install tree; run install --privileged from an extracted ASIP release or use asip upgrade\n' "$PROG" >&2
-		return 1
-	fi
-	[ -r "$src/scripts/restore_install_backup.sh" ] || {
-		printf '%s: release is missing installer recovery helper: scripts/restore_install_backup.sh\n' "$PROG" >&2
-		return 1
-	}
-	[ -r "$src/scripts/uninstall_software.sh" ] || {
-		printf '%s: release is missing deferred removal helper: scripts/uninstall_software.sh\n' "$PROG" >&2
-		return 1
-	}
-	python_tag="$(python3 -c 'import sys; print("%d%d" % sys.version_info[:2])')"
-	case "$python_tag" in
-	312|313|314) ;;
-	*)
-		printf '%s: Python %s is outside the supported MCP runtime matrix (3.12–3.14)\n' \
-			"$PROG" "$python_tag" >&2
-		return 1
-		;;
-	esac
-	install_mode=first-install
-	running_version=''
-	if [ -r /usr/lib/asip/VERSION ]; then
-		running_version="$(sed -n '1{s/[[:space:]]*$//;p;q;}' /usr/lib/asip/VERSION)"
-	fi
-	if [ "$self_upgrade" -eq 1 ]; then
-		install_mode=self-upgrade
-	elif [ -e /usr/local/bin/asip ] || [ -e /etc/asip/MACHINE.md ] || \
-			[ -e /var/lib/asip/journal.jsonl ]; then
-		install_mode=reinstall-repair
-	fi
-	if [ "$install_mode" = reinstall-repair ] && \
-			systemctl is-active --quiet asip.service && \
-			[ "$running_version" != "$VERSION" ]; then
-		printf '%s: a running ASIP %s installation cannot be replaced by %s as a reinstall; use the verified upgrade workflow\n' \
-			"$PROG" "${running_version:-unknown}" "$VERSION" >&2
-		return 1
-	fi
-	install_backup=''
-	if [ "$self_upgrade" -eq 1 ] && [ -n "$running_version" ]; then
-		backup_dir=/var/lib/asip/install-backups
-		install -d -o root -g asip -m 0700 "$backup_dir"
-		install_backup="$backup_dir/${running_version}-$(date -u +%Y%m%d%H%M%S).tar"
-		backup_list="$(mktemp "${TMPDIR:-/tmp}/asip-install-backup.XXXXXX")" || return 1
-		for backup_path in usr/lib/asip usr/share/asip usr/local/bin/asip \
-			usr/local/bin/a usr/local/bin/asip-inspect \
-			etc/systemd/system/asip.service etc/systemd/system/asip.socket \
-			etc/systemd/system/asip-read.service etc/systemd/system/asip-read.socket \
-			usr/local/sbin/asip-uninstall; do
-			[ -e "/$backup_path" ] && printf '%s\n' "$backup_path" >>"$backup_list"
-		done
-		if ! tar -C / -cpf "$install_backup" -T "$backup_list"; then
-			rm -f -- "$backup_list" "$install_backup"
-			printf '%s: could not retain the previous installation before upgrade\n' "$PROG" >&2
-			return 1
-		fi
-		rm -f -- "$backup_list"
-		chmod 0600 "$install_backup"
-		printf 'Installer recovery backup retained at %s\n' "$install_backup"
-	fi
-	# MCP remains isolated from the standard-library core at runtime, but its
-	# tested SDK is installed by default for this agent-first product. Resolve
-	# it before replacing system files so package-index failure cannot leave a
-	# half-applied core upgrade.
-	operator="${SUDO_USER:-${ASIP_OPERATOR:-}}"
-	mcp_status=skipped
-	harness_status=skipped
-	relogin_required=false
-	if [ "$operator" = root ]; then operator=''; fi
-	if [ -n "$operator" ]; then
-		getent passwd "$operator" >/dev/null 2>&1 || {
-			printf '%s: operator %s does not name a local account\n' "$PROG" "$operator" >&2
-			return 1
-		}
-		operator_home="$(getent passwd "$operator" | cut -d: -f6)"
-		operator_groups="$(id -nG "$operator")"
-		case " $operator_groups " in *' asip '*) ;; *) relogin_required=true ;; esac
-		case " $operator_groups " in *' asip-read '*) ;; *) relogin_required=true ;; esac
-		if ! runuser -u "$operator" -- python3 -c 'import ensurepip, venv' >/dev/null 2>&1; then
-			case "$(detect_pkgmgr)" in
-			apt-get) apt-get update && apt-get install -y python3-venv ;;
-			dnf) dnf install -y python3-pip ;;
-			pacman) pacman -S --noconfirm python ;;
-			zypper) zypper --non-interactive install python3-pip ;;
-			emerge) emerge dev-python/pip ;;
-			apk) apk add py3-pip ;;
-			xbps-install) xbps-install -y python3-pip ;;
-			*) printf '%s: cannot install the Python venv prerequisite for MCP\n' "$PROG" >&2; return 1 ;;
-			esac
-		fi
-		mcp_src="$src"
-		if [ ! -r "$src/pyproject.toml" ] && [ -r /usr/share/asip/mcp-source/pyproject.toml ]; then
-			mcp_src=/usr/share/asip/mcp-source
-		fi
-		if ! runuser -u "$operator" -- "$src/asip" mcp install "$mcp_src"; then
-			printf '%s: MCP adapter setup failed before system installation; fix the reported dependency error and retry\n' "$PROG" >&2
-			return 1
-		fi
-		mcp_status=installed
-	else
-		printf '%s: no operator was supplied; Core installation will continue, but MCP setup requires the intended login user\n' "$PROG" >&2
-	fi
-	# Linux Audit supplies kernel attribution for changes made outside ASIP.
-	# Package names differ, but the installed service and tools are auditd.
-	if ! command -v auditctl >/dev/null 2>&1; then
-		case "$(detect_pkgmgr)" in
-		pacman) pacman -S --noconfirm audit ;;
-		apt-get) apt-get update && apt-get install -y auditd ;;
-		dnf) dnf install -y audit ;;
-		zypper) zypper --non-interactive install audit ;;
-		emerge) emerge sys-process/audit ;;
-		apk) apk add audit ;;
-		xbps-install) xbps-install -y audit ;;
-		*) printf '%s: cannot install Linux Audit: unsupported package manager\n' "$PROG" >&2; return 1 ;;
-		esac
-	fi
-	getent group asip >/dev/null 2>&1 || groupadd --system asip
-	getent group asip-read >/dev/null 2>&1 || groupadd --system asip-read
-	install -d -m 0755 /usr/lib/asip /usr/share/asip /etc/asip
-	install -d -o root -g asip -m 0750 /var/lib/asip /var/lib/asip/blobs
-	if [ -f /var/lib/asip/journal.jsonl ]; then
-		chown root:asip /var/lib/asip/journal.jsonl
-		chmod 0640 /var/lib/asip/journal.jsonl
-	fi
-	find /var/lib/asip/blobs -type f -exec chown root:asip {} + -exec chmod 0640 {} +
-	rm -rf -- /usr/lib/asip/core
-	cp -R "$src/core" /usr/lib/asip/core
-	find /usr/lib/asip/core -type d -exec chmod 0755 {} +
-	find /usr/lib/asip/core -type f -exec chmod 0644 {} +
-	chmod 0755 /usr/lib/asip/core/server.py /usr/lib/asip/core/client.py
-	rm -f -- /usr/lib/asip/asipd.py /usr/lib/asip/asip-client.py /usr/lib/asip/asip_protocol.py
-	rm -rf -- /usr/lib/asip/cli
-	cp -R "$src/cli" /usr/lib/asip/cli
-	find /usr/lib/asip/cli -type d -exec chmod 0755 {} +
-	find /usr/lib/asip/cli -type f -exec chmod 0644 {} +
-	chmod 0755 /usr/lib/asip/cli/asip.sh
-	rm -f -- /usr/lib/asip/asip_dashboard.py /usr/lib/asip/asip_ui.py \
-		/usr/lib/asip/asip_release.py /usr/lib/asip/asip_telemetry.py \
-		/usr/lib/asip/asip_telemetry_server.py /usr/lib/asip/asip_support.py \
-		/usr/lib/asip/asip_eval.py
-	rm -rf /usr/share/asip/eval
-	install -d -m 0755 /usr/share/asip/eval
-	cp -R "$src/eval/cases" /usr/share/asip/eval/cases
-	cp -R "$src/eval/suites" /usr/share/asip/eval/suites
-	install -m 0644 "$src/eval/trajectory.schema.json" "$src/eval/suite.schema.json" /usr/share/asip/eval/
-	# The CLI reads the shared product version while the daemons import the
-	# protocol module from /usr/lib/asip and intentionally resolve a sibling
-	# VERSION. Keep both copies synchronized so a self-upgrade cannot make the
-	# CLI and socket summaries disagree.
-	install -m 0644 "$src/VERSION" /usr/share/asip/VERSION
-	install -m 0644 "$src/VERSION" /usr/lib/asip/VERSION
-	rm -rf -- /usr/share/asip/mcp-source
-	install -d -m 0755 /usr/share/asip/mcp-source
-	install -m 0644 "$src/pyproject.toml" "$src/asip_mcp.py" \
-		"$src/VERSION" /usr/share/asip/mcp-source/
-	cp -R "$src/core" /usr/share/asip/mcp-source/core
-	for mcp_directory in requirements wheelhouse; do
-		if [ -d "$src/$mcp_directory" ]; then
-			cp -R "$src/$mcp_directory" "/usr/share/asip/mcp-source/$mcp_directory"
-			find "/usr/share/asip/mcp-source/$mcp_directory" -type d -exec chmod 0755 {} +
-			find "/usr/share/asip/mcp-source/$mcp_directory" -type f -exec chmod 0644 {} +
-		fi
-	done
-	install -m 0755 "$src/asip" /usr/local/bin/asip
-	install -m 0755 "$src/a" /usr/local/bin/a
-	install -m 0755 "$src/asip-inspect" /usr/local/bin/asip-inspect
-	install -d -m 0755 /usr/local/sbin
-	install -m 0755 "$src/scripts/restore_install_backup.sh" /usr/local/sbin/asip-restore
-	install -m 0755 "$src/scripts/uninstall_software.sh" /usr/local/sbin/asip-uninstall
-	install -m 0644 "$src/systemd/asip.socket" /etc/systemd/system/asip.socket
-	install -m 0644 "$src/systemd/asip.service" /etc/systemd/system/asip.service
-	install -m 0644 "$src/systemd/asip-read.socket" /etc/systemd/system/asip-read.socket
-	install -m 0644 "$src/systemd/asip-read.service" /etc/systemd/system/asip-read.service
-	install -d -m 0750 /etc/audit/rules.d
-	cat >/etc/audit/rules.d/asip.rules <<'EOF'
-# ASIP: attribute executable-bit and other mode changes by logged-in users.
--a always,exit -F arch=b64 -S chmod,fchmod,fchmodat -F auid>=1000 -F auid!=4294967295 -k asip_mode
-EOF
-	if [ ! -f /etc/asip/MACHINE.md ]; then
-		machine_stage="$(mktemp "${TMPDIR:-/tmp}/asip-machine.XXXXXX")" || return 1
-		if ! "$src/asip" skeleton >"$machine_stage"; then
-			rm -f -- "$machine_stage"
-			printf '%s: could not generate the initial MACHINE.md policy\n' "$PROG" >&2
-			return 1
-		fi
-		install -m 0644 "$machine_stage" /etc/asip/MACHINE.md
-		rm -f -- "$machine_stage"
-	fi
-	# Agent harnesses run as the login user and must be able to read machine
-	# policy. Repair permissions without replacing the operator's existing text.
-	chown root:root /etc/asip/MACHINE.md
-	chmod 0644 /etc/asip/MACHINE.md
-	# Installation may read from a root-squashed or user-mounted source tree.
-	# Normalize every system-owned product artifact explicitly instead of
-	# relying on cp/install's source ownership behavior.
-	chown -R root:root /usr/lib/asip /usr/share/asip
-	chown root:root /usr/local/bin/asip /usr/local/bin/a /usr/local/bin/asip-inspect \
-		/usr/local/sbin/asip-restore /usr/local/sbin/asip-uninstall \
-		/etc/systemd/system/asip.socket /etc/systemd/system/asip.service \
-		/etc/systemd/system/asip-read.socket /etc/systemd/system/asip-read.service
-	[ ! -e /etc/audit/rules.d/asip.rules ] || chown root:root /etc/audit/rules.d/asip.rules
-	systemctl daemon-reload
-	systemctl enable --now auditd
-	if ! auditctl -l | grep -q -- '-F key=asip_mode$'; then
-		if ! augenrules --load && ! auditctl -l | grep -q -- '-F key=asip_mode$'; then
-			printf '%s: could not activate the ASIP Linux Audit rule; inspect auditd and retry\n' "$PROG" >&2
-			return 1
-		fi
-		# Some distributions keep a compiled copy of a rule after its source has
-		# been removed. If the intended ASIP key is active, a duplicate-load exit
-		# is harmless and must not make a reinstall/repair fail.
-		if auditctl -l | grep -q -- '-F key=asip_mode$'; then
-			printf 'ASIP Linux Audit rule is active.\n'
-		fi
-	fi
-	# A failed read daemon can rate-limit its socket during an upgrade. Clear
-	# that transient state after replacing the code so an idempotent retry heals.
-	systemctl reset-failed asip-read.socket asip-read.service >/dev/null 2>&1 || true
-	systemctl enable --now asip.socket
-	# An interrupted failure-isolation or upgrade test can leave the static
-	# read service running after its socket was stopped. systemd refuses to
-	# start the socket while that orphaned service owns the endpoint, so repair
-	# this split state before enabling the normal socket-activated path.
-	if systemctl is-active --quiet asip-read.service && \
-			! systemctl is-active --quiet asip-read.socket; then
-		systemctl stop asip-read.service
-	fi
-	systemctl enable --now asip-read.socket
-	if [ "$self_upgrade" -eq 1 ]; then
-		# Restarting asip.service synchronously from an `asip do` child would
-		# terminate the daemon before it can fsync this installation's terminal
-		# journal record. A transient timer preserves the self-upgrade restart
-		# contract while letting the request finish first.
-		systemd-run --quiet --unit="asip-deferred-restart-$$" --on-active=10s \
-			--collect -- /usr/bin/systemctl restart asip.service asip-read.service
-		printf 'ASIP services will restart in 10 seconds after the current journal entry closes.\n'
-	elif systemctl is-active --quiet asip.service; then
-		# A same-version reinstall has already replaced the on-disk files. Keep the
-		# healthy running daemon instead of scheduling an asynchronous restart that
-		# could sever the next unrelated ASIP request. The verified self-upgrade path
-		# above owns its restart and reconnect barrier when versions differ.
-		# The read-only daemon does not own the mutation lane, so it can be
-		# refreshed immediately. Keep the privileged daemon alive until its
-		# current journal entry and any other active request have completed.
-		systemctl try-restart asip-read.service
-		printf 'The ASIP administration daemon stayed active; the read-only daemon was refreshed. Administration code applies on its next normal activation.\n'
-	else
-		systemctl try-restart asip.service
-		systemctl try-restart asip-read.service
-	fi
-	# The invoking login user, not root, gets the access deliberately granted here.
-	if [ -n "$operator" ]; then
-		usermod -aG asip "$operator"
-		usermod -aG asip-read "$operator"
-		runuser -u "$operator" -- /usr/local/bin/asip bootstrap --harness all
-		harness_status=refreshed
-		# install.sh stages a complete bootstrap client in ~/.local/bin so the
-		# one-time privileged installation can start. Always reconcile the two
-		# operator-facing entrypoints to managed-system forwarders, regardless of
-		# whether this installer runs from that bootstrap tree, an extracted release,
-		# or a self-upgrade staging directory. Otherwise a stale bootstrap earlier on
-		# PATH can keep reporting and running the old product after a valid upgrade.
-		operator_bin="$operator_home/.local/bin"
-		forward_stage="$(mktemp -d "${TMPDIR:-/tmp}/asip-forwarders.XXXXXX")" || return 1
-		printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/asip "$@"' >"$forward_stage/a"
-		printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/asip "$@"' >"$forward_stage/asip"
-		printf '%s\n' '#!/bin/sh' 'exec /usr/local/bin/asip-inspect "$@"' >"$forward_stage/asip-inspect"
-		bootstrap_owned=0
-		if [ "$(readlink -f "$src")" = "$(readlink -f "$operator_bin")" ] || \
-				{ [ -f "$operator_bin/core/client.py" ] && \
-				[ -f "$operator_bin/core/protocol.py" ] && \
-				[ -f "$operator_bin/systemd/asip.socket" ]; }; then
-			bootstrap_owned=1
-		fi
-		if [ "$bootstrap_owned" -eq 1 ]; then
-			for bootstrap_file in a asip asip-inspect VERSION \
-					asip_mcp.py pyproject.toml; do
-				rm -f -- "$operator_bin/$bootstrap_file"
-			done
-			rm -rf -- "$operator_bin/core" "$operator_bin/cli"
-			rm -rf -- "$operator_bin/systemd" "$operator_bin/requirements" "$operator_bin/wheelhouse"
-		fi
-		install -o "$operator" -g "$(id -gn "$operator")" -m 0755 \
-			"$forward_stage/a" "$operator_bin/a"
-		install -o "$operator" -g "$(id -gn "$operator")" -m 0755 \
-			"$forward_stage/asip" "$operator_bin/asip"
-		install -o "$operator" -g "$(id -gn "$operator")" -m 0755 \
-			"$forward_stage/asip-inspect" "$operator_bin/asip-inspect"
-		rm -rf -- "$forward_stage"
-	fi
-	health=attention
-	if /usr/local/bin/asip-inspect doctor >/dev/null 2>&1; then
-		health=healthy
-	fi
-	printf 'ASIP installation succeeded. This is the last time root escalation is needed for normal ASIP administration.\n'
-	printf 'Post-install health: %s (read-only socket and journal check)\n' "$health"
-	printf 'MCP adapter: %s (host registration remains an explicit operator choice)\n' "$mcp_status"
-	printf 'Run "asip doctor --json" now for operational health; plain "asip doctor" also reports onboarding completeness.\n'
-	printf 'Start a new login session if group membership was just added.\n'
-	printf 'ASIP now records and inspects privileged work through its local sockets.\n'
-	printf 'Use the ASIP MCP adapter from your agent, and run "asip upgrade --check" before upgrading.\n'
-	if [ -n "$install_backup" ]; then
-		printf 'If the upgraded services cannot restart, restore with: /usr/local/sbin/asip-restore %s\n' "$install_backup"
-	fi
-	if [ "$self_upgrade" -eq 0 ]; then
-		print_install_handoff
-	fi
-	if [ "$self_upgrade" -eq 0 ]; then handoff_status=printed; else handoff_status=suppressed; fi
-	printf 'ASIP_INSTALL_RESULT {"schema_version":1,"status":"installed","mode":"%s","version":"%s","health":"%s","mcp":"%s","harness":"%s","relogin_required":%s,"handoff":"%s","installer_backup":"%s"}\n' \
-		"$install_mode" "$VERSION" "$health" "$mcp_status" "$harness_status" \
-		"$relogin_required" "$handoff_status" "${install_backup:-}"
+    [ "${1:-}" = --privileged ] || { printf 'Usage: %s install --privileged [--operator USER]\n' "$PROG" >&2; return 64; }
+    shift
+    "$ASIP_SOURCE_ROOT/scripts/install_system.sh" "$@"
 }
 
 case "${1:-help}" in
 install) shift; cmd_install "$@" ;;
-upgrade) shift; cmd_upgrade "$@" ;;
-uninstall) shift; cmd_uninstall "$@" ;;
-dashboard)
-	printf '%s\n' 'The web dashboard is not included in ASIP Core.' >&2
-	exit 69
-	;;
-telemetry) shift; cmd_telemetry "$@" ;;
-support) shift; cmd_support "$@" ;;
-eval) shift; cmd_eval "$@" ;;
 bootstrap) shift; cmd_bootstrap_live "$@" ;;
-onboard) shift; cmd_onboard "$@" ;;
 change) shift; cmd_change "$@" ;;
 note) shift; cmd_note "$@" ;;
 do) shift; cmd_do "$@" ;;
@@ -2854,26 +1997,12 @@ rule)
 doctor) shift; cmd_doctor "$@" ;;
 drift) shift; cmd_drift "$@" ;;
 version | --version | -V)
-	if [ "${2:-}" = "--json" ] || [ "$JSON" -eq 1 ]; then
-		python3 "$(release_file)" check --json
-	else
-		release_status="$(python3 "$(release_file)" check)"
-		installed="$(release_field installed_version)"
-		source="$(release_field installed_source)"
-		client="$(release_field client_version)"
-		if [ -n "$installed" ]; then
-			printf '%s %s\n' "$PROG" "$installed"
-		else
-			# A bootstrap/client can report its own qualified version even before
-			# a daemon is installed.  Do not label a known release "unknown";
-			# keep the separate installed_version field truthful below.
-			printf '%s %s (client; installation unavailable)\n' "$PROG" "$VERSION"
-		fi
-		printf 'client_version=%s\n' "${client:-$VERSION}"
-		printf 'installed_version=%s\n' "${installed:-}"
-		printf 'installed_source=%s\n' "${source:-unavailable}"
-	fi
-	;;
+    if [ "${2:-}" = --json ] || [ "$JSON" -eq 1 ]; then
+        printf '{"client_version":"%s"}
+' "$VERSION"
+    else printf '%s %s
+' "$PROG" "$VERSION"; fi
+    ;;
 help | --help | -h) cmd_help ;;
 *)
 	printf '%s: unknown command "%s"\n\n' "$PROG" "$1" >&2

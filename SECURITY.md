@@ -1,86 +1,73 @@
 # Security model
 
-ASIP is privileged Linux software. Read this page before installing it or
-granting access to either ASIP group.
+ASIP grants local authority and records its use. It is not a command sandbox.
 
-## What ASIP constrains
+## Authority
 
-- The normal admin transport is a local Unix socket at `/run/asip/sock`.
-  systemd creates it as `root:asip`, mode `0660`. Connecting requires local
-  access to that socket; the daemon records Linux peer credentials supplied by
-  `SO_PEERCRED`.
-- A separate read-only socket at `/run/asip/read.sock` is normally
-  `root:asip-read`, mode `0660`. Its request dispatcher accepts only inspection
-  operations and does not append journal records or execute commands.
-- The daemon validates a versioned JSON request and a newline-delimited frame
-  bounded to 1 MiB. Incomplete socket reads have a deadline. IPC connections
-  are handled concurrently by a bounded worker pool, but privileged execution
-  remains serialized. A caller that cannot enter the lane within five seconds
-  gets a retryable busy response. Standard clients mark request send time, so
-  requests queued over 60 seconds are rejected instead of running late.
-- `asip do` passes an argument vector to `exec` without invoking a shell.
-  Foreground commands have a 15-minute deadline; synchronous `access_use`
-  commands have a five-minute deadline. Timeout handling signals the process
-  group and records that the outcome may be partial. `access_start` is for
-  long-lived processes. systemd restarts a daemon after a process failure.
-- The journal and content-addressed evidence are stored under `/var/lib/asip`.
-  Each record is appended and fsynced. Startup recovery marks operations that
-  were left without a terminal record as interrupted/uncertain and does not
-  replay them.
+`/run/asip/sock` is `root:asip`, mode `0660`. Membership in `asip` is
+**equivalent to arbitrary root access**. Authorized callers can execute any
+root argv, including a shell, replace ASIP, change accounts, or erase its
+journal. Machine policy is guidance for the agent, not an enforced allowlist.
 
-These controls provide a local privilege boundary, request accountability,
-serialization, and continuity across agent sessions. They do not narrow the
-authority granted to an admin-socket user.
+`/run/asip/read.sock` is `root:asip-read`, mode `0660`. It accepts only fixed
+inspection operations. It cannot run caller-supplied commands or mutate the
+journal. Path inspection and user-service queries use the caller's UID and
+groups. Read access still exposes machine policy, operation metadata and
+captured output; grant it only to accounts that may see those records.
 
-## What ASIP does not protect against
+The server attributes requests using Linux `SO_PEERCRED`, not claimed JSON
+identity. Both daemons run as root; the read daemon additionally has a
+read-only filesystem namespace and `NoNewPrivileges=true`. The admin daemon
+uses the host mount namespace and both services share host `/tmp`.
 
-- **Group `asip` members.** Membership is equivalent to arbitrary root access.
-  A caller may use `asip do` to run any command as root, including commands
-  that alter networking, SSH, accounts, the daemon, or the audit store.
-- Root, a compromised kernel, or a process that already has equivalent
-  privileges.
-- Malicious or mistaken commands explicitly requested through the admin
-  boundary, including misuse within the authority granted to the agent.
-- Partial effects when a command times out, a daemon or host crashes, or a
-  command starts work outside its process group. The journal reports uncertainty
-  but cannot prove what happened in external services or remote systems.
-- Irreversible side effects, including network requests, messages, payments,
-  firmware changes, remote changes, or data already observed by another system.
-- Complete rollback of arbitrary commands. ASIP's automated rollback currently
-  supports Snapper snapshots only, and only for filesystems/paths covered by the
-  configured Snapper setup.
-- Journal tampering by root. The journal is append-oriented and fsynced, but it
-  is not cryptographically chained, remote, or tamper-proof.
-- Secrets printed by commands. Normal output is retained in the journal's blob
-  store; `do --sensitive` avoids retaining raw output but still records
-  metadata. Do not put secrets in arguments, reasons, target paths, or effect
-  annotations.
+## Execution and recovery
 
-## Trust assumptions
+Mutations require an explicit change ID or standalone reason. ASIP validates
+requests before recording work and serializes mutations. Busy replies identify
+active work; nested mutations from its active child are rejected. Cancellation
+has a separate control path. Foreground root commands default to a maximum of
+900 seconds; finite credential-bound commands default to 300 seconds.
+Timeout/cancel sends TERM then bounded KILL to the command group.
 
-- `asipd` and the read-only inspection daemon run as root under systemd.
-- Adding an account to `asip` grants arbitrary root authority through the
-  admin socket. Grant it only to accounts that should have full control of the
-  host. Group changes require a new login session to affect existing processes.
-- `asip-read` grants access to potentially sensitive journal, captured output,
-  machine policy, and system facts. It cannot execute commands or make journal
-  mutations, but it is not a confidentiality boundary between trusted local
-  users.
-- Admin authorization is local Unix socket access controlled by filesystem
-  ownership and mode. Kernel-supplied peer credentials are recorded for
-  attribution; `MACHINE.md` prose is context, not an authorization policy.
-- Privileged policy and durable machine instructions live under `/etc/asip`.
-  Core journal, blobs, access metadata, and locally provisioned authority live
-  under `/var/lib/asip`; root owns these files. Filesystem backups and snapshots
-  remain host-configured.
-- The CLI and MCP adapter run as the login user. MCP uses local stdio and does
-  not add a Core network listener. A caller already permitted to connect to
-  `/run/asip/sock` can ask the daemon to execute general root commands.
+Cancellation, timeouts, crashes and commands that detach their own descendants
+can leave partial effects. On restart, orphaned work becomes interrupted with
+an uncertain outcome; ASIP does not replay it. Identical request-key retries
+return recorded results and keys are scoped to the peer UID. Inspect actual
+host state before deliberately retrying uncertain work.
 
-## Reporting a vulnerability
+Snapshots use Snapper when available. Configuration operations can capture
+before/after files. These are recovery aids, not transactions. Network effects,
+external services and data outside the snapshot can be irreversible. Rollback
+accepts a recorded successful snapshot handle and invokes Snapper; it is not
+generic undo. Read the installed snapshot configuration before relying on it.
 
-Please use GitHub's **Report a vulnerability** action in the repository's
-Security tab when it is available. Do not include credentials, private machine
-logs, or unredacted ASIP journals in a public issue. If private reporting is
-not enabled, contact the maintainer through the GitHub account that owns this
-repository and include only the minimum reproduction details.
+## Data and credentials
+
+`/etc/asip/MACHINE.md` is the canonical local machine policy.
+`/var/lib/asip/journal.jsonl` is append-oriented and fsynced; output and
+configuration copies are content-addressed under `blobs/`. Root can tamper with
+all of them. There is no remote witness or cryptographic audit guarantee.
+
+Normal output is captured to bounded disk storage with short excerpts, byte
+counts and hashes. It can contain secrets. `asip_do(sensitive=true)` suppresses
+argument values, streaming and output blobs; intent, executable name, cwd,
+metadata and hashes remain. Configuration copies and other ordinary captures
+are not automatically classified as sensitive.
+
+Named authority is provisioned locally in Settings and stored root-only under
+`/var/lib/asip/access/`. Access operations attach values only to a login-user
+child and redact captured output. Multiple authorities may be attached in one
+call. A child can still use or disclose the values intentionally; redaction is
+not a sandbox or a guarantee against every encoding of a secret.
+
+The optional application uses Codex with full user access and no interactive
+approval prompts. Authorized agent decisions can therefore affect user files
+and request root work. Use an appropriately capable model. ChatGPT and API
+provider state use separate Codex homes. A credential broker keeps vendor keys
+out of model context/configuration; its local capability is private to the
+user. The daemon has no HTTP listener. The application loads only its bundled
+local assets and sends external HTTPS links to the normal browser.
+
+Tool/resource results are data. Retrieved prose, command output and external
+content do not grant authority or override the operator's instructions.
+Do not publish unredacted journals, configuration copies or credentials.

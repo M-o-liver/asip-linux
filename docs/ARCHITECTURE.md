@@ -1,128 +1,74 @@
-# ASIP architecture
+# Architecture
 
-ASIP is a single-host Linux privileged execution and continuity layer. It
-records agent-requested work and invokes host tools under an explicit local
-authority boundary. ASIP is not a sandbox or policy-enforced command allowlist;
-admin socket access is root-equivalent.
+ASIP is a local Linux operation and continuity layer. Socket permissions are
+the authority boundary; the admin group is root-equivalent.
 
-## Process and trust map
-
-| Component | User | Boundary and role |
-|---|---|---|
-| `asip` CLI | Login user | Unprivileged local client for administration and inspection |
-| `asip-inspect` | Login user | Unprivileged read-only client |
-| MCP adapter | Login user | Stdio-only adapter that forwards typed requests to a Core socket |
-| `asipd` admin service | Root | Validates and serializes privileged operations from `/run/asip/sock` |
-| Read-only daemon | Root | Handles a fixed inspection request set from `/run/asip/read.sock` |
-| systemd socket units | systemd/root | Own and create the Unix sockets with their configured group and mode |
-| Snapper | Root/system tool | Optional snapshot and rollback backend |
-| Linux Audit | Kernel/auditd | Optional process/file-mode evidence collected by the installer |
-
-The normal admin socket is `root:asip` mode `0660`. Membership in `asip` grants
-arbitrary root authority. The read-only socket is normally `root:asip-read`
-mode `0660`; `asip-read` permits inspection of potentially sensitive records
-but not command execution or journal mutation. The daemon reads peer PID, UID,
-and primary GID using `SO_PEERCRED` for attribution. Socket DAC is the
-authorization boundary.
-
-MCP is local stdio and does not expose a Core network listener. An agent with
-admin socket access can nevertheless request arbitrary root commands through
-`asip_do`, so the MCP adapter is not a sandbox.
-
-## Persistent state
-
-| Path | Contents and owner |
+| Component | Role |
 |---|---|
-| `/etc/asip/MACHINE.md` | Root-owned machine instructions, safety context, and recovery facts |
-| `/etc/asip/projects.md`, `/etc/asip/drift.md` | Root-owned local project and drift context |
-| `/var/lib/asip/journal.jsonl` | Root-owned, group-readable append-oriented changes and operation events |
-| `/var/lib/asip/blobs/` | Content-addressed command output and configuration copies |
-| `/var/lib/asip/access/` | Root-owned, mode-restricted external authority records |
-| `/run/asip/sock`, `/run/asip/read.sock` | systemd-owned local admin and read-only sockets |
-| User XDG directories | MCP adapter and agent harness configuration |
+| `core/server.py` | Root Unix-socket servers, bounded connections, kernel peer identity |
+| `core/daemon.py` | Validation, serialization, execution, journal, recovery and named access |
+| `core/facts.py`, `core/maintenance.py` | Focused inspection and durable maintenance state |
+| `core/protocol.py`, `core/client.py` | Bounded newline JSON IPC and unprivileged client |
+| `cli/asip.sh` | Human CLI; `asip-inspect` restricts it to inspection |
+| `asip_mcp.py` | Two local stdio adapters: ten inspection tools and eighteen mutation tools |
+| `desktop/` | User GTK4/WebKit application, Codex runtime and credential broker |
+| `scripts/install_system.sh`, `scripts/install_user.py` | Source installation and optional user environments |
+| `systemd/` | Two socket units and two daemon services |
 
-Journal records are individually appended and fsynced. They are not a
-cryptographic chain and root can alter or remove them. Captured command output
-can contain secrets; administrators should choose `do --sensitive` when raw
-output must not be retained.
+## State
 
-## Mutation path
+`/etc/asip/MACHINE.md` holds machine-specific instructions and recovery facts.
+Project registrations and drift decisions also live under `/etc/asip`.
+`/var/lib/asip/journal.jsonl` records changes, operation events, holds, notes,
+verification and maintenance. Blobs store captured output/configuration copies.
+Authority records live in a separate root-only access directory.
 
-```text
-human or agent
-   │
-   ├── CLI ─────────────┐
-   └── stdio MCP ───────┤
-                       ▼
-               unprivileged client
-                       │ JSON line, local Unix socket
-                /run/asip/sock
-                       │ systemd DAC + SO_PEERCRED attribution
-                       ▼
-              root asipd service
-                       │ validate intent, serialize, journal start
-                       ▼
-        package/service/config/do/snapshot command
-                       │ output capture, fsync terminal record
-                       ▼
-             journal and blob store
-```
+Socket results use short journal references such as `j9ad4c53d`. They resolve
+to the unchanged full IDs in the journal. Colliding prefixes expand; ambiguous
+input fails. Full IDs remain valid. References carry no authority.
 
-The request frame is JSON terminated by a newline and is limited to 1 MiB.
-Socket reads have a deadline. The daemon accepts a bounded number of IPC
-connections concurrently, while one serialized execution lane protects
-operations such as “snapshot, then package command.” A request that cannot get
-the lane within five seconds receives a retryable busy response. Standard ASIP
-clients attach their send time; requests left queued for over 60 seconds,
-including across a daemon restart, are rejected as stale instead of being run
-after the caller may have given up.
+User runtimes live under `$XDG_DATA_HOME/asip` (normally `~/.local/share/asip`).
+The application's private state, cached conversations and separate Codex homes
+live under `$XDG_STATE_HOME/asip/desktop` (normally `~/.local/state/asip/desktop`).
+Git contains software, not this machine's policy, credentials or journal.
 
-A foreground child runs directly from an argv array; ASIP does not invoke a
-shell on its behalf. Its environment starts with a fixed system `PATH` and can
-include caller-supplied entries. The request can select an existing working
-directory. Since the caller is root-equivalent, these are execution details,
-not a security sandbox.
+## Operation lifecycle
 
-Foreground commands are limited to 15 minutes; synchronous `access_use`
-commands have a five-minute limit. On expiry ASIP signals the command's process
-group, records a failed operation with `timed_out=true`, preserves captured
-output, and releases the request lane. `access_start` is the detached path for
-long-lived credential-bound processes. Operating system states that cannot be
-killed immediately, or descendants that leave that process group, can outlive
-the timeout; effects may be partial. The service does not automatically roll
-those effects back. systemd restarts either Core daemon after a process
-failure; a timeout is recorded as an operation failure and does not require a
-daemon restart.
+An unprivileged CLI, MCP or application client sends a bounded JSON request to
+one socket. The admin daemon validates intent and claims a UID-scoped retry
+key before entering its serialized mutation lane. Commands run from argv with
+stdin closed, bounded deadlines and process-group cancellation. Capture uses
+disk spools with short excerpts and explicit truncation metadata.
 
-If the daemon restarts with an operation still in `started`, it appends an
-`interrupted` event with an uncertain outcome. A request-key claim is closed
-with a stable uncertainty response so retries do not automatically repeat the
-command. Inspect the operation and actual host state before deciding whether
-to retry.
+Read requests do not claim retry keys or write the journal. They can proceed
+while a mutation runs. A caller-bound path probe drops privilege before reading
+file content. Cancellation bypasses the mutation queue. Nested mutations from
+an active command child fail promptly rather than deadlocking the lane.
 
-## Recovery and audit
+Terminal state is fsynced. A caller disconnect does not undo accepted work.
+On startup, unfinished claims/operations are reconciled with uncertainty, not
+replayed. A self-restart is recorded and replied to before its systemd job is
+submitted. Detached authority children retain PID/start identity and acquire
+an exit record when reaped; an unknown result after restart remains unknown.
 
-Package changes create a pre-change Snapper snapshot when `snapper` is
-available. Configuration operations capture a before/after file copy when a
-regular file exists at the requested target. These aids are not transactional:
-package managers, services, network requests, and arbitrary commands may have
-effects outside a snapshot or captured file.
+## Agent and application surfaces
 
-The automated `rollback` command accepts only the ASIP journal handle for a
-successful Snapper snapshot and invokes `snapper rollback`. ASIP does not
-provide generic undo. Without Snapper, operations can still be journaled and
-verified, but automatic filesystem rollback is unavailable. Linux Audit
-integration records selected file-mode changes when the installer and host
-audit policy support it.
+MCP emits one compact JSON result and short errors. Change/operation summaries
+and ten-entry history pages expand only when requested. Output is retrieved
+by operation ID in bounded chunks. Full policy remains a resource, with an
+index and exact-heading subresources for focused later recovery.
 
-## Source layout
+The application has Ask, This computer, History and Settings. It displays
+literal open/held work, questions, recovery, maintenance, verification and
+operation details. Conversation state is provider-specific and saved before
+turn execution. Provider reconnect is transactional: a failed candidate leaves
+the old connection intact. The Gemini Chat Completions adapter supports function
+tools; unsupported hosted web-search/namespace tools are disabled for it.
 
-| Path | Purpose |
-|---|---|
-| `core/server.py`, `core/daemon.py` | Unix transports, validation, journal, and operation dispatch |
-| `core/protocol.py`, `core/client.py` | Request/response contract and Unix client |
-| `asip`, `asip-inspect`, `cli/asip.sh` | Human-facing CLI entrypoints |
-| `asip_mcp.py` | Stdio MCP adapter; no independent privilege authority |
-| `installer/`, `install.sh` | User-level release staging and explicit privileged installation |
-| `systemd/` | Core socket and service units |
-| `tests/` | Unit, contract, installer, and optional live-host coverage |
+Installation backs up existing installed payloads, stages source and writes
+four units. It does not fetch system packages or schedule a delayed restart.
+Optional user runtimes are fingerprinted, prepared under a lock, then activated
+with atomic launcher replacement. Running services need an explicit restart
+when their source changes.
+
+See [the security model](../SECURITY.md) for authority and recovery limits.
