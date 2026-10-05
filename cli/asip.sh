@@ -198,8 +198,6 @@ COMMANDS
   svc ACTION [UNIT]            Run systemctl through asipd.
   conf PATH -- COMMAND       Change a config file; before/after are saved.
   observe PATH CHANGE        Journal an external change already integrated.
-  maintenance [...]          Record recurring maintenance roles; omit vs unconfigured.
-                            list/history/open accept --json.
   audit pending               Summarize audit events not yet integrated.
   verify list                 Show the latest in-situ verification per tool.
   verify pass|fail TOOL NOTE  Record a result; optional evidence IDs supported.
@@ -1378,116 +1376,6 @@ cmd_observe() {
 		--reason "$*" -- "$subject"
 }
 
-cmd_maintenance() {
-	if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-		printf 'Usage: %s maintenance [list|history|open|policy|backfill|omit|unomit|start|finish|fail] ...\n' "$PROG"
-		printf 'list [--json]   due/overdue/unconfigured/omitted obligation state\n'
-		printf 'history|open [--json]\n'
-		printf 'policy TASK DAYS\n'
-		printf 'backfill TASK ISO-DATE NOTE\n'
-		printf 'omit TASK REASON   durable not-applicable decision\n'
-		printf 'unomit TASK        clear an omit decision\n'
-		printf 'start TASK... ; finish SESSION [--covered TASK,...] SUMMARY\n'
-		printf '%s\n' '--covered is the completion set. Without it, finish completes every started role.'
-		return 0
-	fi
-	if [ "${1:-}" = "--json" ]; then
-		request_readonly --json --op maintenance --action list
-		return
-	fi
-	action="${1:-list}"
-	case "$action" in
-	list | "")
-		if [ "$#" -gt 0 ]; then
-			shift
-		fi
-		if [ "${1:-}" = "--json" ]; then
-			request_readonly --json --op maintenance --action list
-			return
-		fi
-		[ "$#" -eq 0 ] || { printf 'Usage: %s maintenance [--json]\n' "$PROG" >&2; return 64; }
-		request_readonly --op maintenance --action list
-		;;
-	history | open)
-		if [ "${2:-}" = "--json" ]; then
-			[ "$#" -eq 2 ] || { printf 'Usage: %s maintenance %s [--json]\n' "$PROG" "$action" >&2; return 64; }
-			request_readonly --json --op maintenance --action "$action"
-			return
-		fi
-		[ "$#" -eq 1 ] || { printf 'Usage: %s maintenance %s [--json]\n' "$PROG" "$action" >&2; return 64; }
-		request_readonly --op maintenance --action "$action"
-		;;
-	start)
-		shift
-		[ "$#" -gt 0 ] || { printf 'Usage: %s maintenance start TASK...\n' "$PROG" >&2; return 64; }
-		request --op maintenance --action start -- "$@"
-		;;
-	policy)
-		[ "$#" -eq 3 ] || { printf 'Usage: %s maintenance policy TASK DAYS\n' "$PROG" >&2; return 64; }
-		request --op maintenance --action policy -- "$2" "$3"
-		;;
-	omit)
-		shift
-		task="${1:-}"
-		if [ -z "$task" ] || [ "$#" -lt 2 ]; then
-			printf 'Usage: %s maintenance omit TASK REASON\n' "$PROG" >&2
-			return 64
-		fi
-		shift
-		request --op maintenance --action omit -- "$task" "$*"
-		;;
-	unomit)
-		[ "$#" -eq 2 ] || { printf 'Usage: %s maintenance unomit TASK\n' "$PROG" >&2; return 64; }
-		request --op maintenance --action unomit -- "$2"
-		;;
-	backfill)
-		shift
-		task="${1:-}"; observed="${2:-}"
-		if [ -z "$task" ] || [ -z "$observed" ]; then
-			printf 'Usage: %s maintenance backfill TASK ISO-DATE NOTE\n' "$PROG" >&2
-			return 64
-		fi
-		shift 2
-		[ "$#" -gt 0 ] || { printf 'Usage: %s maintenance backfill TASK ISO-DATE NOTE\n' "$PROG" >&2; return 64; }
-		request --op maintenance --action backfill -- "$task" "$observed" "$*"
-		;;
-	finish)
-		shift
-		session="${1:-}"
-		if [ "$#" -gt 0 ]; then
-			shift
-		fi
-		covered=""
-		if [ "${1:-}" = "--covered" ]; then
-			covered="${2:-}"
-			[ -n "$covered" ] || { printf '%s: --covered needs a comma-separated task list\n' "$PROG" >&2; return 64; }
-			shift 2
-		fi
-		if [ -z "$session" ] || [ "$#" -eq 0 ]; then
-			printf 'Usage: %s maintenance finish SESSION [--covered TASK,...] SUMMARY\n' "$PROG" >&2
-			return 64
-		fi
-		request --op maintenance --action finish --covered "$covered" -- "$session" "$*"
-		;;
-	fail)
-		shift
-		session="${1:-}"
-		if [ "$#" -gt 0 ]; then
-			shift
-		fi
-		if [ -z "$session" ] || [ "$#" -eq 0 ]; then
-			printf 'Usage: %s maintenance fail SESSION REASON\n' "$PROG" >&2
-			return 64
-		fi
-		request --op maintenance --action fail -- "$session" "$*"
-		;;
-	*)
-		printf 'Usage: %s maintenance [history|open|policy|backfill|omit|unomit|start|finish|fail] ...\n' "$PROG" >&2
-		return 64
-		;;
-	esac
-}
-
 cmd_ask() {
 	if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
 		printf 'Usage: %s ask pose|list|show|answer|supersede ...\n' "$PROG"
@@ -1970,7 +1858,6 @@ pkg) shift; cmd_pkg "$@" ;;
 svc) shift; cmd_svc "$@" ;;
 conf) shift; cmd_conf "$@" ;;
 observe) shift; cmd_observe "$@" ;;
-maintenance) shift; cmd_maintenance "$@" ;;
 audit) shift; cmd_audit "$@" ;;
 verify) shift; cmd_verify "$@" ;;
 snap) shift; cmd_snap "$@" ;;

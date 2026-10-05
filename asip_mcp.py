@@ -262,10 +262,6 @@ def compact_response(request, response):
             'snapshots':[{k:r[k] for k in ('recovery_handle','backend_id','at','reason') if k in r} for r in data.get('journal_snapshots',[])][-limit:],
             'timeline':[{k:r[k] for k in ('number','date','description','recovery_handle') if k in r} for r in data.get('timeline',{}).get('snapshots',[])][-limit:],
             'error':data.get('timeline',{}).get('error')})
-    if op == 'maintenance':
-        if request.get('action')=='list':
-            return {'tasks':[_clean({k:r[k] for k in ('name','cadence_days','due_state','due_at','last_completed','omit_reason') if k in r}) for r in data.get('tasks',[])]}
-        return _clean({k:data.get(k) for k in ('records','open_sessions','next_offset','total')})
     if op == 'ask' and request.get('action') in ('list','show'):
         if request.get('action')=='show':
             return _clean(data)
@@ -316,7 +312,7 @@ def compact_response(request, response):
         if response.get("capture") == "sensitive":
             result["capture"] = "sensitive"
         return _clean(result)
-    if op in ("change","note","observe","verify","cancel","project","drift-decision") or (op=="maintenance" and request.get("action") not in ("list","history","open")) or (op=="access" and request.get("action")=="request"):
+    if op in ("change","note","observe","verify","cancel","project","drift-decision") or (op=="access" and request.get("action")=="request"):
         return _clean({"id":response.get("id"),"state":data.get("status") or data.get("state") or "recorded", "duplicate":data.get("duplicate_open_change_id")})
     return _clean(data or {"text":response.get("stdout","")})
 
@@ -501,18 +497,14 @@ def create_server(privileged: bool = False) -> MCPServer:
             return await _resource_call(ctx, "blob", argv=[digest], offset=0, limit=65536)
 
         @server.tool(name="asip_inspect", annotations=READ_ONLY)
-        async def asip_inspect(ctx: Context, topic: Literal["health","questions","recovery","maintenance","projects","drift","audit"], id: str | None = None, offset: int = 0, limit: int = 10) -> types.CallToolResult:
-            """Focused state; id selects a question, maintenance view (list/history/open), or catalog filter. offset pages lists."""
+        async def asip_inspect(ctx: Context, topic: Literal["health","questions","recovery","projects","drift","audit"], id: str | None = None, offset: int = 0, limit: int = 10) -> types.CallToolResult:
+            """Focused state; id selects a question or catalog filter. offset pages lists."""
             if offset < 0 or not 1 <= limit <= 100:
                 raise ValueError("offset must be non-negative; limit must be 1–100")
-            op = {"health":"doctor","questions":"ask","recovery":"recovery","maintenance":"maintenance","projects":"project-list","drift":"drift-list","audit":"audit-pending"}[topic]
+            op = {"health":"doctor","questions":"ask","recovery":"recovery","projects":"project-list","drift":"drift-list","audit":"audit-pending"}[topic]
             fields = {"limit":limit,'offset':offset,'id':id}
             if topic=="questions":
                 fields.update(action="show" if id else "list",argv=[id] if id else [])
-            if topic=="maintenance":
-                if id not in (None,"list","history","open"):
-                    raise ValueError("maintenance id must be list, history or open")
-                fields["action"] = id or "list"
             return await _read(ctx,op,**fields)
 
         @server.tool(name="output_read", annotations=READ_ONLY)
@@ -738,16 +730,6 @@ def create_server(privileged: bool = False) -> MCPServer:
         return await mutate(ctx, "rollback", change_id=change_id,
                             standalone_reason=standalone_reason, request_key=request_key,
                             argv=[snapshot_operation_id], reason="rollback snapshot %s" % snapshot_operation_id)
-
-    @server.tool(name="maintenance_update", annotations=MUTATING)
-    async def maintenance_update(ctx: Context, action: str, arguments: list[str],
-                                 change_id: str | None = None,
-                                 standalone_reason: str | None = None,
-                                 request_key: str | None = None) -> types.CallToolResult:
-        """Record maintenance or change its cadence."""
-        return await mutate(ctx, "maintenance", change_id=change_id,
-                            standalone_reason=standalone_reason, request_key=request_key,
-                            argv=arguments, action=action)
 
     @server.tool(name="project_update", annotations=MUTATING)
     async def project_update(ctx: Context, action: Literal["set", "remove"], arguments: list[str],
