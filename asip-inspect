@@ -59,7 +59,6 @@ $PROG $VERSION — read-only ASIP inspection.
 
 USAGE
   $PROG [--json] change list|open|show [ID]
-  $PROG [--json] maintenance list|history|open
   $PROG [--json] audit pending
   $PROG [--json] verify list
   $PROG [--json] log [JOURNAL-OR-CHANGE-ID]
@@ -92,24 +91,6 @@ change)
 	status)
 		printf '%s: change status was removed; use change show ID, change open (status=open), change list, brief, or context.\n' "$PROG" >&2
 		exit 64
-		;;
-	*) usage >&2; exit 64 ;;
-	esac
-	;;
-maintenance)
-	action="${2:-list}"
-	case "$action" in
-	list)
-		if [ "$#" -eq 1 ] || [ "$#" -eq 2 ]; then
-			request --op maintenance --action list
-		else
-			usage >&2
-			exit 64
-		fi
-		;;
-	history | open)
-		[ "$#" -eq 2 ] || { usage >&2; exit 64; }
-		request --op maintenance --action "$action"
 		;;
 	*) usage >&2; exit 64 ;;
 	esac

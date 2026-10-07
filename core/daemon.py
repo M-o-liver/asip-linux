@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""asipd: the one privileged execution path on an ASIP machine.
+"""ASIP root daemon: the privileged execution path on this machine.
 
 Connecting to /run/asip/sock with group asip is root-equivalent: the
 caller can submit arbitrary root commands. /run/asip/read.sock
@@ -47,9 +47,7 @@ from core.facts import (
     fact_kernel,
     observation_name as _observation_name,
 )
-from core import maintenance
 from core.refs import JournalRefs
-from core.maintenance import MAINTENANCE_NAMES
 
 SOCKET = "/run/asip/sock"
 READ_SOCKET = "/run/asip/read.sock"
@@ -525,167 +523,6 @@ def validate_change(request, change_id=None, require_open=True):
             "Inspect with: asip --json change show %s" % change_id
         )
     return start
-
-
-def maintenance_completed_tasks(record):
-    return maintenance.completed_tasks(record)
-
-
-def maintenance_status():
-    return maintenance.status(journal_records())
-
-
-def maintenance_list():
-    return maintenance.list_text(maintenance_status())
-
-
-def maintenance_history_data(open_only=False):
-    return maintenance.history_data(journal_records(), open_only=open_only)
-
-
-def maintenance_history(open_only=False):
-    projected = maintenance_history_data(open_only=open_only)
-    return maintenance.history_text(projected, open_only=open_only)
-
-
-def maintenance_request(request, ident, started):
-    action = request.get("action") or "list"
-    argv = request.get("argv", [])
-    if not isinstance(argv, list) or not all(isinstance(arg, str) for arg in argv):
-        raise ValueError("maintenance arguments must be strings")
-    if action == "list":
-        if argv:
-            raise ValueError("maintenance list takes no arguments")
-        output = maintenance_list()
-        return {"id": ident, "exit": 0, "stdout": output, "stderr": "",
-                "data": maintenance_status(),
-                "duration_ms": int((time.monotonic() - started) * 1000)}
-    if action in ("history", "open"):
-        if argv:
-            raise ValueError("maintenance %s takes no arguments" % action)
-        data=maintenance_history_data(open_only=(action == "open"))
-        if request.get('limit') is not None:
-            offset,limit=request.get('offset',0),request['limit']
-            if isinstance(offset,bool) or not isinstance(offset,int) or offset<0 or isinstance(limit,bool) or not isinstance(limit,int) or not 1<=limit<=100:
-                raise ValueError('maintenance offset must be non-negative; limit must be 1–100')
-            records=list(reversed(data['records']))
-            data['total']=len(records)
-            data['records']=records[offset:offset+limit]
-            data['open_sessions']=data['open_sessions'][-limit:]
-            data['next_offset']=offset+limit if len(records)>offset+limit else None
-        output = maintenance.history_text(data,open_only=(action == 'open'))
-        return {"id": ident, "exit": 0, "stdout": output, "stderr": "",
-                "data": data,
-                "duration_ms": int((time.monotonic() - started) * 1000)}
-    if action == "omit":
-        if len(argv) < 2 or argv[0] not in MAINTENANCE_NAMES:
-            raise ValueError("maintenance omit needs a known task and a reason")
-        reason = " ".join(argv[1:]).strip()
-        if not reason:
-            raise ValueError("maintenance omit needs a reason")
-        record = record_for(request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
-                            op="maintenance", action="omit", task=argv[0], reason=reason)
-        append_record(attach_change(record, request))
-        return {"id": ident, "exit": 0, "stdout": "", "stderr": "",
-                "data": {"task": argv[0], "action": "omit", "reason": reason},
-                "duration_ms": int((time.monotonic() - started) * 1000)}
-    if action == "unomit":
-        if len(argv) != 1 or argv[0] not in MAINTENANCE_NAMES:
-            raise ValueError("maintenance unomit needs a known task")
-        record = record_for(request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
-                            op="maintenance", action="unomit", task=argv[0])
-        append_record(attach_change(record, request))
-        return {"id": ident, "exit": 0, "stdout": "", "stderr": "",
-                "data": {"task": argv[0], "action": "unomit"},
-                "duration_ms": int((time.monotonic() - started) * 1000)}
-    if action == "policy":
-        if len(argv) != 2 or argv[0] not in MAINTENANCE_NAMES:
-            raise ValueError("maintenance policy needs a known task and cadence in days")
-        try:
-            cadence = int(argv[1])
-        except ValueError:
-            raise ValueError("maintenance cadence must be a positive number of days")
-        if cadence <= 0:
-            raise ValueError("maintenance cadence must be a positive number of days")
-        record = record_for(request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
-                            op="maintenance", action="policy", task=argv[0],
-                            cadence_days=cadence)
-        append_record(attach_change(record, request))
-        return {"id": ident, "exit": 0, "stdout": "", "stderr": "",
-                "duration_ms": int((time.monotonic() - started) * 1000)}
-    if action == "backfill":
-        if len(argv) < 3 or argv[0] not in MAINTENANCE_NAMES:
-            raise ValueError("maintenance backfill needs a known task, ISO date, and note")
-        try:
-            observed = dt.datetime.fromisoformat(argv[1].replace("Z", "+00:00"))
-        except ValueError:
-            raise ValueError("maintenance backfill date must be ISO-8601")
-        if observed.tzinfo is None:
-            observed = observed.replace(tzinfo=dt.timezone.utc)
-        if observed > dt.datetime.now(dt.timezone.utc):
-            raise ValueError("maintenance backfill date cannot be in the future")
-        record = record_for(request, id=ident, at=now(), uid=request.get("_peer_uid", -1),
-                            op="maintenance", action="backfill", task=argv[0],
-                            observed_at=observed.isoformat(), reason=" ".join(argv[2:]))
-        append_record(attach_change(record, request))
-        return {"id": ident, "exit": 0, "stdout": "", "stderr": "",
-                "duration_ms": int((time.monotonic() - started) * 1000)}
-    if action == "start":
-        if not argv or any(task not in MAINTENANCE_NAMES for task in argv):
-            raise ValueError("maintenance start needs known task names")
-        record = record_for(request, id=ident, at=now(),
-                            uid=request.get("_peer_uid", -1), op="maintenance",
-                            action="start", tasks=argv)
-        append_record(attach_change(record, request))
-        guidance = ("Maintenance session %s started for: %s\n"
-                    "Perform these roles on this host now. Read /etc/asip/MACHINE.md first. "
-                    "Use appropriate native system tools, recommend useful missing tools, "
-                    "record resulting changes through ASIP, then run maintenance finish or fail.\n" %
-                    (ident, ", ".join(argv)))
-        return {"id": ident, "exit": 0, "stdout": ident + "\n", "stderr": guidance,
-                "data": {"session": ident, "action": "start", "tasks": list(argv)},
-                "duration_ms": int((time.monotonic() - started) * 1000)}
-    if action not in ("finish", "fail"):
-        raise ValueError(
-            "maintenance action must be list, history, open, policy, backfill, "
-            "omit, unomit, start, finish, or fail"
-        )
-    if len(argv) < 2:
-        raise ValueError("maintenance %s needs a session id and summary" % action)
-    session = argv[0]
-    start_record = next((record for record in journal_records()
-                         if record.get("id") == session
-                         and record.get("op") == "maintenance"
-                         and record.get("action") == "start"), None)
-    if start_record is None:
-        raise ValueError("maintenance session not found")
-    if any(record.get("op") == "maintenance"
-           and record.get("session") == session
-           and record.get("action") in ("finish", "fail")
-           for record in journal_records()):
-        raise ValueError("maintenance session is already closed")
-    started_tasks = list(start_record.get("tasks") or [])
-    covered_text = request.get("covered", "")
-    if not isinstance(covered_text, str):
-        raise ValueError("covered tasks must be a comma-separated string")
-    covered = [task for task in covered_text.split(",") if task]
-    if any(task not in MAINTENANCE_NAMES for task in covered):
-        raise ValueError("covered contains an unknown maintenance task")
-    if any(task not in started_tasks for task in covered):
-        raise ValueError("covered tasks must be a subset of the started session")
-    completed = covered if covered else started_tasks
-    record = record_for(request, id=ident, at=now(),
-                        uid=request.get("_peer_uid", -1), op="maintenance",
-                        action=action, session=session,
-                        tasks=started_tasks, reason=" ".join(argv[1:]))
-    if action == "finish":
-        record["covered"] = covered
-        record["completed"] = completed
-    append_record(attach_change(record, request))
-    return {"id": ident, "exit": 0, "stdout": "", "stderr": "",
-            "data": {"session": session, "action": action, "tasks": started_tasks,
-                     "completed": completed if action == "finish" else []},
-            "duration_ms": int((time.monotonic() - started) * 1000)}
 
 
 def hold_allows(request):
@@ -2149,7 +1986,6 @@ def context_data(request):
             "facts": "asip --json facts get SPEC",
             "ask": "asip --json ask list",
             "recovery": "asip --json recovery",
-            "maintenance": "asip --json maintenance list",
             "policy": "asip --json policy",
         },
     }
@@ -3458,8 +3294,6 @@ def _handle(request, emit=lambda _frame: None):
             raise ValueError("sensitive must be a boolean")
         if (affects or sensitive) and request.get("op") != "do":
             raise ValueError("affects and sensitive mode are supported only by asip do")
-        if request.get("op") == "maintenance":
-            return maintenance_request(request, ident, started)
         if request.get("op") == "audit-pending":
             return audit_pending(ident, started)
         if request.get("op") == "verify":
@@ -3752,7 +3586,6 @@ def handle_read_only(request):
     action = request.get("action")
     allowed = (
         (op == "change" and action in ("list", "open", "show", "status")) or
-        (op == "maintenance" and action in ("list", "history", "open")) or
         (op == "ask" and action in ("list", "show")) or
         (op == "access" and action in ("list", "show")) or
         (op == "audit-pending") or

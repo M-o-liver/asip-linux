@@ -20,6 +20,8 @@ stage="$(mktemp -d /usr/lib/.asip-install.XXXXXX)"
 trap 'rm -rf -- "$stage"; rm -f -- "$backup_list"' 0 1 2 3 15
 for path in usr/lib/asip usr/share/asip usr/local/bin/asip usr/local/bin/a \
     usr/local/bin/asip-inspect usr/local/sbin/asip-restore usr/local/sbin/asip-uninstall \
+    usr/local/bin/asip-desktop usr/share/applications/org.asip.Desktop.desktop \
+    usr/share/icons/hicolor/scalable/apps/org.asip.Desktop.svg \
     etc/systemd/system/asip.service etc/systemd/system/asip.socket \
     etc/systemd/system/asip-read.service etc/systemd/system/asip-read.socket; do
     [ ! -e "/$path" ] || printf '%s\n' "$path" >>"$backup_list"
@@ -27,7 +29,7 @@ done
 tar -C / -cpf "$backup" -T "$backup_list"
 chmod 0600 "$backup"
 for directory in core cli desktop scripts systemd; do cp -R "$source_root/$directory" "$stage/"; done
-for file in asip asip-inspect a asip_mcp.py pyproject.toml VERSION install.sh; do cp "$source_root/$file" "$stage/"; done
+for file in asip asip-inspect a asip_mcp.py pyproject.toml VERSION LICENSE install.sh; do cp "$source_root/$file" "$stage/"; done
 find "$stage" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$stage" -type d -exec chmod 0755 {} +
 find "$stage" -type f -exec chmod 0644 {} +
@@ -48,6 +50,9 @@ install -m 0755 "$source_root/a" /usr/local/bin/a
 install -m 0755 "$source_root/asip-inspect" /usr/local/bin/asip-inspect
 install -m 0755 "$source_root/scripts/restore_install_backup.sh" /usr/local/sbin/asip-restore
 install -m 0755 "$source_root/scripts/uninstall_software.sh" /usr/local/sbin/asip-uninstall
+# The optional desktop launcher and icon are installed for the user.
+rm -f -- /usr/local/bin/asip-desktop /usr/share/applications/org.asip.Desktop.desktop \
+    /usr/share/icons/hicolor/scalable/apps/org.asip.Desktop.svg
 for unit in asip.service asip.socket asip-read.service asip-read.socket; do
     install -m 0644 "$source_root/systemd/$unit" "/etc/systemd/system/$unit"
 done

@@ -64,7 +64,6 @@ class DesktopBackend:
         self.router.register("operation.output", self.operation_output)
         self.router.register("change.detail", self.change_detail)
         self.router.register("verification.list", self.verification_list)
-        self.router.register("maintenance.detail", self.maintenance_detail)
         self.router.register("recovery.detail", self.recovery_detail)
         self.router.register("health.detail", self.health_detail)
         self.router.register("question.answer", self.question_answer)
@@ -620,12 +619,6 @@ class DesktopBackend:
 
     def verification_list(self, _params: dict[str, Any]) -> dict[str, Any]:
         return self._read("verify", action="list")
-
-    def maintenance_detail(self, params: dict[str, Any]) -> dict[str, Any]:
-        action = params.get("action", "list")
-        if action not in {"list", "history", "open"}:
-            raise ValueError("unknown maintenance view")
-        return self._read("maintenance", action=action, limit=20)
 
     def recovery_detail(self, _params: dict[str, Any]) -> dict[str, Any]:
         return self._read("recovery")

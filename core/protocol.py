@@ -57,8 +57,6 @@ def is_read_only(request: dict[str, Any]) -> bool:
         return True
     if op == "change" and action in ("list", "open", "show", "status"):
         return True
-    if op == "maintenance" and action in ("list", "history", "open"):
-        return True
     if op == "verify" and action == "list":
         return True
     if op == "ask" and action in ("list", "show"):

@@ -5,7 +5,7 @@
 # records connect human intent to journaled work; MACHINE.md retains the durable
 # facts and policy that future agents must continue to respect.
 #
-# Privilege is held only by asipd. Its journal is the machine's record.
+# Privilege is held by the root daemon. Its journal is the machine's record.
 
 set -eu
 
@@ -108,9 +108,7 @@ detect_snapshotter() {
 	if [ "$(detect_rootfs)" = "btrfs" ]; then printf 'btrfs-raw'; else printf 'none'; fi
 }
 
-# systemd is assumed by 'asip install' (the daemon is socket-activated) but
-# not by 'asip svc' — an operator can run asipd by other means on a machine
-# with a different init, and service control should still work there.
+# Identify the running service manager for inspection and service actions.
 detect_initsys() {
 	if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
 		printf 'systemd'
@@ -125,20 +123,9 @@ detect_initsys() {
 
 detect_desktop() { printf '%s' "${XDG_CURRENT_DESKTOP:-${DESKTOP_SESSION:-none}}"; }
 
-detect_assistants() {
-	for h in claude codex grok gemini goose qwen; do
-		command -v "$h" >/dev/null 2>&1 && printf '%s\n' "$h"
-	done
-	true
-}
 
 find_machine_md() {
-	# /etc/asip/MACHINE.md is checked ahead of the home-directory fallbacks:
-	# once asipd is installed, it is the only file the daemon itself ever
-	# writes to (package provenance, asip conf), so it is authoritative over
-	# a stale ~/MACHINE.md left from the doc-only workflow. On a machine with
-	# no privileged install, that path simply doesn't exist and the fallbacks
-	# apply as before.
+	# The installed machine policy is canonical; home paths serve local scaffolding.
 	for p in "${ASIP_MACHINE:-}" /etc/asip/MACHINE.md "$HOME/MACHINE.md" \
 		"$HOME/dotfiles/MACHINE.md" "$HOME/.asip/MACHINE.md"; do
 		[ -n "$p" ] && [ -r "$p" ] && { printf '%s' "$p"; return; }
@@ -195,11 +182,9 @@ COMMANDS
   note PATH WHY               Attach an important userland effect to a change.
   do [OPTIONS] -- COMMAND     Run privileged work; annotate effects/capture.
   pkg install|remove PKG...  Change packages; use Snapper first if available.
-  svc ACTION [UNIT]            Run systemctl through asipd.
+  svc ACTION [UNIT]            Run systemctl through the ASIP daemon.
   conf PATH -- COMMAND       Change a config file; before/after are saved.
   observe PATH CHANGE        Journal an external change already integrated.
-  maintenance [...]          Record recurring maintenance roles; omit vs unconfigured.
-                            list/history/open accept --json.
   audit pending               Summarize audit events not yet integrated.
   verify list                 Show the latest in-situ verification per tool.
   verify pass|fail TOOL NOTE  Record a result; optional evidence IDs supported.
@@ -225,7 +210,7 @@ COMMANDS
 ACCESS
   /run/asip/sock is root:asip 0660. Membership in group asip is
   ROOT-EQUIVALENT: it permits submitting arbitrary root commands through
-  asipd. Socket access is a grant of root authority, not a policy allowlist.
+  the root daemon. Socket access is a grant of root authority, not a policy allowlist.
   /run/asip/read.sock is root:asip-read 0660. Use asip-inspect for queries;
   asip-read membership does not permit execution or journal mutation.
 
@@ -238,127 +223,6 @@ EOF
 
 # ----------------------------------------------------------------- bootstrap --
 
-cmd_bootstrap() {
-	existing="$(find_machine_md)"
-	# Resolved here so step 5 prints concrete values for this machine rather
-	# than a command to evaluate. These heredocs interpolate, so anything
-	# meant to appear literally has to be escaped.
-	gituser="$(id -un 2>/dev/null || echo user)"
-	githost="$(hostname 2>/dev/null || echo localhost)"
-
-	cat <<EOF
-ASIP SETUP
-==========
-
-Six steps. Takes about ten minutes, most of it reading command output.
-
-EOF
-
-	if [ -n "$existing" ]; then
-		cat <<EOF
-This machine already has a description at:
-  $existing
-Keep it. Read it, then start at step 2 and check the reference is in place.
-Run '$PROG doctor' to see which sections it is missing.
-
-EOF
-	fi
-
-	cat <<EOF
-1. CREATE THE FILE
-
-       $PROG skeleton > ~/MACHINE.md
-
-   Nine empty sections, each with a note on what belongs in it. If the file
-   already exists, keep it and skip to step 2.
-
-2. POINT YOUR TOOLS AT IT
-
-   A description helps only if something reads it. Tools that load a Markdown
-   file at startup need a line telling them where this one is:
-
-       $PROG rule <tool>
-
-   prints the block to append to that tool's config file. '$PROG rule' with
-   no argument lists the tools it knows and where their config lives.
-
-   Expect a permission prompt on this one. Some tools treat their own
-   config as protected and will ask before it is written, whatever rules
-   are already in place — that guard is there so nothing rewrites its own
-   instructions unnoticed, and it is working as intended.
-EOF
-
-	found="$(detect_assistants)"
-	if [ -n "$found" ]; then
-		printf '\n   Found on this machine:\n'
-		printf '%s\n' "$found" | sed 's/^/       /'
-		printf '   Do each of them.\n'
-	fi
-
-	cat <<EOF
-
-3. LOOK AT THE MACHINE
-
-       $PROG discover
-
-   prints read-only commands suited to this machine — its package manager,
-   filesystem, snapshot tool, desktop. Run them and read the output.
-
-4. WRITE DOWN WHAT YOU FOUND
-
-   Fill in the sections from that output. What makes this file worth having:
-
-   - Record what cannot be worked out later. A package list can be
-     regenerated any time; the reason something was installed cannot.
-   - Say which facts are load-bearing. "Hybrid graphics" is trivia. "The
-     integrated GPU drives the display and switching has corrupted it
-     before" changes what happens next.
-   - Mark volatile, high-impact observations with an inline freshness cue:
-
-       <!-- asip:fact observed-at=2026-03-14 max-age-days=90 checked-by="command" -->
-
-     'doctor' warns after max-age-days; omit that field for manually reviewed
-     facts that have no useful automatic expiry.
-   - Absolute dates: 2026-03-14, not "last week".
-   - Leave the Decision Log empty for now. It records things learned the
-     hard way, and a new machine has not yet taught anyone anything. It
-     fills over months, one incident at a time.
-
-5. PUT IT UNDER VERSION CONTROL
-
-   The history is half the value — when a decision was taken, and what it
-   replaced. Version the machine's own configuration deliberately, and start
-   the repository ignoring everything so nothing sweeps up credentials:
-
-       git init
-       printf '*\n!MACHINE.md\n!.gitignore\n' > ~/.gitignore
-       git add MACHINE.md .gitignore
-       git commit -m "Add MACHINE.md"
-
-   A freshly installed machine often has no git identity at all, which stops
-   that commit. Set one for this repository only — never --global, which
-   would change how every other repository here behaves:
-
-       git config user.name "$gituser"
-       git config user.email "$gituser@$githost"
-
-   Widen the ignore file later, when there is something specific to track.
-
-6. CHECK IT
-
-       $PROG doctor
-
-   reports which sections are filled and what references the file.
-
-KEEPING IT CURRENT
-   The file describes how this machine is set up, so changes made here can
-   make it wrong. After installing something that carries its own
-   configuration, adding a repository, changing a shell, or altering a
-   service, correct the section covering that ground at the same time. A
-   description that is quietly out of date is worse than none, because it
-   gets believed.
-EOF
-}
 
 # ------------------------------------------------------------------ skeleton --
 
@@ -1378,116 +1242,6 @@ cmd_observe() {
 		--reason "$*" -- "$subject"
 }
 
-cmd_maintenance() {
-	if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-		printf 'Usage: %s maintenance [list|history|open|policy|backfill|omit|unomit|start|finish|fail] ...\n' "$PROG"
-		printf 'list [--json]   due/overdue/unconfigured/omitted obligation state\n'
-		printf 'history|open [--json]\n'
-		printf 'policy TASK DAYS\n'
-		printf 'backfill TASK ISO-DATE NOTE\n'
-		printf 'omit TASK REASON   durable not-applicable decision\n'
-		printf 'unomit TASK        clear an omit decision\n'
-		printf 'start TASK... ; finish SESSION [--covered TASK,...] SUMMARY\n'
-		printf '%s\n' '--covered is the completion set. Without it, finish completes every started role.'
-		return 0
-	fi
-	if [ "${1:-}" = "--json" ]; then
-		request_readonly --json --op maintenance --action list
-		return
-	fi
-	action="${1:-list}"
-	case "$action" in
-	list | "")
-		if [ "$#" -gt 0 ]; then
-			shift
-		fi
-		if [ "${1:-}" = "--json" ]; then
-			request_readonly --json --op maintenance --action list
-			return
-		fi
-		[ "$#" -eq 0 ] || { printf 'Usage: %s maintenance [--json]\n' "$PROG" >&2; return 64; }
-		request_readonly --op maintenance --action list
-		;;
-	history | open)
-		if [ "${2:-}" = "--json" ]; then
-			[ "$#" -eq 2 ] || { printf 'Usage: %s maintenance %s [--json]\n' "$PROG" "$action" >&2; return 64; }
-			request_readonly --json --op maintenance --action "$action"
-			return
-		fi
-		[ "$#" -eq 1 ] || { printf 'Usage: %s maintenance %s [--json]\n' "$PROG" "$action" >&2; return 64; }
-		request_readonly --op maintenance --action "$action"
-		;;
-	start)
-		shift
-		[ "$#" -gt 0 ] || { printf 'Usage: %s maintenance start TASK...\n' "$PROG" >&2; return 64; }
-		request --op maintenance --action start -- "$@"
-		;;
-	policy)
-		[ "$#" -eq 3 ] || { printf 'Usage: %s maintenance policy TASK DAYS\n' "$PROG" >&2; return 64; }
-		request --op maintenance --action policy -- "$2" "$3"
-		;;
-	omit)
-		shift
-		task="${1:-}"
-		if [ -z "$task" ] || [ "$#" -lt 2 ]; then
-			printf 'Usage: %s maintenance omit TASK REASON\n' "$PROG" >&2
-			return 64
-		fi
-		shift
-		request --op maintenance --action omit -- "$task" "$*"
-		;;
-	unomit)
-		[ "$#" -eq 2 ] || { printf 'Usage: %s maintenance unomit TASK\n' "$PROG" >&2; return 64; }
-		request --op maintenance --action unomit -- "$2"
-		;;
-	backfill)
-		shift
-		task="${1:-}"; observed="${2:-}"
-		if [ -z "$task" ] || [ -z "$observed" ]; then
-			printf 'Usage: %s maintenance backfill TASK ISO-DATE NOTE\n' "$PROG" >&2
-			return 64
-		fi
-		shift 2
-		[ "$#" -gt 0 ] || { printf 'Usage: %s maintenance backfill TASK ISO-DATE NOTE\n' "$PROG" >&2; return 64; }
-		request --op maintenance --action backfill -- "$task" "$observed" "$*"
-		;;
-	finish)
-		shift
-		session="${1:-}"
-		if [ "$#" -gt 0 ]; then
-			shift
-		fi
-		covered=""
-		if [ "${1:-}" = "--covered" ]; then
-			covered="${2:-}"
-			[ -n "$covered" ] || { printf '%s: --covered needs a comma-separated task list\n' "$PROG" >&2; return 64; }
-			shift 2
-		fi
-		if [ -z "$session" ] || [ "$#" -eq 0 ]; then
-			printf 'Usage: %s maintenance finish SESSION [--covered TASK,...] SUMMARY\n' "$PROG" >&2
-			return 64
-		fi
-		request --op maintenance --action finish --covered "$covered" -- "$session" "$*"
-		;;
-	fail)
-		shift
-		session="${1:-}"
-		if [ "$#" -gt 0 ]; then
-			shift
-		fi
-		if [ -z "$session" ] || [ "$#" -eq 0 ]; then
-			printf 'Usage: %s maintenance fail SESSION REASON\n' "$PROG" >&2
-			return 64
-		fi
-		request --op maintenance --action fail -- "$session" "$*"
-		;;
-	*)
-		printf 'Usage: %s maintenance [history|open|policy|backfill|omit|unomit|start|finish|fail] ...\n' "$PROG" >&2
-		return 64
-		;;
-	esac
-}
-
 cmd_ask() {
 	if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
 		printf 'Usage: %s ask pose|list|show|answer|supersede ...\n' "$PROG"
@@ -1970,7 +1724,6 @@ pkg) shift; cmd_pkg "$@" ;;
 svc) shift; cmd_svc "$@" ;;
 conf) shift; cmd_conf "$@" ;;
 observe) shift; cmd_observe "$@" ;;
-maintenance) shift; cmd_maintenance "$@" ;;
 audit) shift; cmd_audit "$@" ;;
 verify) shift; cmd_verify "$@" ;;
 snap) shift; cmd_snap "$@" ;;

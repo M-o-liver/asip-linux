@@ -29,5 +29,5 @@ if [ "$mode" = --purge ]; then
 	rm -rf -- /etc/asip /var/lib/asip
 	printf 'ASIP software and durable state removed.\n'
 else
-	printf 'ASIP Core software removed. Retained: /etc/asip, /var/lib/asip, and user state.\n'
+	printf 'ASIP software removed. Retained: /etc/asip, /var/lib/asip, and user state.\n'
 fi

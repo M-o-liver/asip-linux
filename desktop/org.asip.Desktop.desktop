@@ -2,7 +2,7 @@
 Type=Application
 Name=ASIP
 Comment=Local agent conversations and ASIP machine state
-Exec=/usr/local/bin/asip-desktop
+Exec=asip-desktop
 Icon=org.asip.Desktop
 Terminal=false
 Categories=Utility;

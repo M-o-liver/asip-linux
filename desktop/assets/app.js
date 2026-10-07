@@ -190,31 +190,14 @@
       return `<div class="question-row"><strong>${escape(item.question)}</strong><p>${escape(item.cannot || "ASIP needs your decision.")}</p><div class="question-actions">${actions}</div></div>`;
     }).join("") : '<p>No operator questions.</p>';
 
-    const openMaintenance = core.maintenance?.open_sessions || [];
     const recovery = core.recovery || {};
     const snapshots = recovery.journal_snapshots || [];
     document.getElementById("continuity-state").innerHTML = `
-      <button type="button" class="continuity-row interactive" data-continuity="maintenance"><span><strong>Maintenance</strong><small>${openMaintenance.length ? `${escape(openMaintenance.length)} open session(s)` : "View recurring obligations and history"}</small></span></button>
       <button type="button" class="continuity-row interactive" data-continuity="recovery"><span><strong>Recovery</strong><small>${recovery.supported ? `${escape(snapshots.length)} recent snapshot(s)` : "View recovery support and recorded points"}</small></span></button>`;
     const incomplete = (core.brief?.attention || []).find(item => item.kind === "incomplete_operation")?.count || 0;
     document.getElementById("health-state").innerHTML = `<div class="continuity-row"><strong>ASIP ${escape(core.summary?.version || "installed")}</strong><p>Journal and policy state are available through native health details.</p></div><div class="continuity-row"><strong>Incomplete operations</strong><p>${escape(incomplete)}</p></div>`;
 
     renderAuthorities(core.access);
-    window.ASIPNative.call("maintenance.detail", { action: "list" }).then(result => {
-      if (latestCore !== core) return;
-      const tasks = result.tasks || result.obligations || [];
-      const counts = tasks.reduce((out, item) => {
-        const state = item.due_state || item.status || "unknown";
-        out[state] = (out[state] || 0) + 1;
-        return out;
-      }, {});
-      const row = document.querySelector('[data-continuity="maintenance"] small');
-      if (row) row.textContent = `${counts.overdue || 0} overdue · ${counts.due || 0} due · ${counts.ok || 0} okay · ${counts.unconfigured || 0} unconfigured · ${counts.omitted || 0} omitted`;
-    }).catch(error => {
-      if (latestCore !== core) return;
-      const row = document.querySelector('[data-continuity="maintenance"] small');
-      if (row) row.textContent = `Could not check maintenance: ${error.message}`;
-    });
   }
 
   function renderAuthorities(access) {
@@ -290,23 +273,14 @@
     window.ASIPWorkspace.detail();
   }
 
-  async function openContinuity(kind) {
-    const serial=beginDetail(kind==='recovery' ? 'Recovery' : 'Maintenance');
-    if (kind === "recovery") {
-      const result = await window.ASIPNative.call("recovery.detail");
-      if(serial!==detailSerial) return;
-      const snapshots = result.journal_snapshots || result.snapshots || [];
-      const timeline = result.timeline?.snapshots || [];
-      const timelineMarkup = timeline.length ? timeline.map(item => `<div class="detail-row"><strong>${escape(item.description || item.type || "Snapshot")}</strong><p>${escape(item.date || "")}</p><small>${item.recovery_handle ? `Recovery handle ${escape(item.recovery_handle)}` : "Backend snapshot only; no rollback handle"}</small></div>`).join("") : `<p>${escape(result.timeline?.error || "No live snapshot timeline is available.")}</p>`;
-      document.getElementById("change-detail-body").innerHTML = `<p class="kicker">Computer detail</p><h2>Recovery</h2><p>${result.supported ? "ASIP can use the configured snapshotter for machine recovery." : "No managed snapshotter is available on this computer."}</p><div class="detail-section"><strong>Recorded recovery points</strong>${snapshots.length ? snapshots.map(item => `<div class="detail-row"><strong>${escape(item.reason || "Recovery snapshot")}</strong><p>${escape(item.at || item.created_at || item.timestamp || "")}</p><small>Handle: ${escape(item.recovery_handle || item.handle || item.snapshot_id || "unknown")}</small></div>`).join("") : "<p>No recent journaled snapshots.</p>"}</div><div class="detail-section"><strong>Live snapshot timeline</strong>${timelineMarkup}</div><div class="detail-section"><strong>Rollback</strong><p>${escape(result.rollback || "Rollback is unavailable until a supported recovery handle exists.")}</p><small>${escape(result.rollback_accepts || "Recovery handles remain the product identity; backend numbers are diagnostic.")}</small></div>`;
-    } else {
-      const [result, history, open] = await Promise.all(["list", "history", "open"].map(action => window.ASIPNative.call("maintenance.detail", { action })));
-      if(serial!==detailSerial) return;
-      const tasks = result.tasks || result.obligations || [];
-      const records = history.records || [];
-      const sessions = open.open_sessions || [];
-      document.getElementById("change-detail-body").innerHTML = `<p class="kicker">Computer detail</p><h2>Maintenance</h2><p>Recurring obligations and their current due state. Unconfigured and omitted roles are decisions, not failures.</p>${tasks.length ? tasks.map(item => `<div class="detail-row"><strong>${escape(item.task || item.name || "Maintenance task")}</strong><span>${escape(item.due_state || item.status || item.state || "configured")}</span><p>${item.cadence_days ? `Every ${escape(item.cadence_days)} days · ` : ""}${escape(item.due_at || item.next_due || (item.due_state === "omitted" ? "omitted" : "not scheduled"))}</p><small>Last completed: ${escape(item.last_completed || "never")}${item.why ? ` · ${escape(item.why)}` : ""}${item.omit_reason ? ` · ${escape(item.omit_reason)}` : ""}</small></div>`).join("") : "<p>No maintenance obligations are configured.</p>"}<div class="detail-section"><strong>Current session</strong>${sessions.length ? sessions.map(item => `<div class="detail-row"><strong>${escape((item.tasks || []).join(", ") || "Maintenance session")}</strong><p>${escape(item.at || "")}</p><small>${escape(item.change_id || "")}</small></div>`).join("") : "<p>No open maintenance session.</p>"}</div><div class="detail-section"><strong>History</strong>${records.length ? records.slice(0, 12).map(item => `<div class="detail-row"><strong>${escape(item.action || "recorded")} · ${escape(item.task || (item.tasks || []).join(", ") || "maintenance")}</strong><p>${escape(item.reason || "")}</p><small>${escape(item.at || "")}${item.change_id ? ` · change ${escape(item.change_id)}` : ""}</small></div>`).join("") : "<p>No maintenance history.</p>"}</div>`;
-    }
+  async function openRecovery() {
+    const serial=beginDetail('Recovery');
+    const result = await window.ASIPNative.call("recovery.detail");
+    if(serial!==detailSerial) return;
+    const snapshots = result.journal_snapshots || result.snapshots || [];
+    const timeline = result.timeline?.snapshots || [];
+    const timelineMarkup = timeline.length ? timeline.map(item => `<div class="detail-row"><strong>${escape(item.description || item.type || "Snapshot")}</strong><p>${escape(item.date || "")}</p><small>${item.recovery_handle ? `Recovery handle ${escape(item.recovery_handle)}` : "Backend snapshot only; no rollback handle"}</small></div>`).join("") : `<p>${escape(result.timeline?.error || "No live snapshot timeline is available.")}</p>`;
+    document.getElementById("change-detail-body").innerHTML = `<p class="kicker">Computer detail</p><h2>Recovery</h2><p>${result.supported ? "ASIP can use the configured snapshotter for machine recovery." : "No managed snapshotter is available on this computer."}</p><div class="detail-section"><strong>Recorded recovery points</strong>${snapshots.length ? snapshots.map(item => `<div class="detail-row"><strong>${escape(item.reason || "Recovery snapshot")}</strong><p>${escape(item.at || item.created_at || item.timestamp || "")}</p><small>Handle: ${escape(item.recovery_handle || item.handle || item.snapshot_id || "unknown")}</small></div>`).join("") : "<p>No recent journaled snapshots.</p>"}</div><div class="detail-section"><strong>Live snapshot timeline</strong>${timelineMarkup}</div><div class="detail-section"><strong>Rollback</strong><p>${escape(result.rollback || "Rollback is unavailable until a supported recovery handle exists.")}</p><small>${escape(result.rollback_accepts || "Recovery handles remain the product identity; backend numbers are diagnostic.")}</small></div>`;
     if(serial!==detailSerial) return;
     window.ASIPWorkspace.detail();
   }
@@ -598,15 +572,13 @@
       changeFilter = "open";
       selectTab("changes");
       if (latestCore) renderCore(latestCore);
-    } else if (kind === "maintenance" || kind === "maintenance_due") {
-      openContinuity("maintenance").catch(console.error);
     } else if (kind === "recovery") {
-      openContinuity("recovery").catch(console.error);
+      openRecovery().catch(console.error);
     }
   });
   document.getElementById("continuity-state").addEventListener("click", event => {
     const row = event.target.closest("[data-continuity]");
-    if (row) openContinuity(row.dataset.continuity).catch(console.error);
+    if (row?.dataset.continuity === "recovery") openRecovery().catch(console.error);
   });
   document.getElementById("health-card").addEventListener("click", async () => {
     const serial=beginDetail('ASIP health');

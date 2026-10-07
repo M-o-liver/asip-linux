@@ -7,10 +7,10 @@ the authority boundary; the admin group is root-equivalent.
 |---|---|
 | `core/server.py` | Root Unix-socket servers, bounded connections, kernel peer identity |
 | `core/daemon.py` | Validation, serialization, execution, journal, recovery and named access |
-| `core/facts.py`, `core/maintenance.py` | Focused inspection and durable maintenance state |
+| `core/facts.py` | Focused live inspection |
 | `core/protocol.py`, `core/client.py` | Bounded newline JSON IPC and unprivileged client |
 | `cli/asip.sh` | Human CLI; `asip-inspect` restricts it to inspection |
-| `asip_mcp.py` | Two local stdio adapters: ten inspection tools and eighteen mutation tools |
+| `asip_mcp.py` | Two local stdio adapters: ten inspection tools and seventeen mutation tools |
 | `desktop/` | User GTK4/WebKit application, Codex runtime and credential broker |
 | `scripts/install_system.sh`, `scripts/install_user.py` | Source installation and optional user environments |
 | `systemd/` | Two socket units and two daemon services |
@@ -19,8 +19,8 @@ the authority boundary; the admin group is root-equivalent.
 
 `/etc/asip/MACHINE.md` holds machine-specific instructions and recovery facts.
 Project registrations and drift decisions also live under `/etc/asip`.
-`/var/lib/asip/journal.jsonl` records changes, operation events, holds, notes,
-verification and maintenance. Blobs store captured output/configuration copies.
+`/var/lib/asip/journal.jsonl` records changes, operation events, holds, notes
+and verification. Blobs store captured output/configuration copies.
 Authority records live in a separate root-only access directory.
 
 Socket results use short journal references such as `j9ad4c53d`. They resolve
@@ -59,7 +59,7 @@ by operation ID in bounded chunks. Full policy remains a resource, with an
 index and exact-heading subresources for focused later recovery.
 
 The application has Ask, This computer, History and Settings. It displays
-literal open/held work, questions, recovery, maintenance, verification and
+literal open/held work, questions, recovery, verification and
 operation details. Conversation state is provider-specific and saved before
 turn execution. Provider reconnect is transactional: a failed candidate leaves
 the old connection intact. The Gemini Chat Completions adapter supports function

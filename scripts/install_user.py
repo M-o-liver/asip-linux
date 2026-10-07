@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import venv
 
 SOURCE = Path(__file__).resolve().parents[1]
@@ -21,7 +22,7 @@ def install(kind, prepare=False):
         raise SystemExit("Install user runtimes as the operator, not root")
     data = Path(os.environ.get("XDG_DATA_HOME", str(Path.home()/".local/share"))) / "asip"
     binary = Path.home()/".local/bin"
-    files = ([SOURCE/"pyproject.toml", SOURCE/"asip_mcp.py", SOURCE/"VERSION"] + sorted((SOURCE/"core").glob("*.py"))
+    files = ([SOURCE/"pyproject.toml", SOURCE/"asip_mcp.py", SOURCE/"VERSION", SOURCE/"LICENSE"] + sorted((SOURCE/"core").glob("*.py"))
              if kind == "mcp" else [SOURCE/"desktop/requirements.in"])
     digest = hashlib.sha256((sys.executable + sys.version + kind).encode())
     for path in files:
@@ -37,7 +38,14 @@ def install(kind, prepare=False):
             try:
                 venv.EnvBuilder(with_pip=True, system_site_packages=(kind == "desktop")).create(environment)
                 if kind == "mcp":
-                    run(str(python), "-m", "pip", "install", "--no-input", str(SOURCE))
+                    # pip writes build metadata; installed source is root-owned.
+                    with tempfile.TemporaryDirectory(prefix="asip-mcp-build-") as directory:
+                        build = Path(directory)
+                        for path in files:
+                            target = build/path.relative_to(SOURCE)
+                            target.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copyfile(path, target)
+                        run(str(python), "-m", "pip", "install", "--no-input", str(build))
                     run(str(python), "-c", "import asip_mcp; from mcp.server import MCPServer")
                 else:
                     run(str(python), "-m", "pip", "install", "--no-input", "-r", str(SOURCE/"desktop/requirements.in"))
@@ -64,10 +72,19 @@ def install(kind, prepare=False):
                 launcher.chmod(0o755)
                 applications = data.parent/"applications"
                 applications.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(SOURCE/"desktop/org.asip.Desktop.desktop", applications/"org.asip.Desktop.desktop")
+                entry = (SOURCE/"desktop/org.asip.Desktop.desktop").read_text()
+                command = str(launcher).replace("%", "%%")
+                for character in ("\\", '"', "`", "$"):
+                    command = command.replace(character, "\\" + character)
+                command = command.replace("\\", "\\\\")
+                entry = entry.replace("Exec=asip-desktop\n", 'Exec="' + command + '"\n')
+                (applications/"org.asip.Desktop.desktop").write_text(entry)
                 icons = data.parent/"icons/hicolor/scalable/apps"
                 icons.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(SOURCE/"desktop/org.asip.Desktop.svg", icons/"org.asip.Desktop.svg")
+                refresh = shutil.which("update-desktop-database")
+                if refresh:
+                    run(refresh, str(applications))
     print(json.dumps({"runtime": kind, "path": str(environment), "activated": not prepare}))
 
 def main():

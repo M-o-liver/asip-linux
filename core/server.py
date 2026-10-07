@@ -173,7 +173,7 @@ def main(argv=None) -> int:
     parser.add_argument("--serve-read-only", action="store_true")
     args = parser.parse_args(argv)
     if args.serve == args.serve_read_only:
-        parser.error("usage: asipd --serve | --serve-read-only")
+        parser.error("usage: python3 -m core.server --serve | --serve-read-only")
     serve(read_only=args.serve_read_only)
     return 0
 

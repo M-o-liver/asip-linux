@@ -100,7 +100,7 @@ system-work entry and read `asip://machine/policy`. Start a change for coherent
 work and pass its ID on related mutations. Ordinary userland work stays
 outside root execution; `note_record` connects important paths or effects.
 
-MCP deliberately minimizes context overhead: 10 inspection tools and 18
+MCP deliberately minimizes context overhead: 10 inspection tools and 17
 mutation tools, short descriptions, one compact result, bounded history and
 explicit detail/output expansion. References normally look like `j9ad4c53d`;
 full journal IDs also work, and ambiguous prefixes fail. Retry keys are
@@ -114,8 +114,10 @@ same operation. Reconnect MCP after updating its user runtime.
 ~/.local/bin/asip-desktop
 ```
 
+The user install adds ASIP to application search.
+
 **Ask** runs the local coding agent. **This computer** shows health, attention,
-open and held work, operator questions, maintenance and recovery.
+open and held work, operator questions and recovery.
 **History** opens changes, verification and operation output. **Settings**
 handles provider connections and local credential provisioning. Conversations
 and provider-specific agent homes are saved in private user state.
