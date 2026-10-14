@@ -109,3 +109,33 @@ footer {
 [hidden] {
   display: none !important;
 }
+label {
+  display: block;
+  margin: 14px 0;
+  font-size: 13px;
+}
+input,
+select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  font: inherit;
+  padding: 8px;
+  border: 1px solid #8885;
+  border-radius: 5px;
+  background: Field;
+  color: FieldText;
+}
+small {
+  display: block;
+  margin-top: 5px;
+  color: GrayText;
+}
+summary {
+  cursor: pointer;
+  padding: 12px 0;
+}
+input[type="checkbox"] {
+  display: inline;
+  width: auto;
+}

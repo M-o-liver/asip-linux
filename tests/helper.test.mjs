@@ -7,6 +7,9 @@ import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
 import { Runtime } from "../beacon/runtime.mjs";
 import { accountId } from "../beacon/identity.mjs";
+import { Connections } from "../beacon/connections.mjs";
+import { encryptionFixture } from "./encryption-fixture.mjs";
+import http from "node:http";
 
 let binary;
 const children = new Set();
@@ -116,7 +119,15 @@ test(
     response = await client.request("tools/list");
     assert.deepEqual(
       response.result.tools.map((t) => t.name),
-      ["asip_connect", "asip_status", "asip_recall", "asip_record"],
+      [
+        "asip_projects",
+        "asip_connections",
+        "asip_api_request",
+        "asip_connect",
+        "asip_status",
+        "asip_recall",
+        "asip_record",
+      ],
     );
     response = await client.request("tools/call", {
       name: "asip_connect",
@@ -127,10 +138,16 @@ test(
       response = await client.request("tools/call", { name, arguments: {} });
       assert.equal(response.result.isError, true);
     }
-    await runHook("codex", path.join(home, "codex"), "UserPromptSubmit", {
-      session_id: "s1",
-      prompt: "Should not record",
-    });
+    const inactiveHint = await runHook(
+      "codex",
+      path.join(home, "codex"),
+      "UserPromptSubmit",
+      {
+        session_id: "s1",
+        prompt: "Should not record",
+      },
+    );
+    assert.deepEqual(inactiveHint, {});
     assert.equal(fs.existsSync(path.join(home, "beacon")), false);
     runtime.signIn(account);
     let ready;
@@ -162,12 +179,18 @@ test(
       "origin",
       "git@github.com:example/project.git",
     ]);
-    await runHook("codex", path.join(home, "codex"), "UserPromptSubmit", {
-      session_id: "s1",
-      cwd: repository,
-      prompt: "Fix the build",
-      model: "test-model",
-    });
+    const hint = await runHook(
+      "codex",
+      path.join(home, "codex"),
+      "UserPromptSubmit",
+      {
+        session_id: "s1",
+        cwd: repository,
+        prompt: "Fix the build",
+        model: "test-model",
+      },
+    );
+    assert.match(hint.hookSpecificOutput.additionalContext, /"session":"s1"/);
     await runHook("codex", path.join(home, "codex"), "PostToolUse", {
       session_id: "s1",
       cwd: repository,
@@ -188,7 +211,7 @@ test(
     response = await client.request("tools/call", {
       name: "asip_status",
       arguments: {},
-      _meta: { sessionId: "s1", threadId: "t1" },
+      _meta: { sessionId: "root-session", threadId: "s1" },
     });
     const context = JSON.parse(response.result.content[0].text);
     assert.equal(context.session, "s1");
@@ -200,7 +223,11 @@ test(
         kind: "evidence",
         summary: "Native session attribution",
       },
-      _meta: { sessionId: "s1", threadId: "t1", callId: "native-call" },
+      _meta: {
+        sessionId: "root-session",
+        threadId: "s1",
+        callId: "native-call",
+      },
     });
     assert.equal(response.result.isError, false);
     response = await client.request("tools/call", {
@@ -210,7 +237,57 @@ test(
     const attributed = JSON.parse(response.result.content[0].text).events[0];
     assert.equal(attributed.session, "s1");
     assert.equal(attributed.project, "github.com/example/project");
-    assert.equal(attributed.data.native_session.threadId, "t1");
+    assert.equal(attributed.data.native_session.threadId, "s1");
+    assert.equal(attributed.data.native_session.sessionId, "root-session");
+    let apiCredential;
+    const api = http.createServer((req, res) => {
+      apiCredential = req.headers["x-api-key"];
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end('{"result":"native helper API call"}');
+    });
+    await new Promise((resolve) => api.listen(0, "127.0.0.1", resolve));
+    t.after(() => new Promise((resolve) => api.close(resolve)));
+    const store = new Connections(path.join(home, "beacon"), {
+      account: () => runtime.account,
+      ...encryptionFixture(),
+    });
+    runtime.connectionStore = store;
+    store.save({
+      name: "local.work",
+      provider: "custom",
+      origin: "http://127.0.0.1:" + api.address().port,
+      header: "x-api-key",
+      credential: "fixture-only-api-credential",
+      projects: ["github.com/example/project"],
+    });
+    response = await client.request("tools/call", {
+      name: "asip_connections",
+      arguments: {},
+    });
+    assert.equal(
+      JSON.stringify(response).includes("fixture-only-api-credential"),
+      false,
+    );
+    assert.equal(
+      JSON.parse(response.result.content[0].text).connections[0].name,
+      "local.work",
+    );
+    response = await client.request("tools/call", {
+      name: "asip_api_request",
+      arguments: { name: "local.work", path: "/result" },
+      _meta: { sessionId: "root-session", threadId: "s1" },
+    });
+    assert.equal(response.result.isError, false);
+    assert.equal(JSON.parse(response.result.content[0].text).status, 200);
+    assert.equal(apiCredential, "fixture-only-api-credential");
+    response = await client.request("tools/call", {
+      name: "asip_projects",
+      arguments: {},
+    });
+    assert.equal(
+      JSON.parse(response.result.content[0].text).projects[0].name,
+      "project",
+    );
     runtime.disconnect("codex");
     await runHook("codex", path.join(home, "codex"), "PostToolUse", {
       session_id: "s1",
@@ -219,10 +296,10 @@ test(
     });
     assert.equal(
       runtime.db.prepare("SELECT count(*) AS n FROM events").get().n,
-      3,
+      5,
     );
     response = await client.request("tools/list");
-    assert.equal(response.result.tools.length, 4);
+    assert.equal(response.result.tools.length, 7);
     response = await client.request("tools/call", {
       name: "asip_recall",
       arguments: {},

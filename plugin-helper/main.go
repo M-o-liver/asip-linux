@@ -55,7 +55,11 @@ func call(route string, body any, credential string) (map[string]any, error) {
 	if credential != "" {
 		request.Header.Set("Authorization", "Bearer "+credential)
 	}
-	response, err := client.Do(request)
+	transport := client
+	if route == "/api/request" {
+		transport = &http.Client{Timeout: 65 * time.Second}
+	}
+	response, err := transport.Do(request)
 	if err != nil {
 		return nil, errors.New("Open ASIP Beacon and sign in.")
 	}
@@ -261,7 +265,7 @@ func trace(value any, depth int) any {
 	}
 }
 
-func hook(event string) {
+func hook(event string) (context map[string]any) {
 	credential := token()
 	if credential == "" {
 		return
@@ -338,14 +342,27 @@ func hook(event string) {
 		}
 		data["trace_truncated"] = true
 	}
-	_, _ = call("/events", map[string]any{"session": session, "kind": kind, "project": project(cwd), "summary": summary, "data": data}, credential)
+	identity := project(cwd)
+	_, err = call("/events", map[string]any{"session": session, "kind": kind, "project": identity, "summary": summary, "data": data}, credential)
+	if err == nil && (event == "SessionStart" || event == "UserPromptSubmit") {
+		value, _ := json.Marshal(map[string]any{"session": session, "project": identity})
+		message := "Use this native context for ASIP records: " + string(value)
+		if agent == "antigravity" {
+			return map[string]any{"injectSteps": []any{map[string]any{"systemMessage": map[string]string{"systemMessage": message}}}}
+		}
+		return map[string]any{"hookSpecificOutput": map[string]any{"hookEventName": event, "additionalContext": message}}
+	}
+	return nil
 }
 
 func tools() []map[string]any {
 	empty := map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false}
 	// Keep the catalog stable: native clients may cache it across sign-in.
 	// Every memory operation still requires a connected account in Beacon.
-	return []map[string]any{{"name": "asip_connect", "description": "Connect this plugin to your ASIP account in Beacon.", "inputSchema": empty}, {"name": "asip_status", "description": "ASIP account and Beacon connection.", "inputSchema": empty},
+	return []map[string]any{{"name": "asip_projects", "description": "List projects found in recorded agent work.", "inputSchema": empty},
+		{"name": "asip_connections", "description": "List named API connections available through ASIP.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"project": map[string]string{"type": "string"}}}},
+		{"name": "asip_api_request", "description": "Call a named API connection. ASIP supplies its credential and records the HTTP result.", "inputSchema": map[string]any{"type": "object", "required": []string{"name", "path"}, "properties": map[string]any{"name": map[string]string{"type": "string"}, "path": map[string]string{"type": "string"}, "method": map[string]any{"type": "string", "enum": []string{"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"}}, "body": map[string]any{}, "project": map[string]string{"type": "string"}, "session": map[string]string{"type": "string"}}}},
+		{"name": "asip_connect", "description": "Connect this plugin to your ASIP account in Beacon.", "inputSchema": empty}, {"name": "asip_status", "description": "ASIP account and Beacon connection.", "inputSchema": empty},
 		{"name": "asip_recall", "description": "Find previous project work and results. Connect ASIP first.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"project": map[string]string{"type": "string"}, "query": map[string]string{"type": "string"}}}},
 		{"name": "asip_record", "description": "Save the intended work, result, or supporting evidence for this project. Codex supplies the native session automatically; other clients must provide their session ID. Connect ASIP first.", "inputSchema": map[string]any{"type": "object", "required": []string{"kind", "summary"}, "properties": map[string]any{"session": map[string]string{"type": "string"}, "kind": map[string]string{"type": "string"}, "summary": map[string]string{"type": "string"}, "project": map[string]string{"type": "string"}, "data": map[string]string{"type": "object"}}}}}
 }
@@ -392,11 +409,30 @@ func mcp() {
 			args, _ := params["arguments"].(map[string]any)
 			meta, _ := params["_meta"].(map[string]any)
 			nativeSession := stringValue(meta["sessionId"])
+			nativeThread := stringValue(meta["threadId"])
+			contextSession := nativeThread
+			if contextSession == "" {
+				contextSession = nativeSession
+			}
+			if name == "asip_record" || name == "asip_api_request" {
+				if args == nil {
+					args = map[string]any{}
+				}
+				if contextSession != "" {
+					args["session"] = contextSession
+					evidence, _ := args["data"].(map[string]any)
+					if evidence == nil {
+						evidence = map[string]any{}
+					}
+					evidence["native_session"] = map[string]string{"sessionId": nativeSession, "threadId": nativeThread, "callId": stringValue(meta["callId"])}
+					args["data"] = evidence
+				}
+			}
 			var data map[string]any
 			var err error
 			switch name {
 			case "asip_connect":
-				if data, err = call("/plugin/status", map[string]any{"session": nativeSession}, token()); err == nil {
+				if data, err = call("/plugin/status", map[string]any{"session": contextSession}, token()); err == nil {
 					break
 				}
 				if err = beaconReady(); err != nil {
@@ -415,22 +451,16 @@ func mcp() {
 				}
 				data = map[string]any{"state": "connecting", "message": "Click Connect in ASIP Beacon."}
 			case "asip_status":
-				data, err = call("/plugin/status", map[string]any{"session": nativeSession}, token())
+				data, err = call("/plugin/status", map[string]any{"session": contextSession}, token())
 			case "asip_recall":
 				data, err = call("/recall", args, token())
+			case "asip_connections":
+				data, err = call("/connections", args, token())
+			case "asip_projects":
+				data, err = call("/projects", args, token())
+			case "asip_api_request":
+				data, err = call("/api/request", args, token())
 			case "asip_record":
-				if args == nil {
-					args = map[string]any{}
-				}
-				if nativeSession != "" {
-					args["session"] = nativeSession
-					evidence, _ := args["data"].(map[string]any)
-					if evidence == nil {
-						evidence = map[string]any{}
-					}
-					evidence["native_session"] = map[string]string{"sessionId": nativeSession, "threadId": stringValue(meta["threadId"]), "callId": stringValue(meta["callId"])}
-					args["data"] = evidence
-				}
 				data, err = call("/events", args, token())
 			default:
 				err = errors.New("Unknown ASIP tool.")
@@ -483,8 +513,11 @@ func main() {
 	case "mcp":
 		mcp()
 	case "hook":
-		hook(event)
-		if agent == "antigravity" && event == "PreToolUse" {
+		context := hook(event)
+		if context != nil {
+			raw, _ := json.Marshal(context)
+			fmt.Println(string(raw))
+		} else if agent == "antigravity" && event == "PreToolUse" {
 			fmt.Println(`{"decision":"allow"}`)
 		} else if agent == "antigravity" && event == "Stop" {
 			fmt.Println(`{"decision":"stop"}`)

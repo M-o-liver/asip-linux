@@ -28,6 +28,16 @@ ASIP's Google desktop client and GitHub OAuth app are registered. Public client 
 - Durable account-specific activity records: agent, native session, project, intent, tool input/result, failure, repository revision, worktree state, and trace reference.
 - Project identity shared across SSH and HTTPS repository URLs, plus working-directory fallback.
 - Search and manual intent/result/evidence records through the connected plugin.
+- Named API connections for OpenAI, Anthropic, Gemini, GitHub, and custom HTTP APIs, with optional project assignments.
+- GitHub repository authorization from Beacon; encrypted API credentials and request/result records linked to the calling agent's project and session.
+
+## API connections
+
+Open **API connections** in Beacon, choose a provider, and name the connection, for example `github.work`. GitHub offers browser authorization for public or private repositories. Other providers accept an API key or token. Assign the connection to recorded projects, or choose **All projects**.
+
+Connected agents use `asip_connections` to find available connections and `asip_api_request` to call them. Requests use a path on the configured API, such as `/repos/M-o-liver/asip-linux/issues`. Responses include the HTTP status, JSON or text body, and an audit ID. Beacon records the connection, project, session, result, and provider request ID. Interrupted requests remain unresolved in the audit.
+
+API requests currently support JSON bodies up to 64 KiB and responses up to 64 KiB. Larger responses return `truncated: true` without a body; use the provider's pagination or filtering. Streaming and file uploads are not implemented. Google API access currently uses Gemini keys; Google account sign-in does not authorize other Google APIs.
 
 The account is identified by the Google or GitHub provider's stable subject. Account linking, hosted account management, and cross-device synchronization are not implemented.
 
@@ -49,7 +59,7 @@ The CI workflow runs connection and OAuth fixture tests, installs the Codex and 
 
 ## Current limits
 
-The next milestone is automatic capture of a normal agent turn through an installed plugin. Manual record/recall through the installed Codex plugin has passed with a real account. The project workspace, named API connections, recovery records, and probabilistic project classification remain pending. The old administration daemon is not a dependency of this implementation.
+Manual record/recall through the installed Codex plugin has passed with a real account, and native CLI session-end hooks have produced records automatically. Automatic capture of a full normal agent turn still needs qualification. Named API calls have passed through the compiled plugin against a real HTTP test service; GitHub API authorization still needs a real login check. The project workspace, recovery records, and probabilistic project classification remain pending. The old administration daemon is not a dependency of this implementation.
 
 Windows and macOS installers currently lack publisher signatures and macOS notarization. Linux tray display depends on the desktop's status-indicator support. Antigravity bundles use the exported helper's absolute path; keep the exported directory in place.
 

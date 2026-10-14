@@ -30,7 +30,7 @@ export class Identity {
     return data;
   }
 
-  async github(signal) {
+  async github(signal, { scope = "", includeCredential = false } = {}) {
     const clientId = this.config.githubClientId;
     if (!clientId)
       throw new Error("GitHub sign-in is not configured for this build.");
@@ -42,7 +42,10 @@ export class Identity {
       method: "POST",
       headers,
       signal,
-      body: new URLSearchParams({ client_id: clientId }),
+      body: new URLSearchParams({
+        client_id: clientId,
+        ...(scope ? { scope } : {}),
+      }),
     });
     if (
       !device.device_code ||
@@ -91,13 +94,16 @@ export class Identity {
         });
         if (!Number.isSafeInteger(profile.id) || !profile.login)
           throw new Error("GitHub did not return an account.");
-        return {
+        const identity = {
           provider: "github",
           subject: String(profile.id),
           name: profile.name || profile.login,
           handle: profile.login,
           accountId: accountId("github", String(profile.id)),
         };
+        return includeCredential
+          ? { account: identity, credential: token.access_token }
+          : identity;
       }
       if (token.error === "slow_down") interval += 5;
       else if (token.error !== "authorization_pending")

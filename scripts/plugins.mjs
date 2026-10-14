@@ -16,7 +16,9 @@ If Beacon is missing or the plugin is disconnected, explain the reported status 
 In Codex, automatic recording also requires reviewing ASIP's hooks in /hooks. Use Codex's native hook manager; do not edit hook trust files or bypass hook review.
 
 Once connected, call asip_recall when continuing work on a project. Use the repository identity returned by asip_status or provide the project's repository identity.
-Use asip_record for meaningful intent, result, evidence, and unresolved records. Use the native session ID from asip_status. Describe what happened and include verification or paths that support the result. Do not claim success without evidence. Hooks collect tool activity; avoid repeating each tool call as a manual record.
+Use asip_record for meaningful intent, result, evidence, and unresolved records. Codex supplies its calling thread automatically. Other clients should use the native ASIP context injected by their hooks, or the current session returned by asip_status. Never borrow lastSession from another conversation. Describe what happened and include verification or paths that support the result. Do not claim success without evidence. Hooks collect tool activity; avoid repeating each tool call as a manual record.
+
+Use asip_projects to find recorded projects and asip_connections to find their named API access. Use asip_api_request with the connection name and an API path. Include the current project and session when the client does not supply them. If a connection is missing, direct the user to API connections in Beacon. Credentials are entered there, never in chat.
 `;
 
 export function buildPlugin({ root, target, agent, binary }) {

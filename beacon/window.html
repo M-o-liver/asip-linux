@@ -59,8 +59,77 @@
         <button id="export">Save plugin</button>
         <pre id="install-command"></pre>
       </section>
+      <section id="connections" hidden>
+        <h2>API connections</h2>
+        <div id="connection-list"></div>
+        <details id="connection-details">
+          <summary>Add connection</summary>
+          <form id="connection-form">
+            <label
+              >Name<input
+                id="connection-name"
+                placeholder="openai.work"
+                required
+                pattern="[a-z][a-z0-9._-]{1,79}"
+                autocomplete="off"
+            /></label>
+            <label
+              >Provider<select id="connection-provider">
+                <option value="openai">OpenAI</option>
+                <option value="anthropic">Anthropic</option>
+                <option value="gemini">Google Gemini</option>
+                <option value="github">GitHub</option>
+                <option value="custom">Other API</option>
+              </select></label
+            >
+            <div id="connection-custom" hidden>
+              <label
+                >API origin<input
+                  id="connection-origin"
+                  placeholder="https://api.example.com"
+                  type="url"
+              /></label>
+              <label
+                >Authentication header<input
+                  id="connection-header"
+                  value="Authorization"
+              /></label>
+            </div>
+            <label id="connection-credential-label"
+              >API key or token<input
+                id="connection-credential"
+                type="password"
+                required
+                autocomplete="off"
+            /></label>
+            <div id="connection-github" hidden>
+              <label
+                >Repository access<select id="connection-github-scope">
+                  <option value="public_repo">Public repositories</option>
+                  <option value="repo">Public and private repositories</option>
+                </select></label
+              >
+              <button id="connection-github-signin" type="button">
+                Connect GitHub
+              </button>
+              <button id="connection-github-token" type="button">
+                Use a token
+              </button>
+            </div>
+            <label
+              ><input id="connection-all-projects" type="checkbox" checked />
+              All projects</label
+            >
+            <label id="connection-project-label" hidden
+              >Projects<select id="connection-projects" multiple></select
+            ></label>
+            <button id="connection-save" type="submit">Save connection</button>
+          </form>
+        </details>
+      </section>
       <p id="error" role="alert"></p>
       <footer id="progress"></footer>
+      <button id="signin-cancel" hidden>Cancel sign-in</button>
     </main>
   </body>
 </html>

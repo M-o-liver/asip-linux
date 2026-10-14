@@ -18,6 +18,7 @@ if (userDataDirectory) {
 }
 let runtime,
   identity,
+  connections,
   window,
   tray,
   pending = null,
@@ -55,12 +56,20 @@ function persist() {
 }
 
 function snapshot() {
+  let configuredConnections = [];
+  if (runtime.account && connections) {
+    try {
+      configuredConnections = connections.list();
+    } catch {
+      lastError = "API connections could not be opened.";
+    }
+  }
   return {
     ...runtime.status(),
     platform: process.platform,
     pending,
     deviceCode,
-    error: lastError,
+    error: lastError || runtime.recordingError || "",
     signingIn: Boolean(abort),
     providers: {
       google: Boolean(
@@ -68,6 +77,7 @@ function snapshot() {
       ),
       github: Boolean(identity.config.githubClientId),
     },
+    connections: configuredConnections,
   };
 }
 function send() {
@@ -143,8 +153,9 @@ function show() {
   }
   window = new BrowserWindow({
     width: 440,
-    height: 600,
-    resizable: false,
+    height: 680,
+    minWidth: 420,
+    minHeight: 500,
     title: "ASIP Beacon",
     autoHideMenuBar: true,
     webPreferences: {
@@ -169,6 +180,7 @@ if (!app.requestSingleInstanceLock()) {
     app.on("second-instance", show);
     const { Runtime } = await import("./runtime.mjs");
     const { Identity } = await import("./identity.mjs");
+    const { Connections } = await import("./connections.mjs");
     const { rebindAntigravity } = await import("../scripts/plugins.mjs");
     const configPath = path.join(__dirname, "signin.json");
     const config = fs.existsSync(configPath)
@@ -205,6 +217,20 @@ if (!app.requestSingleInstanceLock()) {
         send();
       },
     });
+    connections = new Connections(app.getPath("userData"), {
+      account: () => runtime.account,
+      seal: (value) => {
+        if (
+          !safeStorage.isEncryptionAvailable() ||
+          (process.platform === "linux" &&
+            safeStorage.getSelectedStorageBackend() === "basic_text")
+        )
+          throw new Error("The system keychain is unavailable.");
+        return safeStorage.encryptString(value);
+      },
+      unseal: (value) => safeStorage.decryptString(value),
+    });
+    runtime.connectionStore = connections;
     try {
       if (fs.existsSync(sessionPath()) && safeStorage.isEncryptionAvailable()) {
         const state = JSON.parse(
@@ -226,6 +252,55 @@ if (!app.requestSingleInstanceLock()) {
     updateTray(snapshot());
     tray.on("click", show);
     ipcMain.handle("asip:status", () => snapshot());
+    ipcMain.handle("asip:projects", () => runtime.projects());
+    ipcMain.handle("asip:save-connection", (_event, input) => {
+      connections.save(input);
+      runtime.abortRequests(undefined, input.name);
+      send();
+      return snapshot();
+    });
+    ipcMain.handle("asip:github-connection", async (_event, input) => {
+      if (!runtime.account) throw new Error("Sign in to ASIP Beacon first.");
+      if (abort) throw new Error("Finish the current sign-in first.");
+      if (!/^[a-z][a-z0-9._-]{1,79}$/.test(input.name || ""))
+        throw new Error("Enter a connection name such as github.work.");
+      if (!["public_repo", "repo"].includes(input.scope))
+        throw new Error("Choose repository access.");
+      const owner = runtime.account.accountId;
+      const controller = new AbortController();
+      abort = controller;
+      lastError = "";
+      send();
+      try {
+        const result = await identity.github(controller.signal, {
+          scope: input.scope,
+          includeCredential: true,
+        });
+        controller.signal.throwIfAborted();
+        if (runtime.account?.accountId !== owner)
+          throw new Error("The ASIP account changed during authorization.");
+        connections.save({
+          ...input,
+          provider: "github",
+          credential: result.credential,
+          account: result.account.handle,
+        });
+        runtime.abortRequests(undefined, input.name);
+      } catch (error) {
+        lastError = error.message;
+      } finally {
+        abort = null;
+        deviceCode = null;
+        send();
+      }
+      return snapshot();
+    });
+    ipcMain.handle("asip:remove-connection", (_event, name) => {
+      connections.remove(name);
+      runtime.abortRequests(undefined, name);
+      send();
+      return snapshot();
+    });
     ipcMain.handle("asip:signin", async (_event, provider) => {
       if (abort) return snapshot();
       lastError = "";

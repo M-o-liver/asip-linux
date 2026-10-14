@@ -22,6 +22,8 @@ export class Runtime {
     this.db = null;
     this.recordCount = 0;
     this.server = null;
+    this.connectionStore = null;
+    this.apiRequests = new Map();
   }
 
   status() {
@@ -59,6 +61,8 @@ export class Runtime {
     this.account = account;
   }
   signOut() {
+    this.abortRequests();
+    this.connectionStore?.clear();
     this.account = null;
     this.clients.clear();
     this.requests.clear();
@@ -70,6 +74,7 @@ export class Runtime {
     this.requests.delete(id);
   }
   disconnect(agent) {
+    this.abortRequests(agent);
     for (const [token, client] of this.clients)
       if (client.agent === agent) this.clients.delete(token);
   }
@@ -157,8 +162,7 @@ export class Runtime {
   }
 
   storage() {
-    if (!this.account || !this.clients.size)
-      throw new Error("Connect an ASIP plugin first.");
+    if (!this.account) throw new Error("Sign in to ASIP Beacon first.");
     if (!this.db) {
       const directory = path.join(
         this.home,
@@ -241,6 +245,113 @@ export class Runtime {
     );
   }
 
+  projects() {
+    if (!this.account) throw new Error("Sign in to ASIP Beacon first.");
+    if (!this.db && !fs.existsSync(this.databasePath())) return [];
+    return this.storage()
+      .prepare(
+        "SELECT project AS id,COUNT(*) AS events,COUNT(DISTINCT session) AS sessions,group_concat(DISTINCT agent) AS agents,MAX(at) AS lastActivity FROM events WHERE project IS NOT NULL GROUP BY project ORDER BY MAX(at) DESC",
+      )
+      .all()
+      .map((row) => ({
+        ...row,
+        name: row.id.split("/").filter(Boolean).at(-1),
+        agents: row.agents.split(","),
+      }));
+  }
+
+  abortRequests(agent, connection) {
+    for (const [id, pending] of this.apiRequests) {
+      if (agent && pending.agent !== agent) continue;
+      if (connection && pending.name !== connection) continue;
+      try {
+        this.record(pending.token, {
+          ...pending.event,
+          kind: "api_unresolved",
+          summary: "API request interrupted: " + pending.name,
+          data: {
+            connection: pending.name,
+            request: id,
+            reason: "Plugin disconnected before a response was recorded.",
+          },
+        });
+      } catch {
+        this.recordingError = "ASIP could not save activity.";
+      }
+      pending.finalized = true;
+      pending.controller.abort();
+      this.apiRequests.delete(id);
+    }
+  }
+
+  async apiRequest(token, input) {
+    const client = this.client(token);
+    if (!this.connectionStore)
+      throw new Error("API connections are unavailable.");
+    const project =
+      input.project || this.projectForSession(client.agent, input.session);
+    const prepared = this.connectionStore.prepare({ ...input, project });
+    const event = {
+      session: input.session,
+      project,
+      kind: "api_request",
+      summary: prepared.method + " " + input.name + prepared.url.pathname,
+      data: {
+        connection: input.name,
+        method: prepared.method,
+        url: prepared.url.origin + prepared.url.pathname,
+        native_session: input.data?.native_session,
+      },
+    };
+    const recorded = this.record(token, event);
+    const pending = {
+      agent: client.agent,
+      token,
+      event,
+      name: input.name,
+      controller: new AbortController(),
+      finalized: false,
+    };
+    this.apiRequests.set(recorded.id, pending);
+    try {
+      const result = await this.connectionStore.dispatch(
+        prepared,
+        pending.controller.signal,
+      );
+      if (pending.finalized)
+        throw new Error("The plugin disconnected during this request.");
+      this.record(token, {
+        ...event,
+        kind: result.status < 400 ? "api_result" : "api_failed",
+        summary: input.name + " returned HTTP " + result.status,
+        data: {
+          ...event.data,
+          request: recorded.id,
+          status: result.status,
+          providerRequestId: result.requestId,
+          bodySha256: result.bodySha256,
+          truncated: result.truncated,
+        },
+      });
+      return { ...result, auditId: recorded.id };
+    } catch (error) {
+      if (!pending.finalized)
+        this.record(token, {
+          ...event,
+          kind: "api_unresolved",
+          summary: "No API response recorded: " + input.name,
+          data: {
+            ...event.data,
+            request: recorded.id,
+            reason: "The request did not return a complete response.",
+          },
+        });
+      throw error;
+    } finally {
+      this.apiRequests.delete(recorded.id);
+    }
+  }
+
   recall(token, { project, query = "", limit = 20 } = {}) {
     this.client(token);
     if (!this.db && !fs.existsSync(this.databasePath())) return { events: [] };
@@ -309,7 +420,17 @@ export class Runtime {
             lastSession: c.lastSession || null,
             lastProject: c.lastProject || null,
           };
-        } else if (req.url === "/events") data = this.record(token, body);
+        } else if (req.url === "/projects") {
+          this.client(token);
+          data = { projects: this.projects() };
+        } else if (req.url === "/connections") {
+          this.client(token);
+          if (!this.connectionStore)
+            throw new Error("API connections are unavailable.");
+          data = { connections: this.connectionStore.list(body.project) };
+        } else if (req.url === "/api/request")
+          data = await this.apiRequest(token, body);
+        else if (req.url === "/events") data = this.record(token, body);
         else if (req.url === "/recall") data = this.recall(token, body);
         else {
           send(404, { error: "Not found." });

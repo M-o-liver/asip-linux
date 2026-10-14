@@ -135,3 +135,36 @@ test("GitHub account uses the verified numeric provider identity, not its displa
   assert.equal(result.access_token, undefined);
   assert.equal(calls.length, 3);
 });
+
+test("GitHub API authorization requests repository scope and keeps its credential separate from account sign-in", async () => {
+  const identity = new Identity(
+    { githubClientId: "registered-client" },
+    {
+      openBrowser: async () => {},
+      fetcher: async (url, options) => {
+        if (url.endsWith("/device/code")) {
+          assert.equal(options.body.get("scope"), "public_repo");
+          return Response.json({
+            device_code: "fixture-device",
+            user_code: "ABCD-EFGH",
+            verification_uri: "https://github.com/login/device",
+            interval: 5,
+          });
+        }
+        if (url.endsWith("/access_token"))
+          return Response.json({ access_token: "fixture-api-credential" });
+        assert.equal(
+          options.headers.Authorization,
+          "Bearer fixture-api-credential",
+        );
+        return Response.json({ id: 42, login: "fixture" });
+      },
+    },
+  );
+  const result = await identity.github(undefined, {
+    scope: "public_repo",
+    includeCredential: true,
+  });
+  assert.equal(result.account.accountId, accountId("github", "42"));
+  assert.equal(result.credential, "fixture-api-credential");
+});
