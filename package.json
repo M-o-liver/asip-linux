@@ -7,6 +7,7 @@
   "license": "MIT",
   "type": "module",
   "main": "beacon/main.cjs",
+  "desktopName": "asip-beacon.desktop",
   "scripts": {
     "start": "electron .",
     "format": "prettier --write beacon scripts tests package.json README.md .github",
@@ -62,7 +63,6 @@
       ],
       "icon": "beacon/icon.png"
     },
-    "desktopName": "asip-beacon.desktop",
     "linux": {
       "target": [
         "AppImage"
