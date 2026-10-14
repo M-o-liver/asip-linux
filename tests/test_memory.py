@@ -57,7 +57,10 @@ class MemoryTests(unittest.TestCase):
         projects=self.store.projects()
         self.assertEqual(len(projects),2)
         self.assertEqual(len(next(p for p in projects if p["id"]==first["project_id"])["roots"]),2)
-        self.assertNotIn("private",json.dumps(projects))
+        # macOS canonical temporary roots legitimately begin with /private/var.
+        self.assertEqual({p["repository"] for p in projects},{"github.com/owner/project","github.com/owner/vendor"})
+        self.assertNotIn("username:private@",json.dumps(projects))
+        self.assertNotIn("never-retain",json.dumps(projects))
 
     def test_unknown_path_remains_unresolved_and_explicit_registration_resolves_it(self):
         event=self.store.record("codex","test","observation","outside",cwd=str(self.root))
