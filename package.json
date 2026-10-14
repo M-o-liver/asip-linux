@@ -1,0 +1,80 @@
+{
+  "name": "asip-beacon",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ASIP Beacon and native agent plugins",
+  "author": "ASIP",
+  "license": "MIT",
+  "type": "module",
+  "main": "beacon/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "format": "prettier --write beacon scripts tests package.json README.md .github",
+    "check:format": "prettier --check beacon scripts tests package.json README.md .github",
+    "test": "npm run build:helper && node --test tests/*.test.mjs",
+    "build:helper": "node scripts/build-helper.mjs",
+    "build:all-helpers": "node scripts/build-helper.mjs --all",
+    "package": "npm run build:helper && electron-builder",
+    "package:dir": "npm run build:helper && electron-builder --dir"
+  },
+  "dependencies": {
+    "jose": "6.2.12"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3",
+    "prettier": "3.9.10"
+  },
+  "build": {
+    "appId": "com.asip.beacon",
+    "productName": "ASIP Beacon",
+    "files": [
+      "beacon/**",
+      "scripts/plugins.mjs",
+      "package.json",
+      "node_modules/jose/**"
+    ],
+    "extraResources": [
+      {
+        "from": "build/packaged/helper",
+        "to": "helper"
+      },
+      {
+        "from": "build/packaged/plugins",
+        "to": "plugins"
+      }
+    ],
+    "directories": {
+      "output": "artifacts"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.developer-tools",
+      "icon": "beacon/icon.png"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "icon": "beacon/icon.png"
+    },
+    "desktopName": "asip-beacon.desktop",
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Development",
+      "icon": "beacon/icon.png",
+      "syncDesktopName": true
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

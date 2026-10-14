@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'"
+    />
+    <title>ASIP Beacon</title>
+    <link rel="stylesheet" href="window.css" />
+    <script defer src="window.js"></script>
+  </head>
+  <body>
+    <header>
+      <img src="icon.png" alt="" />
+      <h1>ASIP</h1>
+    </header>
+    <main>
+      <section id="signed-out">
+        <h2>Sign in</h2>
+        <div class="buttons">
+          <button id="google">Google</button><button id="github">GitHub</button>
+        </div>
+        <p id="preview" hidden>
+          Sign-in is not configured in this preview build.
+        </p>
+      </section>
+      <section id="account" hidden>
+        <div class="account-row">
+          <div>
+            <strong id="account-name"></strong>
+            <p id="account-handle"></p>
+          </div>
+          <button id="signout">Sign out</button>
+        </div>
+        <h2 id="connection-state">No plugins connected</h2>
+        <div id="clients"></div>
+        <p id="record-count"></p>
+      </section>
+      <section id="request" hidden>
+        <h2 id="request-title"></h2>
+        <p id="request-account"></p>
+        <div class="buttons">
+          <button id="request-google">Google</button
+          ><button id="request-github">GitHub</button
+          ><button id="cancel">Cancel</button>
+        </div>
+      </section>
+      <section id="device" hidden>
+        <p>Enter this code on GitHub:</p>
+        <code id="device-code"></code>
+      </section>
+      <section id="plugins">
+        <h2>Install a plugin</h2>
+        <select id="agent" aria-label="Agent">
+          <option value="codex">Codex</option>
+          <option value="claude-code">Claude Code</option>
+          <option value="antigravity">Antigravity</option>
+        </select>
+        <button id="export">Save plugin</button>
+        <p id="install-command"></p>
+      </section>
+      <p id="error" role="alert"></p>
+      <footer id="progress"></footer>
+    </main>
+  </body>
+</html>

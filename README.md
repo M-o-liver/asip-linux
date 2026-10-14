@@ -1,161 +1,62 @@
 # ASIP
 
-**Privileged operations for agents.**
+ASIP keeps project history across Codex, Claude Code, and Antigravity.
 
-ASIP is the local privileged-operation layer I use for coding agents on Linux.
-It gives agents a controlled root daemon, serialized mutation path, journal,
-and compact MCP interface instead of requiring an unrestricted interactive
-sudo shell.
+This branch starts with an installable Beacon and native agent plugins. It replaces the earlier daemon-based prototype. It is a development preview, not a completed release.
 
-## What it is
+## Install and connect
 
-Two systemd socket services provide privileged execution and read-only
-inspection. A CLI, optional MCP adapters and a human application use those
-sockets. Changes connect an intent to operations, notes, verification and
-recovery records. Machine policy lives in `/etc/asip/MACHINE.md`.
+1. Install **ASIP Beacon** for your operating system.
+2. Open Beacon and sign in with Google or GitHub.
+3. Save the plugin for your agent from Beacon, then install it through that agent's plugin manager.
+4. Run the plugin's setup skill or ask your agent to connect ASIP. Finish sign-in in Beacon using the same account.
 
-## Security model
+Recording starts after the plugin finishes connecting. Signing out or disconnecting a plugin stops its recording.
 
-- Membership in `asip` is effectively arbitrary root authority. ASIP is not a
-  sandbox against a malicious authorized caller. Machine policy guides the
-  agent; it is not an enforced command allowlist.
-- `/run/asip/sock` is `root:asip`, mode `0660`. The separate
-  `root:asip-read` socket, `/run/asip/read.sock`, cannot execute commands or
-  mutate the journal. Inspection can expose policy, metadata and captured
-  output; grant read access deliberately.
-- Requests are attributed with Linux peer credentials. Mutations require an
-  explicit change or standalone reason. Reads remain available during work;
-  cancellation has a separate control path.
-- Commands have bounded execution and capture. Timeout, cancellation and
-  crashes can leave partial effects. ASIP records uncertainty rather than
-  automatically replaying unfinished work.
-- Root can alter or erase local policy, state and journal. Ordinary captures
-  can contain secrets. Sensitive execution suppresses argument values,
-  streaming and output blobs, while retaining metadata and hashes.
-- Rollback is not universal. Snapper and captured configuration files help
-  recovery; external effects and unsnapshotted data can be irreversible.
-- The application runs a coding agent with full user access. Named credentials
-  reach authorized child processes through a local broker; those children can
-  still disclose or misuse them.
+ASIP's GitHub OAuth app is registered and device sign-in is enabled in the build. Google client registration is pending. Public client IDs live in `beacon/signin.json`. Real provider login and an installed agent session still need to be verified; there is no test-login path in the application.
 
-Read [SECURITY.md](SECURITY.md) and the [implementation](core/) before granting
-an agent access. [Architecture](docs/ARCHITECTURE.md) describes the components.
+## What is implemented
 
-## What I use it for
+- A tray/menu-bar Beacon with an account window, plugin export, connection status, disconnect, and sign-out.
+- A standalone compiled helper bundled with each plugin. Users do not install Python, Node, or Go.
+- Native Codex and Claude Code plugin manifests, onboarding skills, MCP tools, and lifecycle hooks.
+- An Antigravity plugin bundle using its own hook format and conversation metadata. Native installation remains unqualified.
+- Google authorization code sign-in with PKCE and verified identity tokens; GitHub device sign-in with a verified provider account.
+- A connection handshake between the installed plugin and Beacon.
+- Durable account-specific activity records: agent, native session, project, intent, tool input/result, failure, repository revision, worktree state, and trace reference.
+- Project identity shared across SSH and HTTPS repository URLs, plus working-directory fallback.
+- Search and manual intent/result/evidence records through the connected plugin.
 
-Package and service operations, recorded root commands, configuration changes,
-local machine inspection, explicit reboot holds, and remembering why a change
-was made. Named access attaches external credentials to a userland child
-without putting their values in the model context.
+The account is identified by the Google or GitHub provider's stable subject. Account linking, hosted account management, and cross-device synchronization are not implemented.
 
-Useful CLI entry points are `asip brief`, `asip doctor`, `asip change`,
-`asip recovery` and `asip --help`. `asip-inspect` uses only the read socket.
+## Build
 
-## Install
-
-Linux, systemd and Python 3.11+ are required. The optional application also
-needs GTK4, WebKitGTK 6.0 and PyGObject. Optional user runtimes use Python venv
-and pip; the application installs a pinned Codex SDK. Your system packages
-and snapshot configuration may differ.
+Node 24 and Go 1.26 are development requirements. Each operating system builds its own Beacon installer.
 
 ```sh
-git clone https://github.com/M-o-liver/asip-linux.git
-cd asip-linux
+npm ci
+npm test
+npm run package
 ```
 
-Read `install.sh` and `scripts/install_system.sh`. Then run this through ASIP
-if it is already installed, or from an existing trusted root session:
+`npm run build:all-helpers` also compiles helpers for Windows, Linux, and macOS on x64 and arm64. Installer builds include only their own platform's helper and plugins.
 
-```sh
-./install.sh --system --operator YOUR_LOGIN
-```
+`npm start` runs Beacon from source after `npm run build:helper`. Use `--user-data-dir=/absolute/path` when exercising a separate development profile.
 
-The operator option grants root-equivalent group membership. A new login may
-be needed. The script backs up installed files, stages the source and enables
-the two sockets. It does not install system packages. On an existing
-installation it reports that the running daemons need an explicit restart;
-arrange an idle window for other callers first.
+The CI workflow runs connection and OAuth fixture tests, installs the Codex and Claude plugins into disposable runner profiles, and builds native installers on Windows, macOS, and Linux. These checks do not verify a real provider login.
 
-Keep `/etc/asip/MACHINE.md` useful: record the actual machine constraints,
-durable decisions and recovery route. Software updates preserve local state.
+## Current limits
 
-## Agent / MCP setup
+The next milestone is a real sign-in and agent session through an installed Beacon and plugin. Until that passes, the project workspace, named API connections, recovery records, and probabilistic project classification remain pending. The old administration daemon is not a dependency of this implementation.
 
-As your ordinary login user:
+Windows and macOS installers currently lack publisher signatures and macOS notarization. Linux tray display depends on the desktop's status-indicator support. Antigravity bundles use the exported helper's absolute path; keep the exported directory in place.
 
-```sh
-./install.sh --user mcp
-```
+Electron provides the desktop shell. Its installer footprint is substantial; this preview has not yet been qualified for memory use or idle CPU cost.
 
-Configure two stdio servers in your MCP client, with no arguments:
+## Integration references
 
-```text
-~/.local/bin/asip-mcp-inspect
-~/.local/bin/asip-mcp-admin
-```
-
-Use their absolute paths in client configuration. The client process needs
-the relevant groups in its effective login session. Call `asip_brief` at
-system-work entry and read `asip://machine/policy`. Start a change for coherent
-work and pass its ID on related mutations. Ordinary userland work stays
-outside root execution; `note_record` connects important paths or effects.
-
-MCP deliberately minimizes context overhead: 10 inspection tools and 17
-mutation tools, short descriptions, one compact result, bounded history and
-explicit detail/output expansion. References normally look like `j9ad4c53d`;
-full journal IDs also work, and ambiguous prefixes fail. Retry keys are
-normally generated by the adapter; supply one when deliberately retrying the
-same operation. Reconnect MCP after updating its user runtime.
-
-## Application
-
-```sh
-./install.sh --user desktop
-~/.local/bin/asip-desktop
-```
-
-The user install adds ASIP to application search.
-
-**Ask** runs the local coding agent. **This computer** shows health, attention,
-open and held work, operator questions and recovery.
-**History** opens changes, verification and operation output. **Settings**
-handles provider connections and local credential provisioning. Conversations
-and provider-specific agent homes are saved in private user state.
-
-The application can use ChatGPT sign-in or an API provider through its local
-credential broker. Configure access in the application; do not paste stored
-credential values into agent conversations. Model availability depends on
-your provider and account.
-
-## Journal / recovery
-
-The journal is `/var/lib/asip/journal.jsonl`; captured output and configuration
-copies live under `/var/lib/asip/blobs/`. Inspect one change or operation
-first, then expand details as needed. Do not publish raw machine state.
-
-`asip recovery` shows recorded handles and the live snapshot timeline.
-`asip rollback HANDLE` accepts a successful ASIP snapshot handle, not a raw
-Snapper number. Inspect actual effects before retrying interrupted work.
-Answering an operator question does not release a hold or reboot.
-
-Installation backups live under `/var/lib/asip/install-backups/`.
-`scripts/restore_install_backup.sh` is a manual recovery helper for an
-independent trusted root process when the installed runtime is unusable;
-read it before restoring. It restarts the daemons.
-
-## DYOR / project status
-
-This is software I actively use and publish as-is. It is not a supported
-cross-distro product. It runs privileged operations as root. Read the code
-and security model before using it. No compatibility or support guarantee
-is provided, and publishing an issue does not promise a response.
-
-## Development
-
-Edit the source, use the application and inspect the resulting journal/state.
-`python3 -m compileall -q core desktop asip_mcp.py` is a useful local syntax
-check. Reinstall source to update the system payload; reinstall a user runtime
-when its adapter or dependencies change. Coordinate daemon restarts with other
-callers. Keep credentials, machine policy and journals out of Git.
-
-[Apache-2.0](LICENSE).
+- [Codex plugins](https://developers.openai.com/plugins/build/plugins)
+- [Claude Code plugins](https://code.claude.com/docs/en/plugins-reference)
+- [Antigravity plugins](https://antigravity.google/docs/plugins) and [hooks](https://antigravity.google/docs/hooks)
+- [Google desktop OAuth](https://developers.google.com/identity/protocols/oauth2/native-app)
+- [GitHub OAuth device flow](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps)

@@ -1,0 +1,105 @@
+:root {
+  color-scheme: light dark;
+  font:
+    14px system-ui,
+    sans-serif;
+  background: Canvas;
+  color: CanvasText;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 24px;
+  border-bottom: 1px solid #8884;
+}
+header img {
+  height: 38px;
+  width: 38px;
+}
+h1 {
+  font-size: 23px;
+  font-weight: 600;
+  margin: 0;
+}
+main {
+  padding: 24px;
+}
+h2 {
+  font-size: 17px;
+  font-weight: 550;
+  margin: 0 0 20px;
+}
+p {
+  line-height: 1.5;
+  color: #888;
+  margin: 8px 0 18px;
+}
+.buttons {
+  display: flex;
+  gap: 10px;
+}
+button {
+  font: inherit;
+  padding: 10px 16px;
+  border: 1px solid #8885;
+  border-radius: 6px;
+  background: ButtonFace;
+  color: ButtonText;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.account-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 30px;
+}
+.account-row p {
+  font-size: 12px;
+  margin: 5px 0;
+}
+.account-row button {
+  font-size: 12px;
+  padding: 7px 12px;
+}
+.client {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 15px 0;
+  border-bottom: 1px solid #8884;
+}
+.client button {
+  font-size: 12px;
+  padding: 6px 10px;
+}
+section {
+  margin-bottom: 28px;
+}
+#error {
+  color: #c34c44;
+}
+#device-code {
+  display: block;
+  font:
+    24px ui-monospace,
+    monospace;
+  letter-spacing: 3px;
+}
+footer {
+  font-size: 12px;
+  color: #888;
+}
+[hidden] {
+  display: none !important;
+}
