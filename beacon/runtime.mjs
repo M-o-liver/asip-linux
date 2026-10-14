@@ -20,10 +20,20 @@ export class Runtime {
     this.clients = new Map();
     this.requests = new Map();
     this.db = null;
+    this.recordCount = 0;
     this.server = null;
   }
 
   status() {
+    let records = 0;
+    if (
+      this.account &&
+      this.clients.size &&
+      fs.existsSync(this.databasePath())
+    ) {
+      this.storage();
+      records = this.recordCount;
+    }
     return {
       account: this.account
         ? {
@@ -38,10 +48,7 @@ export class Runtime {
         connectedAt: c.connectedAt,
         lastActivity: c.lastActivity,
       })),
-      records:
-        this.account && this.clients.size && fs.existsSync(this.databasePath())
-          ? this.storage().prepare("SELECT count(*) AS n FROM events").get().n
-          : 0,
+      records,
     };
   }
 
@@ -57,6 +64,7 @@ export class Runtime {
     this.requests.clear();
     this.db?.close();
     this.db = null;
+    this.recordCount = 0;
   }
   cancelSignIn(id) {
     this.requests.delete(id);
@@ -165,6 +173,9 @@ export class Runtime {
       this.db.exec(
         "CREATE INDEX IF NOT EXISTS events_project_time ON events(project,at); CREATE INDEX IF NOT EXISTS events_session ON events(agent,session,at);",
       );
+      this.recordCount = this.db
+        .prepare("SELECT count(*) AS n FROM events")
+        .get().n;
     }
     return this.db;
   }
@@ -173,10 +184,10 @@ export class Runtime {
     const client = this.client(token);
     if (!event || typeof event !== "object")
       throw new Error("An event is required.");
-    const session = event.session || client.lastSession,
+    const session = event.session,
       project = Object.hasOwn(event, "project")
         ? event.project || null
-        : client.lastProject || null;
+        : this.projectForSession(client.agent, session);
     if (
       typeof session !== "string" ||
       !session ||
@@ -208,9 +219,26 @@ export class Runtime {
         data,
       );
     client.lastActivity = at;
+    this.recordCount++;
     client.lastSession = session;
     client.lastProject = project;
     return { id, at };
+  }
+
+  projectForSession(agent, session) {
+    if (
+      typeof session !== "string" ||
+      !session ||
+      (!this.db && !fs.existsSync(this.databasePath()))
+    )
+      return null;
+    return (
+      this.storage()
+        .prepare(
+          "SELECT project FROM events WHERE agent=? AND session=? ORDER BY at DESC,rowid DESC LIMIT 1",
+        )
+        .get(agent, session)?.project || null
+    );
   }
 
   recall(token, { project, query = "", limit = 20 } = {}) {
@@ -273,8 +301,13 @@ export class Runtime {
             connected: true,
             agent: c.agent,
             account: this.account.handle,
-            session: c.lastSession || null,
-            project: c.lastProject || null,
+            session:
+              typeof body.session === "string" && body.session
+                ? body.session
+                : null,
+            project: this.projectForSession(c.agent, body.session),
+            lastSession: c.lastSession || null,
+            lastProject: c.lastProject || null,
           };
         } else if (req.url === "/events") data = this.record(token, body);
         else if (req.url === "/recall") data = this.recall(token, body);

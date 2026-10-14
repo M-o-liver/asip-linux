@@ -185,6 +185,32 @@ test(
     assert.equal(events[0].data.tool_response.output, "12 tests passed");
     assert.equal(events[0].kind, "tool_succeeded");
     assert.equal(events[1].kind, "intent");
+    response = await client.request("tools/call", {
+      name: "asip_status",
+      arguments: {},
+      _meta: { sessionId: "s1", threadId: "t1" },
+    });
+    const context = JSON.parse(response.result.content[0].text);
+    assert.equal(context.session, "s1");
+    assert.equal(context.project, "github.com/example/project");
+    response = await client.request("tools/call", {
+      name: "asip_record",
+      arguments: {
+        session: "wrong-session",
+        kind: "evidence",
+        summary: "Native session attribution",
+      },
+      _meta: { sessionId: "s1", threadId: "t1", callId: "native-call" },
+    });
+    assert.equal(response.result.isError, false);
+    response = await client.request("tools/call", {
+      name: "asip_recall",
+      arguments: { query: "Native session attribution" },
+    });
+    const attributed = JSON.parse(response.result.content[0].text).events[0];
+    assert.equal(attributed.session, "s1");
+    assert.equal(attributed.project, "github.com/example/project");
+    assert.equal(attributed.data.native_session.threadId, "t1");
     runtime.disconnect("codex");
     await runHook("codex", path.join(home, "codex"), "PostToolUse", {
       session_id: "s1",
@@ -193,7 +219,7 @@ test(
     });
     assert.equal(
       runtime.db.prepare("SELECT count(*) AS n FROM events").get().n,
-      2,
+      3,
     );
     response = await client.request("tools/list");
     assert.equal(response.result.tools.length, 4);

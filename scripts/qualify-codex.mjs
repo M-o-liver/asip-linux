@@ -1,5 +1,9 @@
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+const version = JSON.parse(
+  fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 
 export async function qualifyCodex() {
   const child = spawn(
@@ -83,6 +87,11 @@ export async function qualifyCodex() {
         JSON.stringify(status) +
         " " +
         errors,
+    );
+    assert.equal(
+      server.serverInfo.version,
+      version,
+      "The installed helper must match the Beacon version.",
     );
     const disconnected = await request("mcpServer/tool/call", {
       threadId: started.thread.id,

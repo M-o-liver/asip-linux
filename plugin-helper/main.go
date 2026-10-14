@@ -23,6 +23,7 @@ import (
 )
 
 var endpoint = "http://127.0.0.1:12945"
+var version = "dev"
 
 var agent string
 var client = &http.Client{Timeout: 10 * time.Second}
@@ -346,7 +347,7 @@ func tools() []map[string]any {
 	// Every memory operation still requires a connected account in Beacon.
 	return []map[string]any{{"name": "asip_connect", "description": "Connect this plugin to your ASIP account in Beacon.", "inputSchema": empty}, {"name": "asip_status", "description": "ASIP account and Beacon connection.", "inputSchema": empty},
 		{"name": "asip_recall", "description": "Find previous project work and results. Connect ASIP first.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"project": map[string]string{"type": "string"}, "query": map[string]string{"type": "string"}}}},
-		{"name": "asip_record", "description": "Save the intended work, result, or supporting evidence for this project. Connect ASIP first.", "inputSchema": map[string]any{"type": "object", "required": []string{"session", "kind", "summary"}, "properties": map[string]any{"session": map[string]string{"type": "string"}, "kind": map[string]string{"type": "string"}, "summary": map[string]string{"type": "string"}, "project": map[string]string{"type": "string"}, "data": map[string]string{"type": "object"}}}}}
+		{"name": "asip_record", "description": "Save the intended work, result, or supporting evidence for this project. Codex supplies the native session automatically; other clients must provide their session ID. Connect ASIP first.", "inputSchema": map[string]any{"type": "object", "required": []string{"kind", "summary"}, "properties": map[string]any{"session": map[string]string{"type": "string"}, "kind": map[string]string{"type": "string"}, "summary": map[string]string{"type": "string"}, "project": map[string]string{"type": "string"}, "data": map[string]string{"type": "object"}}}}}
 }
 
 func mcp() {
@@ -381,7 +382,7 @@ func mcp() {
 			if protocol != "2025-11-25" && protocol != "2025-06-18" && protocol != "2025-03-26" && protocol != "2024-11-05" {
 				protocol = "2025-11-25"
 			}
-			result = map[string]any{"protocolVersion": protocol, "capabilities": map[string]any{"tools": map[string]bool{"listChanged": true}, "logging": map[string]any{}}, "serverInfo": map[string]string{"name": "asip", "version": "0.1.0"}}
+			result = map[string]any{"protocolVersion": protocol, "capabilities": map[string]any{"tools": map[string]bool{"listChanged": true}, "logging": map[string]any{}}, "serverInfo": map[string]string{"name": "asip", "version": version}}
 		case "ping":
 			result = map[string]any{}
 		case "tools/list":
@@ -389,11 +390,13 @@ func mcp() {
 		case "tools/call":
 			name := stringValue(params["name"])
 			args, _ := params["arguments"].(map[string]any)
+			meta, _ := params["_meta"].(map[string]any)
+			nativeSession := stringValue(meta["sessionId"])
 			var data map[string]any
 			var err error
 			switch name {
 			case "asip_connect":
-				if data, err = call("/plugin/status", map[string]any{}, token()); err == nil {
+				if data, err = call("/plugin/status", map[string]any{"session": nativeSession}, token()); err == nil {
 					break
 				}
 				if err = beaconReady(); err != nil {
@@ -412,10 +415,22 @@ func mcp() {
 				}
 				data = map[string]any{"state": "connecting", "message": "Click Connect in ASIP Beacon."}
 			case "asip_status":
-				data, err = call("/plugin/status", map[string]any{}, token())
+				data, err = call("/plugin/status", map[string]any{"session": nativeSession}, token())
 			case "asip_recall":
 				data, err = call("/recall", args, token())
 			case "asip_record":
+				if args == nil {
+					args = map[string]any{}
+				}
+				if nativeSession != "" {
+					args["session"] = nativeSession
+					evidence, _ := args["data"].(map[string]any)
+					if evidence == nil {
+						evidence = map[string]any{}
+					}
+					evidence["native_session"] = map[string]string{"sessionId": nativeSession, "threadId": stringValue(meta["threadId"]), "callId": stringValue(meta["callId"])}
+					args["data"] = evidence
+				}
 				data, err = call("/events", args, token())
 			default:
 				err = errors.New("Unknown ASIP tool.")

@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 import { buildPlugin } from "./plugins.mjs";
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const version = JSON.parse(
+  fs.readFileSync(path.join(root, "package.json"), "utf8"),
+).version;
 const targets = process.argv.includes("--all")
   ? [
       ["linux", "x64"],
@@ -25,7 +28,7 @@ for (const [platform, architecture] of targets) {
     [
       "build",
       "-trimpath",
-      "-ldflags=-s -w",
+      "-ldflags=-s -w -X main.version=" + version,
       "-o",
       path.join(directory, binary),
       ".",

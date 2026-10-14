@@ -1,5 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
+const version = JSON.parse(
+  fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+).version;
 
 const description = "Recall project work and record what your agent does.";
 const skill = `---
@@ -88,7 +91,7 @@ export function buildPlugin({ root, target, agent, binary }) {
   if (agent === "claude-code") {
     write(".claude-plugin/plugin.json", {
       name: "asip",
-      version: "0.1.0",
+      version,
       description,
       author: { name: "ASIP" },
       homepage: "https://github.com/M-o-liver/asip-linux",
@@ -97,7 +100,7 @@ export function buildPlugin({ root, target, agent, binary }) {
       name: "asip-local",
       description,
       owner: { name: "ASIP" },
-      plugins: [{ name: "asip", source: "./", description, version: "0.1.0" }],
+      plugins: [{ name: "asip", source: "./", description, version }],
     });
     write(".mcp.json", { mcpServers: { asip: server } });
     write("hooks/hooks.json", { hooks });
@@ -106,7 +109,7 @@ export function buildPlugin({ root, target, agent, binary }) {
     // Use its native layout so actual lifecycle events reach ASIP.
     write(".codex-plugin/plugin.json", {
       name: "asip",
-      version: "0.1.0",
+      version,
       description,
       skills: "./skills/",
       mcpServers: "./.mcp.json",

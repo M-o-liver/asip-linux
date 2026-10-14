@@ -213,3 +213,28 @@ test("recall finds tool evidence and searches literal terms within the requested
   assert.equal(runtime.recall(token, { query: "80%" }).events.length, 1);
   assert.equal(runtime.recall(token, { query: "80_" }).events.length, 0);
 });
+
+test("interleaved sessions never inherit another session's project or identity", (t) => {
+  const { runtime } = setup(t);
+  runtime.signIn(account);
+  const token = connect(runtime);
+  runtime.record(token, event);
+  runtime.record(token, {
+    ...event,
+    session: "other-session",
+    project: "github.com/example/other",
+  });
+  runtime.record(token, {
+    session: event.session,
+    kind: "result",
+    summary: "First session completed",
+  });
+  assert.equal(
+    runtime.recall(token, { query: "First session" }).events[0].project,
+    event.project,
+  );
+  assert.throws(
+    () => runtime.record(token, { kind: "result", summary: "No session" }),
+    /session/,
+  );
+});
