@@ -402,6 +402,8 @@ func mcp() {
 			result = map[string]any{"protocolVersion": protocol, "capabilities": map[string]any{"tools": map[string]bool{"listChanged": true}, "logging": map[string]any{}}, "serverInfo": map[string]string{"name": "asip", "version": version}}
 		case "ping":
 			result = map[string]any{}
+		case "logging/setLevel":
+			result = map[string]any{}
 		case "tools/list":
 			result = map[string]any{"tools": tools()}
 		case "tools/call":
