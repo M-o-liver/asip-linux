@@ -4,12 +4,30 @@ const names = {
   "claude-code": "Claude Code",
   antigravity: "Antigravity",
 };
+const kinds = {
+  intent: "Intent",
+  result: "Result",
+  evidence: "Evidence",
+  Stop: "Agent result",
+  failed: "Failed",
+  tool_succeeded: "Tool completed",
+  api_request: "API request",
+  api_result: "API result",
+  api_failed: "API failed",
+  api_unresolved: "API unresolved",
+  unresolved: "Unresolved",
+  PreToolUse: "Tool started",
+  PostToolUse: "Tool result",
+  SessionStart: "Session started",
+  SessionEnd: "Session ended",
+  Interrupt: "Interrupted",
+};
 const state = {
   project: new URLSearchParams(location.search).get("project") || "",
   session: "",
   agent: "",
   audit: false,
-  kind: "",
+  kind: "work",
   query: "",
   offset: 0,
   selected: null,
@@ -190,7 +208,7 @@ function render(data) {
     top.append(
       element(
         "span",
-        event.kind,
+        kinds[event.kind] || event.kind,
         "kind " + event.kind.replace(/[^a-z_]/gi, ""),
       ),
       element("span", names[event.agent] || event.agent),

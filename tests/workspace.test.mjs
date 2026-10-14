@@ -38,6 +38,12 @@ test("workspace opens through Beacon, shows actual projects, and invalidates bro
   runtime.record(token, {
     session: "native-1",
     project: "github.com/example/one",
+    kind: "PreToolUse",
+    summary: "Bash started",
+  });
+  runtime.record(token, {
+    session: "native-1",
+    project: "github.com/example/one",
     kind: "intent",
     summary: "Fix the build",
     data: { cwd: "/projects/one" },
@@ -64,7 +70,7 @@ test("workspace opens through Beacon, shows actual projects, and invalidates bro
   assert.match(await page.text(), /Project map/);
   const data = await fetch(
     endpoint +
-      "/workspace/data?project=" +
+      "/workspace/data?kind=work&project=" +
       encodeURIComponent("github.com/example/one"),
     { headers },
   ).then((r) => r.json());
@@ -99,7 +105,7 @@ test("workspace opens through Beacon, shows actual projects, and invalidates bro
   const withoutConnections = await fetch(endpoint + "/workspace/data", {
     headers,
   }).then((r) => r.json());
-  assert.equal(withoutConnections.events.length, 2);
+  assert.equal(withoutConnections.events.length, 3);
   assert.equal(
     withoutConnections.connectionError,
     "API connections could not be opened.",

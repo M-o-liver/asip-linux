@@ -187,13 +187,15 @@ export class Workspace {
       )
       .all();
     const category =
-      kind === "intent"
-        ? " AND kind='intent'"
-        : kind === "results"
-          ? " AND kind IN ('result','evidence','Stop','tool_succeeded','api_result','api_failed','failed')"
-          : kind === "unresolved"
-            ? " AND kind IN ('unresolved','api_unresolved')"
-            : "";
+      kind === "work"
+        ? " AND kind IN ('intent','result','evidence','Stop','tool_succeeded','api_result','api_failed','failed','unresolved','api_unresolved','PostToolUseFailure','StopFailure')"
+        : kind === "intent"
+          ? " AND kind='intent'"
+          : kind === "results"
+            ? " AND kind IN ('result','evidence','Stop','tool_succeeded','api_result','api_failed','failed')"
+            : kind === "unresolved"
+              ? " AND kind IN ('unresolved','api_unresolved')"
+              : "";
     const offset = Math.max(
       0,
       Math.min(100000, Number(params.get("offset")) || 0),
