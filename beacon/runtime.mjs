@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const agents = new Set(["codex", "claude-code", "antigravity"]);
-const ownTools = JSON.stringify([
+export const ownTools = JSON.stringify([
   "asip_recall",
   "asip_record",
   "asip_status",
@@ -70,6 +70,7 @@ export class Runtime {
     this.account = account;
   }
   signOut() {
+    this.workspace?.clear();
     this.abortRequests();
     this.connectionStore?.clear();
     this.account = null;
@@ -259,7 +260,7 @@ export class Runtime {
     if (!this.db && !fs.existsSync(this.databasePath())) return [];
     return this.storage()
       .prepare(
-        "SELECT project AS id,COUNT(*) AS events,COUNT(DISTINCT session) AS sessions,group_concat(DISTINCT agent) AS agents,MAX(at) AS lastActivity FROM events WHERE project IS NOT NULL GROUP BY project ORDER BY MAX(at) DESC",
+        "SELECT project AS id,COUNT(*) AS events,COUNT(DISTINCT agent || char(0) || session) AS sessions,group_concat(DISTINCT agent) AS agents,MAX(at) AS lastActivity FROM events WHERE project IS NOT NULL GROUP BY project ORDER BY MAX(at) DESC",
       )
       .all()
       .map((row) => ({
@@ -392,7 +393,15 @@ export class Runtime {
         });
         res.end(JSON.stringify(data));
       };
-      if (req.headers.host !== this.host || req.headers.origin) {
+      if (req.headers.host !== this.host) {
+        send(403, { error: "Use the installed ASIP plugin." });
+        return;
+      }
+      if (req.url.startsWith("/workspace/") && this.workspace) {
+        await this.workspace.handle(req, res);
+        return;
+      }
+      if (req.headers.origin) {
         send(403, { error: "Use the installed ASIP plugin." });
         return;
       }

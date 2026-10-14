@@ -140,6 +140,29 @@ test("oversized responses report truncation without returning incomplete content
   assert.equal(result.body, null);
   assert.match(result.bodySha256, /^[a-f0-9]{64}$/);
 });
+test("request limits count UTF-8 bytes and reject GET bodies before dispatch", (t) => {
+  const { runtime, store } = setup(t);
+  runtime.signIn(account);
+  store.save({
+    name: "openai.work",
+    provider: "openai",
+    credential: "fixture-secret",
+  });
+  assert.throws(
+    () => store.prepare({ name: "openai.work", path: "/models", body: {} }),
+    /request body/,
+  );
+  assert.throws(
+    () =>
+      store.prepare({
+        name: "openai.work",
+        path: "/responses",
+        method: "POST",
+        body: "界".repeat(22000),
+      }),
+    /too large/,
+  );
+});
 test("project grants and origin binding are enforced before dispatch", async (t) => {
   let calls = 0;
   const { runtime, store } = setup(t, async () => {

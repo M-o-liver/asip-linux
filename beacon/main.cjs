@@ -145,7 +145,8 @@ function updateTray(state) {
         ? [{ label: state.records + " recorded events", enabled: false }]
         : []),
       { type: "separator" },
-      { label: "Open ASIP Beacon", click: show },
+      { label: "Open ASIP", click: openWorkspace },
+      { label: "Beacon settings", click: show },
       { label: "Quit", click: () => app.quit() },
     ]),
   );
@@ -180,15 +181,31 @@ function show() {
   });
 }
 
+async function openWorkspace() {
+  if (!runtime?.account || !runtime?.workspace) {
+    show();
+    return;
+  }
+  try {
+    await shell.openExternal(runtime.workspace.openURL());
+  } catch (error) {
+    lastError = error.message;
+    show();
+  }
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else
   app.whenReady().then(async () => {
-    app.on("second-instance", show);
+    app.on("second-instance", (_event, argv) =>
+      argv.includes("--open-workspace") ? openWorkspace() : show(),
+    );
     const { Runtime } = await import("./runtime.mjs");
     const { Identity } = await import("./identity.mjs");
     const { Connections } = await import("./connections.mjs");
     const { Recovery } = await import("./recovery.mjs");
+    const { Workspace } = await import("./workspace.mjs");
     const { rebindAntigravity } = await import("../scripts/plugins.mjs");
     const configPath = path.join(__dirname, "signin.json");
     const config = fs.existsSync(configPath)
@@ -219,6 +236,7 @@ if (!app.requestSingleInstanceLock()) {
       },
     });
     recovery = new Recovery(runtime);
+    new Workspace(runtime, { openBeacon: show });
     identity = new Identity(config, {
       openBrowser: (url) => shell.openExternal(url),
       onCode: (code) => {
@@ -259,7 +277,8 @@ if (!app.requestSingleInstanceLock()) {
       nativeImage.createFromPath(icon).resize({ width: 22, height: 22 }),
     );
     updateTray(snapshot());
-    tray.on("click", show);
+    tray.on("click", openWorkspace);
+    ipcMain.handle("asip:open-workspace", openWorkspace);
     ipcMain.handle("asip:status", () => snapshot());
     ipcMain.handle("asip:startup", (_event, enabled) => {
       loginStartup.set(enabled);
@@ -431,7 +450,8 @@ if (!app.requestSingleInstanceLock()) {
       }
       send();
     }, 2000).unref();
-    if (!loginStartup.background()) show();
+    if (process.argv.includes("--open-workspace")) openWorkspace();
+    else if (!loginStartup.background()) show();
   });
 app.on("window-all-closed", () => {});
 app.on("before-quit", () => {

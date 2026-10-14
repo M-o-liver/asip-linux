@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ASIP · Projects</title>
+    <link rel="stylesheet" href="workspace.css" />
+    <script defer src="workspace.js"></script>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">ASIP <span id="account"></span></div>
+      <h2>Projects</h2>
+      <nav id="projects" aria-label="Projects"></nav>
+      <button class="settings" id="beacon">Open Beacon</button>
+    </aside>
+    <main>
+      <header>
+        <div>
+          <h1 id="title">Projects</h1>
+          <p id="repository"></p>
+        </div>
+        <button id="refresh">Refresh</button>
+      </header>
+      <p id="error" role="alert" hidden></p>
+      <section class="map card">
+        <div class="section-heading">
+          <h2>Project map</h2>
+          <span id="map-count"></span>
+        </div>
+        <svg
+          id="map"
+          viewBox="0 0 900 220"
+          role="img"
+          aria-label="Projects connected by shared agent sessions"
+        ></svg>
+        <p id="map-empty" hidden>
+          No project activity yet. Install and connect an agent plugin in
+          Beacon.
+        </p>
+      </section>
+      <div class="columns">
+        <section class="activity card">
+          <div class="section-heading">
+            <h2>Activity</h2>
+            <span id="event-count"></span>
+          </div>
+          <div class="filters">
+            <input
+              id="search"
+              type="search"
+              placeholder="Search work and evidence"
+              aria-label="Search work and evidence"
+            /><select id="kind" aria-label="Record type">
+              <option value="">All records</option>
+              <option value="intent">Intent</option>
+              <option value="results">Results and evidence</option>
+              <option value="unresolved">Unresolved</option>
+            </select>
+          </div>
+          <div id="session-filter" hidden>
+            <span id="session-label"></span
+            ><button id="clear-session">Clear session filter</button>
+          </div>
+          <label class="audit-option"
+            ><input id="audit" type="checkbox" /> Include ASIP calls</label
+          >
+          <div id="events"></div>
+          <p id="empty" hidden>No matching records.</p>
+          <div class="pages">
+            <button id="previous">Previous</button><span id="page"></span
+            ><button id="next">Next</button>
+          </div>
+        </section>
+        <aside class="details">
+          <section class="card evidence">
+            <div class="section-heading"><h2>Evidence</h2></div>
+            <p id="evidence-empty">Select a record to inspect its evidence.</p>
+            <div id="evidence" hidden>
+              <dl id="facts"></dl>
+              <details>
+                <summary>Recorded data</summary>
+                <pre id="data"></pre>
+              </details>
+            </div>
+          </section>
+          <section class="card">
+            <div class="section-heading">
+              <h2>Sessions</h2>
+              <span id="session-count"></span>
+            </div>
+            <div id="sessions"></div>
+          </section>
+          <section class="card">
+            <div class="section-heading"><h2>API connections</h2></div>
+            <div id="connections"></div>
+            <button id="manage-connections">Manage in Beacon</button>
+          </section>
+          <section class="card">
+            <div class="section-heading">
+              <h2>Repositories and directories</h2>
+            </div>
+            <div id="directories"></div>
+          </section>
+        </aside>
+      </div>
+    </main>
+  </body>
+</html>

@@ -221,6 +221,7 @@ $("connection-form").onsubmit = async (event) => {
   }
 };
 $("signout").onclick = () => window.asip.signOut();
+$("open-workspace").onclick = () => window.asip.openWorkspace();
 function renderRecovery(records) {
   $("recovery-list").replaceChildren();
   for (const record of records) {

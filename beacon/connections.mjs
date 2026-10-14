@@ -208,7 +208,9 @@ export class Connections {
     if (!["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD"].includes(method))
       throw new Error("Choose an HTTP method.");
     const encoded = body === undefined ? undefined : JSON.stringify(body);
-    if (encoded && encoded.length > 65536)
+    if (encoded !== undefined && ["GET", "HEAD"].includes(method))
+      throw new Error("Use a request body with POST, PUT, PATCH, or DELETE.");
+    if (encoded && Buffer.byteLength(encoded) > 65536)
       throw new Error("The request body is too large.");
     return { entry, method, url, encoded };
   }

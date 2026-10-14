@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("asip", {
   status: () => ipcRenderer.invoke("asip:status"),
+  openWorkspace: () => ipcRenderer.invoke("asip:open-workspace"),
   startup: (enabled) => ipcRenderer.invoke("asip:startup", enabled),
   projects: () => ipcRenderer.invoke("asip:projects"),
   recoveryList: () => ipcRenderer.invoke("asip:recovery-list"),

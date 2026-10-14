@@ -20,6 +20,7 @@ ASIP's Google desktop client and GitHub OAuth app are registered. Public client 
 ## What is implemented
 
 - A tray/menu-bar Beacon with an account window, plugin export, connection status, disconnect, and sign-out.
+- A browser workspace with projects, a project map, sessions, intent/result filters, searchable history, API connections, and an evidence inspector. Map links represent actual sessions shared across projects.
 - Optional launch at login using each platform's startup mechanism.
 - A standalone compiled helper bundled with each plugin. Users do not install Python, Node, or Go.
 - Native Codex and Claude Code plugin manifests, onboarding skills, MCP tools, and lifecycle hooks.
@@ -65,7 +66,7 @@ The CI workflow runs connection and OAuth fixture tests, installs the Codex and 
 
 An actual Codex CLI session has automatically recorded prompts, tool calls/results, repository revision, worktree state, and its final result through the installed plugin. Session-end hooks have also been exercised. Claude and Antigravity complete-turn capture still need interactive qualification. Codex surfaces that do not run local plugin hooks need separate qualification; native MCP startup does not establish automatic capture on every surface.
 
-GitHub repository authorization and a real API call through Codex's installed plugin have passed, including the stored request/result audit. Recall excludes ASIP's own tool-call audit rows, and hooks retain their hashes without copying memory responses back into memory. The project workspace and probabilistic project classification remain pending. Recovery checkpoints contain ASIP activity history; they do not restore project files or the operating system. The old administration daemon is not a dependency of this implementation.
+GitHub repository authorization and a real API call through Codex's installed plugin have passed, including the stored request/result audit. Recall excludes ASIP's own tool-call audit rows, and hooks retain their hashes without copying memory responses back into memory. The project workspace has been exercised in Chrome against those actual records. Probabilistic project classification remains an investigated future integration. Recovery checkpoints contain ASIP activity history; they do not restore project files or the operating system. The old administration daemon is not a dependency of this implementation.
 
 Windows and macOS installers currently lack publisher signatures and macOS notarization. Linux tray display depends on the desktop's status-indicator support. Antigravity bundles use the exported helper's absolute path; keep the exported directory in place.
 
