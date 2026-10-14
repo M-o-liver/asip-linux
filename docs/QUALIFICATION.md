@@ -26,12 +26,33 @@ desktop/account qualification. It is updated with the release's actual results.
 - The wheel builds and installs with Beacon/OS-vault dependencies from PyPI.
 - Linux's real login session exposes Secret Service and libsecret through a
   keyring chain; the adapter selects a native backend.
+- A disposable credential was written to the actual Secret Service vault,
+  granted to a test project, used in a finite child, checked for output/audit
+  redaction, and removed. Native storage and audit integrity passed.
+- The installed user service is active and `asip-beacon --open` opens the
+  existing managed process. A startup/open race found during actual use was
+  corrected and exercised again successfully.
+- The live browser workspace was inspected with actual registered projects,
+  imported Linux evidence, native Claude session records and connection metadata.
+  Browser review led to a readable grid map and corrected recency indicators.
+- Codex recognizes the user-scoped stdio server; Claude reports it connected.
+- [Cross-platform CI run 38599661959](https://github.com/M-o-liver/asip-linux/actions/runs/38599661959)
+  passes all six Python/OS jobs on implementation commit `596e100` (17 tests
+  per job). Windows and Linux passed initially; macOS exposed a test assertion
+  that confused its legitimate `/private/var` path with a stripped credential.
+  The corrected test verifies exact repository identity and credential removal.
 
 ## Platform and provider boundaries
 
 GitHub Actions supplies Python 3.11/3.13 test jobs for Ubuntu, Windows and macOS.
 Their results qualify persistence, portable APIs and configuration, not native
 tray/menu-bar behavior or interactive OAuth consent.
+
+The GNOME extension is installed and enabled in preferences, but the current
+Wayland session does not discover a newly copied extension until the next login.
+No session restart or reboot was performed. Windows/macOS native tray backends
+and startup files are implemented; graphical interaction on those OSes remains
+a distinct qualification item.
 
 Antigravity's native contract was researched and its distinct config/payload
 formats are fixture-tested. An installed Antigravity runtime is not available
