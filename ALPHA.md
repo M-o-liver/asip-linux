@@ -1,6 +1,6 @@
 # ASIP alpha test
 
-Download Beacon from the [alpha release](https://github.com/M-o-liver/asip-linux/releases/tag/v0.3.0-alpha.1). Windows users should choose **ASIP Beacon Setup 0.3.0.exe**. The ZIP is also available. These installers do not yet have publisher signatures.
+Download Beacon from the [alpha release](https://github.com/M-o-liver/asip-linux/releases/tag/v0.3.0-alpha.1). Windows users should choose **ASIP.Beacon.Setup.0.3.0.exe**. The ZIP is also available. These installers do not yet have publisher signatures.
 
 ## Windows with Claude Code
 
