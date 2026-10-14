@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=ASIP
+Name=ASIP Administration
 Comment=Local agent conversations and ASIP machine state
 Exec=asip-desktop
 Icon=org.asip.Desktop

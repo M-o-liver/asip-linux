@@ -35,6 +35,12 @@ def install():
     path.write_text("[Unit]\nDescription=ASIP agent memory Beacon\nAfter=graphical-session.target\n\n[Service]\nExecStart="+command+"\nRestart=on-failure\nRestartSec=3\nUMask=0077\n\n[Install]\nWantedBy=default.target\n")
     applications=Path(os.environ.get("XDG_DATA_HOME",str(Path.home()/".local/share")))/"applications"
     applications.mkdir(parents=True,exist_ok=True)
+    legacy=applications/"org.asip.Desktop.desktop"
+    if legacy.exists():
+        content=legacy.read_text()
+        if "Name=ASIP\n" in content:
+            backup(legacy)
+            legacy.write_text(content.replace("Name=ASIP\n","Name=ASIP Administration\n",1))
     launch=applications/"org.asip.Beacon.desktop"
     backup(launch)
     # Desktop Entry escaping is two layers: quoted argument escaping then value escaping.
@@ -43,7 +49,8 @@ def install():
         for char in ("\\",'"',"`","$"):
             argument=argument.replace(char,"\\"+char)
         return '"'+argument.replace("\\","\\\\")+'"'
-    launch.write_text("[Desktop Entry]\nType=Application\nName=ASIP\nComment=The memory of your agents\nExec="+" ".join(quote(a) for a in argv+["--open"])+"\nIcon=network-transmit-receive\nTerminal=false\nCategories=Development;Utility;\n")
+    launch_argv=[arg for arg in argv if arg!="--service"]+["--open"]
+    launch.write_text("[Desktop Entry]\nType=Application\nName=ASIP\nComment=The memory of your agents\nExec="+" ".join(quote(a) for a in launch_argv)+"\nIcon=network-transmit-receive\nTerminal=false\nCategories=Development;Utility;\n")
     return {"path":str(path),"backup":previous,"launcher":str(launch),
             "activate":"systemctl --user daemon-reload && systemctl --user enable --now asip-beacon.service",
             "tray":"For GNOME use the bundled ASIP Beacon shell extension; other desktops can run asip-beacon --tray"}
