@@ -2,7 +2,9 @@
 
 ASIP keeps project history across Codex, Claude Code, and Antigravity.
 
-This branch starts with an installable Beacon and native agent plugins. It replaces the earlier daemon-based prototype. It is a development preview, not a completed release.
+This branch starts with an installable Beacon and native agent plugins. It replaces the earlier daemon-based prototype. It is an alpha, not a completed release.
+
+[Download the alpha](https://github.com/M-o-liver/asip-linux/releases/tag/v0.3.0-alpha.1) · [Installation and test guide](ALPHA.md)
 
 ## Install and connect
 
