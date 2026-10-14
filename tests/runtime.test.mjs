@@ -188,3 +188,28 @@ test("ambiguous native project evidence is retained without inheriting the previ
   assert.equal(row.project, null);
   assert.equal(row.data.workspacePaths.length, 2);
 });
+
+test("recall finds tool evidence and searches literal terms within the requested project", (t) => {
+  const { runtime } = setup(t);
+  runtime.signIn(account);
+  const token = connect(runtime);
+  runtime.record(token, {
+    ...event,
+    summary: "Shell failed",
+    data: { tool_output: "Migration stopped: connection_timeout at 80%" },
+  });
+  runtime.record(token, {
+    ...event,
+    project: "github.com/example/other",
+    data: { tool_output: "connection_timeout" },
+  });
+  assert.equal(
+    runtime.recall(token, {
+      project: event.project,
+      query: "CONNECTION_TIMEOUT",
+    }).events.length,
+    1,
+  );
+  assert.equal(runtime.recall(token, { query: "80%" }).events.length, 1);
+  assert.equal(runtime.recall(token, { query: "80_" }).events.length, 0);
+});

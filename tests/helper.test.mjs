@@ -8,11 +8,7 @@ import { once } from "node:events";
 import { Runtime } from "../beacon/runtime.mjs";
 import { accountId } from "../beacon/identity.mjs";
 
-const binary = path.resolve(
-  "build/helper",
-  process.platform + "-" + process.arch,
-  process.platform === "win32" ? "asip-plugin.exe" : "asip-plugin",
-);
+let binary;
 const account = {
   provider: "github",
   subject: "42",
@@ -76,15 +72,30 @@ async function runHook(agent, home, event, payload) {
 
 test(
   "standalone helper connects, exposes memory after authentication, captures native hooks, and stops on disconnect",
-  { timeout: 20000 },
+  { timeout: 90000 },
   async (t) => {
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-helper-")),
-      runtime = new Runtime(path.join(home, "beacon"), { port: 12945 });
+      runtime = new Runtime(path.join(home, "beacon"));
     t.after(async () => {
       await runtime.close();
       fs.rmSync(home, { recursive: true, force: true });
     });
-    await runtime.listen();
+    const endpoint = await runtime.listen();
+    // Build the real helper for this fixture's random loopback port. Tests
+    // never compete with, connect to, or stop an installed Beacon.
+    binary = path.join(
+      home,
+      process.platform === "win32" ? "asip-plugin.exe" : "asip-plugin",
+    );
+    execFileSync(
+      "go",
+      ["build", "-ldflags", "-X main.endpoint=" + endpoint, "-o", binary, "."],
+      {
+        cwd: path.resolve("plugin-helper"),
+        timeout: 60000,
+        env: { ...process.env, CGO_ENABLED: "0" },
+      },
+    );
     const child = helper("mcp", "codex", path.join(home, "codex"));
     t.after(() => child.kill());
     const client = rpc(child);

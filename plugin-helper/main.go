@@ -22,7 +22,7 @@ import (
 	"time"
 )
 
-const endpoint = "http://127.0.0.1:12945"
+var endpoint = "http://127.0.0.1:12945"
 
 var agent string
 var client = &http.Client{Timeout: 10 * time.Second}

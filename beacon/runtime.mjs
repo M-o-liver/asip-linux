@@ -220,12 +220,13 @@ export class Runtime {
     this.storage();
     const rows = this.db
       .prepare(
-        "SELECT * FROM events WHERE (? IS NULL OR project=?) AND summary LIKE ? ORDER BY at DESC LIMIT ?",
+        "SELECT * FROM events WHERE (? IS NULL OR project=?) AND (instr(lower(summary),lower(?)) > 0 OR instr(lower(data),lower(?)) > 0) ORDER BY at DESC,rowid DESC LIMIT ?",
       )
       .all(
         project || null,
         project || null,
-        "%" + query + "%",
+        query,
+        query,
         Math.max(1, Math.min(100, Number(limit) || 20)),
       );
     return {
