@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { qualifyCodex } from "./qualify-codex.mjs";
 
 // Native installation checks belong in disposable CI users, never the
 // developer's agent profile. This script does not sign in or run an agent.
@@ -31,12 +32,15 @@ run("claude", [
 run("claude", ["plugin", "marketplace", "add", claude]);
 run("claude", ["plugin", "install", "asip@asip-local"]);
 run("claude", ["plugin", "list", "--json"]);
+const codexStartup = await qualifyCodex();
+console.log(JSON.stringify(codexStartup));
 fs.writeFileSync(
   "build/qualification.json",
   JSON.stringify(
     {
       platform: target,
       nativeInstallation: evidence,
+      codexStartup,
       antigravity: "Not qualified: no native Antigravity runner available.",
     },
     null,
