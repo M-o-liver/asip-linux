@@ -13,6 +13,8 @@ This branch starts with an installable Beacon and native agent plugins. It repla
 
 Recording starts after the plugin finishes connecting. Signing out or disconnecting a plugin stops its recording.
 
+Codex also requires reviewing the ASIP hooks in `/hooks` before automatic recording starts. Its MCP memory tools can work before that review. This bundle uses Codex's native manifest because version 0.162.1 skips lifecycle hooks in portable Agent Plugins packages.
+
 ASIP's Google desktop client and GitHub OAuth app are registered. Public client IDs live in `beacon/signin.json`. Google also requires its desktop client credential; use the registered client JSON as `ASIP_GOOGLE_DESKTOP_CLIENT_JSON` when running `node scripts/configure-signin.mjs` before packaging. The client JSON is excluded from Git. Google sign-in is disabled in builds missing it. Real Google sign-in, the installed Codex plugin's connection, and record/recall through Codex's MCP runtime have been verified. GitHub sign-in has fixture coverage but still needs a real login check.
 
 ## What is implemented

@@ -23,7 +23,13 @@ let runtime,
   pending = null,
   abort = null,
   deviceCode = null,
-  lastError = "";
+  lastError = "",
+  trayState = "";
+const agentNames = {
+  codex: "Codex",
+  "claude-code": "Claude Code",
+  antigravity: "Antigravity",
+};
 const sessionPath = () => path.join(app.getPath("userData"), "signin.bin");
 
 function persist() {
@@ -65,7 +71,67 @@ function snapshot() {
   };
 }
 function send() {
-  window?.webContents.send("asip:status", snapshot());
+  const state = snapshot();
+  window?.webContents.send("asip:status", state);
+  updateTray(state);
+}
+function updateTray(state) {
+  if (!tray) return;
+  const available = Boolean(runtime.server?.listening);
+  const active = state.clients.some(
+    (client) =>
+      client.lastActivity &&
+      Date.now() - Date.parse(client.lastActivity) < 10000,
+  );
+  const icon =
+    !available || state.pending || state.signingIn
+      ? "attention"
+      : active
+        ? "active"
+        : state.recording
+          ? "ready"
+          : "inactive";
+  const label = !available
+    ? "Service unavailable"
+    : state.pending
+      ? "Waiting to connect"
+      : state.signingIn
+        ? "Waiting for sign-in"
+        : !state.account
+          ? "Signed out"
+          : active
+            ? "Recording activity"
+            : state.recording
+              ? "Ready"
+              : "No plugins connected";
+  const key = JSON.stringify([icon, label, state.clients, state.records]);
+  if (key === trayState) return;
+  trayState = key;
+  tray.setImage(
+    nativeImage
+      .createFromPath(path.join(__dirname, icon + ".png"))
+      .resize({ width: 22, height: 22 }),
+  );
+  tray.setToolTip("ASIP · " + label);
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label, enabled: false },
+      ...state.clients.map((client) => ({
+        label:
+          (agentNames[client.agent] || client.agent) +
+          (client.lastActivity
+            ? " · " + new Date(client.lastActivity).toLocaleTimeString()
+            : " · Connected"),
+        enabled: false,
+      })),
+      ...(state.recording
+        ? [{ label: state.records + " recorded events", enabled: false }]
+        : []),
+      { type: "separator" },
+      { label: "Open ASIP Beacon", click: show },
+      { label: "Quit", click: () => app.quit() },
+    ]),
+  );
 }
 
 function show() {
@@ -157,13 +223,7 @@ if (!app.requestSingleInstanceLock()) {
     tray = new Tray(
       nativeImage.createFromPath(icon).resize({ width: 22, height: 22 }),
     );
-    tray.setToolTip("ASIP Beacon");
-    tray.setContextMenu(
-      Menu.buildFromTemplate([
-        { label: "Open ASIP Beacon", click: show },
-        { label: "Quit", click: () => app.quit() },
-      ]),
-    );
+    updateTray(snapshot());
     tray.on("click", show);
     ipcMain.handle("asip:status", () => snapshot());
     ipcMain.handle("asip:signin", async (_event, provider) => {
@@ -255,11 +315,6 @@ if (!app.requestSingleInstanceLock()) {
         deviceCode = null;
       }
       send();
-      tray.setToolTip(
-        runtime.status().recording
-          ? "ASIP · " + runtime.clients.size + " connected plugins"
-          : "ASIP · Not connected",
-      );
     }, 2000).unref();
     show();
   });

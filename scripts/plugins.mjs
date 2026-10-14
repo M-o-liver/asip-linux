@@ -10,6 +10,8 @@ description: Connect ASIP, recall earlier project work, and save intentions, res
 When the user asks to connect ASIP, call asip_connect. Tell them to click Connect in Beacon.
 If Beacon is missing or the plugin is disconnected, explain the reported status and continue the user's work. Do not configure agent hooks or MCP servers yourself.
 
+In Codex, automatic recording also requires reviewing ASIP's hooks in /hooks. Use Codex's native hook manager; do not edit hook trust files or bypass hook review.
+
 Once connected, call asip_recall when continuing work on a project. Use the repository identity returned by asip_status or provide the project's repository identity.
 Use asip_record for meaningful intent, result, evidence, and unresolved records. Use the native session ID from asip_status. Describe what happened and include verification or paths that support the result. Do not claim success without evidence. Hooks collect tool activity; avoid repeating each tool call as a manual record.
 `;
@@ -22,6 +24,7 @@ export function buildPlugin({ root, target, agent, binary }) {
     target,
     "asip-" + agent,
   );
+  fs.rmSync(directory, { recursive: true, force: true });
   fs.mkdirSync(path.join(directory, "bin"), { recursive: true });
   const name = path.basename(binary),
     executable = path.join(directory, "bin", name);
@@ -64,7 +67,11 @@ export function buildPlugin({ root, target, agent, binary }) {
     const handler = {
       type: "command",
       command: '"' + command + '" hook --agent ' + agent + " --event " + event,
-      timeout: 8,
+      timeout:
+        agent === "codex" && ["SessionEnd", "Interrupt"].includes(event)
+          ? 3
+          : 8,
+      statusMessage: "ASIP activity",
     };
     if (agent === "claude-code") {
       handler.command = command;
@@ -95,18 +102,8 @@ export function buildPlugin({ root, target, agent, binary }) {
     write(".mcp.json", { mcpServers: { asip: server } });
     write("hooks/hooks.json", { hooks });
   } else if (agent === "codex") {
-    write("plugin.json", {
-      $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-      name: "asip",
-      version: "0.1.0",
-      description,
-      extensions: {
-        "com.openai": {
-          onboardingSkill: "./skills/setup/SKILL.md",
-          hooks: "./hooks/hooks.json",
-        },
-      },
-    });
+    // Codex 0.162.1 skips hooks for portable Agent Plugins manifests.
+    // Use its native layout so actual lifecycle events reach ASIP.
     write(".codex-plugin/plugin.json", {
       name: "asip",
       version: "0.1.0",
@@ -114,14 +111,15 @@ export function buildPlugin({ root, target, agent, binary }) {
       skills: "./skills/",
       mcpServers: "./.mcp.json",
       hooks: "./hooks/hooks.json",
-    });
-    write("mcp.json", {
-      $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-      mcpServers: {
-        asip: { type: "stdio", ...server, command: "./bin/" + name },
+      extensions: {
+        "com.openai": { onboardingSkill: "./skills/setup/SKILL.md" },
       },
     });
-    write(".mcp.json", { mcpServers: { asip: server } });
+    write(".mcp.json", {
+      mcpServers: {
+        asip: { command: "./bin/" + name, args: server.args, cwd: "." },
+      },
+    });
     write("hooks/hooks.json", { hooks });
     write(".agents/plugins/marketplace.json", {
       name: "asip-local",

@@ -54,6 +54,15 @@ export async function qualifyCodex() {
       capabilities: { experimentalApi: true },
     });
     child.stdin.write(JSON.stringify({ method: "initialized" }) + "\n");
+    const hooks = await request("hooks/list", { cwds: [process.cwd()] });
+    const nativeHooks = hooks.data
+      .flatMap((entry) => entry.hooks)
+      .filter((hook) => hook.pluginId === "asip@asip-local");
+    assert.equal(
+      nativeHooks.length,
+      9,
+      "Codex must discover the plugin's native event hooks.",
+    );
     const started = await request("thread/start", {
       cwd: process.cwd(),
       ephemeral: true,
@@ -90,6 +99,10 @@ export async function qualifyCodex() {
       server: server.name,
       tools: Object.keys(server.tools),
       nativeMcpStartup: true,
+      nativeHooks: nativeHooks.map((hook) => ({
+        event: hook.eventName,
+        trust: hook.trustStatus,
+      })),
     };
   } finally {
     child.stdin.end();

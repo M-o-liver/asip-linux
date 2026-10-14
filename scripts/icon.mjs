@@ -18,23 +18,25 @@ function distance(x, y, a, b) {
   );
   return Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy);
 }
-for (let y = 0; y < size; y++)
-  for (let x = 0; x < size; x++) {
-    const offset = y * (size * 4 + 1) + 1 + x * 4;
-    const ink =
-      nodes.some((n) => Math.hypot(x - n[0], y - n[1]) < 44) ||
-      nodes.some((n, i) => distance(x, y, n, nodes[(i + 1) % 3]) < 12);
-    const radius = Math.hypot(
-      Math.max(0, Math.abs(x - 256) - 172),
-      Math.max(0, Math.abs(y - 256) - 172),
-    );
-    const color = ink
-      ? [255, 255, 255, 255]
-      : radius < 76
-        ? [38, 67, 137, 255]
-        : [0, 0, 0, 0];
-    color.forEach((c, i) => (pixels[offset + i] = c));
-  }
+function paint(background) {
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const offset = y * (size * 4 + 1) + 1 + x * 4;
+      const ink =
+        nodes.some((n) => Math.hypot(x - n[0], y - n[1]) < 44) ||
+        nodes.some((n, i) => distance(x, y, n, nodes[(i + 1) % 3]) < 12);
+      const radius = Math.hypot(
+        Math.max(0, Math.abs(x - 256) - 172),
+        Math.max(0, Math.abs(y - 256) - 172),
+      );
+      const color = ink
+        ? [255, 255, 255, 255]
+        : radius < 76
+          ? [...background, 255]
+          : [0, 0, 0, 0];
+      color.forEach((c, i) => (pixels[offset + i] = c));
+    }
+}
 function crc(buffer) {
   let value = 0xffffffff;
   for (const byte of buffer) {
@@ -57,12 +59,21 @@ header.writeUInt32BE(size, 0);
 header.writeUInt32BE(size, 4);
 header[8] = 8;
 header[9] = 6;
-fs.writeFileSync(
-  new URL("../beacon/icon.png", import.meta.url),
-  Buffer.concat([
-    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
-    chunk("IHDR", header),
-    chunk("IDAT", zlib.deflateSync(pixels)),
-    chunk("IEND", Buffer.alloc(0)),
-  ]),
-);
+for (const [name, color] of Object.entries({
+  icon: [38, 67, 137],
+  inactive: [91, 99, 111],
+  ready: [31, 125, 81],
+  active: [38, 102, 220],
+  attention: [166, 94, 12],
+})) {
+  paint(color);
+  fs.writeFileSync(
+    new URL("../beacon/" + name + ".png", import.meta.url),
+    Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      chunk("IHDR", header),
+      chunk("IDAT", zlib.deflateSync(pixels)),
+      chunk("IEND", Buffer.alloc(0)),
+    ]),
+  );
+}
