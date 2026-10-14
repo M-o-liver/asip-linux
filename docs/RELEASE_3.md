@@ -52,14 +52,16 @@ session-attribution gap, and crowded project map. Those were corrected. CI
 found a macOS-specific test assumption. Synthetic tests alone would have missed
 the native service and vault integration issues.
 
-## Deployment and remaining qualification
+## Portability and remaining qualification
 
-The Fedora installation uses a private user runtime, a Stow-managed enabled
-Beacon service, existing project/journal metadata and native agent setup.
-The working Linux ASIP 2.4.0 root/read services remain in place; this deployment
-did not replace their shared runtime or interrupt other system callers.
-Snapshot 2028 is the pre-activation machine recovery point, while memory has its
-own bounded SQLite checkpoint system.
+The product uses standard platform state directories, detected executable
+locations and native agent configuration. It does not depend on a particular
+computer's repositories, dotfiles, hardware or machine policy. Beacon startup
+uses the platform's user service mechanism. The optional Linux administration
+adapter and its machine policy remain separate from portable recording.
+
+Per-machine installation and recovery notes belong to private local state.
+The public repository contains software, portable tests and documented contracts.
 
 Codex hooks still require native review/trust after agent restart. Antigravity
 is contract/fixture-qualified because its executable is not installed locally.

@@ -5,7 +5,7 @@ desktop/account qualification. It is updated with the release's actual results.
 
 ## Local results, 2026-10-14
 
-- Fedora 44 / Python 3.14: the portable suite passes 17 behavioral tests.
+- Local Linux / Python 3.14: the portable suite passes 17 behavioral tests.
 - 40 concurrent event writers preserve a valid transactional integrity chain.
 - Duplicate hook retries resolve to one event; conflicting source keys fail.
 - Repository aliases group correctly; nested repositories remain independent;
