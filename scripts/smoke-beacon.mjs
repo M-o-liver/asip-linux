@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 
 const artifacts = path.resolve("artifacts");
 let executable;
@@ -62,13 +62,30 @@ try {
   assert.equal(fs.existsSync(path.join(profile, "signin.bin")), false);
   console.log("Packaged Beacon starts signed out and refuses activity.");
 } finally {
-  child.kill();
+  if (process.platform === "win32") {
+    // Terminating only Electron's main process can leave a renderer holding
+    // the disposable profile open. Stop the exact process tree we launched.
+    try {
+      execFileSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+        stdio: "ignore",
+      });
+    } catch {
+      /* It may have exited before cleanup. */
+    }
+  } else child.kill();
   await new Promise((resolve) => {
-    if (child.exitCode !== null) resolve();
+    if (child.exitCode !== null || child.signalCode !== null) resolve();
     else {
       child.once("exit", resolve);
       setTimeout(resolve, 5000);
     }
   });
-  fs.rmSync(profile, { recursive: true, force: true });
+  child.stdout.destroy();
+  child.stderr.destroy();
+  await fs.promises.rm(profile, {
+    recursive: true,
+    force: true,
+    maxRetries: 10,
+    retryDelay: 100,
+  });
 }
