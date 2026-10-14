@@ -117,7 +117,9 @@ export function buildPlugin({ root, target, agent, binary }) {
     });
     write("mcp.json", {
       $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-      mcpServers: { asip: { type: "stdio", ...server } },
+      mcpServers: {
+        asip: { type: "stdio", ...server, command: "./bin/" + name },
+      },
     });
     write(".mcp.json", { mcpServers: { asip: server } });
     write("hooks/hooks.json", { hooks });

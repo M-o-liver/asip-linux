@@ -5,7 +5,11 @@ export async function qualifyCodex() {
   const child = spawn(
     process.platform === "win32" ? "codex.cmd" : "codex",
     ["app-server"],
-    { stdio: ["pipe", "pipe", "pipe"], shell: process.platform === "win32" },
+    {
+      stdio: ["pipe", "pipe", "pipe"],
+      shell: process.platform === "win32",
+      env: { ...process.env, RUST_LOG: "codex_core_plugins=warn" },
+    },
   );
   let next = 0,
     buffer = "",
@@ -50,7 +54,14 @@ export async function qualifyCodex() {
       capabilities: { experimentalApi: true },
     });
     child.stdin.write(JSON.stringify({ method: "initialized" }) + "\n");
+    const started = await request("thread/start", {
+      cwd: process.cwd(),
+      ephemeral: true,
+      approvalPolicy: "never",
+      sandbox: "read-only",
+    });
     const status = await request("mcpServerStatus/list", {
+      threadId: started.thread.id,
       detail: "toolsAndAuthOnly",
       limit: 100,
     });
@@ -59,7 +70,10 @@ export async function qualifyCodex() {
     );
     assert.ok(
       server,
-      "Installed ASIP plugin must start through Codex and expose its connect tool.",
+      "Installed ASIP plugin must start through Codex and expose its connect tool. " +
+        JSON.stringify(status) +
+        " " +
+        errors,
     );
     assert.equal(
       Object.keys(server.tools).includes("asip_record"),
@@ -72,7 +86,21 @@ export async function qualifyCodex() {
       nativeMcpStartup: true,
     };
   } finally {
-    child.kill();
+    child.stdin.end();
+    await new Promise((resolve) => {
+      if (child.exitCode !== null || child.signalCode !== null)
+        return resolve();
+      const timer = setTimeout(() => {
+        child.kill();
+        resolve();
+      }, 5000);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+    child.stdout.destroy();
+    child.stderr.destroy();
     for (const pending of requests.values()) clearTimeout(pending.timer);
   }
 }
