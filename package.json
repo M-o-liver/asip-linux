@@ -65,8 +65,11 @@
     },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb",
+        "rpm"
       ],
+      "maintainer": "ASIP <121729926+M-o-liver@users.noreply.github.com>",
       "category": "Development",
       "icon": "beacon/icon.png",
       "syncDesktopName": true

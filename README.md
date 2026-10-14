@@ -13,7 +13,7 @@ This branch starts with an installable Beacon and native agent plugins. It repla
 
 Recording starts after the plugin finishes connecting. Signing out or disconnecting a plugin stops its recording.
 
-ASIP's GitHub OAuth app is registered and device sign-in is enabled in the build. Google client registration is pending. Public client IDs live in `beacon/signin.json`. Real provider login and an installed agent session still need to be verified; there is no test-login path in the application.
+ASIP's Google desktop client and GitHub OAuth app are registered. Public client IDs live in `beacon/signin.json`. Google also requires its desktop client credential; use the registered client JSON as `ASIP_GOOGLE_DESKTOP_CLIENT_JSON` when running `node scripts/configure-signin.mjs` before packaging. The client JSON is excluded from Git. Google sign-in is disabled in builds missing it. Real provider login and an installed agent session still need to be verified; there is no test-login path in the application.
 
 ## What is implemented
 
@@ -50,6 +50,8 @@ The CI workflow runs connection and OAuth fixture tests, installs the Codex and 
 The next milestone is a real sign-in and agent session through an installed Beacon and plugin. Until that passes, the project workspace, named API connections, recovery records, and probabilistic project classification remain pending. The old administration daemon is not a dependency of this implementation.
 
 Windows and macOS installers currently lack publisher signatures and macOS notarization. Linux tray display depends on the desktop's status-indicator support. Antigravity bundles use the exported helper's absolute path; keep the exported directory in place.
+
+Linux packages include `.deb`, `.rpm`, and AppImage. Use the native package on systems that restrict portable applications' user namespaces; the package registers Chromium's sandbox support through the platform installer.
 
 Electron provides the desktop shell. Its installer footprint is substantial; this preview has not yet been qualified for memory use or idle CPU cost.
 

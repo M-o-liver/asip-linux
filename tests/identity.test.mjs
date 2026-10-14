@@ -63,7 +63,10 @@ test("Google account requires a signed token, matching client, nonce, issuer, an
 test("Google browser flow sends PKCE and exchanges the returned code with its verifier", async () => {
   let auth, exchange;
   const identity = new Identity(
-    { googleClientId: "asip-client" },
+    {
+      googleClientId: "asip-client",
+      googleClientSecret: "fixture-desktop-client",
+    },
     {
       jwks: keys.publicKey,
       openBrowser: async (value) => {
@@ -80,6 +83,7 @@ test("Google browser flow sends PKCE and exchanges the returned code with its ve
         assert.equal(url, "https://oauth2.googleapis.com/token");
         exchange = options.body;
         assert.equal(exchange.get("code"), "test-code");
+        assert.equal(exchange.get("client_secret"), "fixture-desktop-client");
         assert.ok(exchange.get("code_verifier").length >= 43);
         const jwt = await signed({ nonce: auth.searchParams.get("nonce") });
         return Response.json({ id_token: jwt });

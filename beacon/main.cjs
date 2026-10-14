@@ -56,7 +56,9 @@ function snapshot() {
     error: lastError,
     signingIn: Boolean(abort),
     providers: {
-      google: Boolean(identity.config.googleClientId),
+      google: Boolean(
+        identity.config.googleClientId && identity.config.googleClientSecret,
+      ),
       github: Boolean(identity.config.githubClientId),
     },
   };
@@ -107,6 +109,16 @@ if (!app.requestSingleInstanceLock()) {
       : {};
     config.googleClientId =
       process.env.ASIP_GOOGLE_CLIENT_ID || config.googleClientId;
+    const desktopClientPath = path.join(__dirname, "google-client.json");
+    if (fs.existsSync(desktopClientPath)) {
+      const desktopClient = JSON.parse(
+        fs.readFileSync(desktopClientPath, "utf8"),
+      ).installed;
+      if (desktopClient?.client_id === config.googleClientId)
+        config.googleClientSecret = desktopClient.client_secret;
+    }
+    config.googleClientSecret =
+      process.env.ASIP_GOOGLE_CLIENT_SECRET || config.googleClientSecret;
     config.githubClientId =
       process.env.ASIP_GITHUB_CLIENT_ID || config.githubClientId;
     runtime = new Runtime(app.getPath("userData"), {

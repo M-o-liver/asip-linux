@@ -6,3 +6,4 @@ artifacts/
 *.key
 .env*
 .DS_Store
+beacon/google-client.json

@@ -24,6 +24,8 @@ if (process.platform === "darwin") {
     process.platform === "win32" ? "win-unpacked" : "linux-unpacked",
     process.platform === "win32" ? "ASIP Beacon.exe" : "asip-beacon",
   );
+if (process.platform === "linux" && process.argv.includes("--installed"))
+  executable = "/usr/bin/asip-beacon";
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "asip-beacon-smoke-"));
 const child = spawn(executable, ["--user-data-dir=" + profile], {
   stdio: ["ignore", "pipe", "pipe"],
@@ -41,9 +43,11 @@ try {
       }).then((r) => r.json());
       break;
     } catch {}
-    if (child.exitCode !== null) throw new Error("Beacon exited: " + errors);
+    if (child.exitCode !== null || child.signalCode !== null)
+      throw new Error("Beacon exited: " + errors);
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
+  assert.ok(status, "Beacon did not start: " + errors);
   assert.deepEqual(status, { running: true, signedIn: false });
   const response = await fetch("http://127.0.0.1:12945/events", {
     method: "POST",

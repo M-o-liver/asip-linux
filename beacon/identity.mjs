@@ -108,7 +108,7 @@ export class Identity {
 
   async google(signal) {
     const clientId = this.config.googleClientId;
-    if (!clientId)
+    if (!clientId || !this.config.googleClientSecret)
       throw new Error("Google sign-in is not configured for this build.");
     const state = crypto.randomBytes(32).toString("base64url"),
       nonce = crypto.randomBytes(32).toString("base64url");
@@ -175,6 +175,7 @@ export class Identity {
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
         body: new URLSearchParams({
           client_id: clientId,
+          client_secret: this.config.googleClientSecret,
           code,
           code_verifier: verifier,
           redirect_uri: redirect,
