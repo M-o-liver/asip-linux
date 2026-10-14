@@ -63,7 +63,9 @@ The CI workflow runs connection and OAuth fixture tests, installs the Codex and 
 
 ## Current limits
 
-Manual record/recall through the installed Codex plugin has passed with a real account, and native CLI session-end hooks have produced records automatically. Automatic capture of a full normal agent turn still needs qualification. GitHub repository authorization and a real API call through Codex's installed plugin have passed, including the stored request/result audit. The project workspace and probabilistic project classification remain pending. Recovery checkpoints contain ASIP activity history; they do not restore project files or the operating system. The old administration daemon is not a dependency of this implementation.
+An actual Codex CLI session has automatically recorded prompts, tool calls/results, repository revision, worktree state, and its final result through the installed plugin. Session-end hooks have also been exercised. Claude and Antigravity complete-turn capture still need interactive qualification. Codex surfaces that do not run local plugin hooks need separate qualification; native MCP startup does not establish automatic capture on every surface.
+
+GitHub repository authorization and a real API call through Codex's installed plugin have passed, including the stored request/result audit. Recall excludes ASIP's own tool-call audit rows, and hooks retain their hashes without copying memory responses back into memory. The project workspace and probabilistic project classification remain pending. Recovery checkpoints contain ASIP activity history; they do not restore project files or the operating system. The old administration daemon is not a dependency of this implementation.
 
 Windows and macOS installers currently lack publisher signatures and macOS notarization. Linux tray display depends on the desktop's status-indicator support. Antigravity bundles use the exported helper's absolute path; keep the exported directory in place.
 

@@ -214,6 +214,40 @@ test("recall finds tool evidence and searches literal terms within the requested
   assert.equal(runtime.recall(token, { query: "80_" }).events.length, 0);
 });
 
+test("recall excludes self-recorded ASIP calls while keeping original work and administration evidence", (t) => {
+  const { runtime } = setup(t);
+  runtime.signIn(account);
+  const token = connect(runtime);
+  runtime.record(token, { ...event, kind: "result", summary: "Verified work" });
+  runtime.record(token, {
+    ...event,
+    kind: "PostToolUse",
+    summary: "ASIP recall",
+    data: {
+      tool: "mcp__asip__asip_recall",
+      tool_response: { text: "Verified work" },
+    },
+  });
+  runtime.record(token, {
+    ...event,
+    kind: "PostToolUse",
+    summary: "Package verification",
+    data: {
+      tool: "mcp__asip_admin__verification_record",
+      result: "Verified work",
+    },
+  });
+  const records = runtime.recall(token, { query: "Verified work" }).events;
+  assert.equal(records.length, 2);
+  assert.ok(records.some((record) => record.kind === "result"));
+  assert.ok(
+    records.some((record) => record.summary === "Package verification"),
+  );
+  assert.equal(
+    runtime.db.prepare("SELECT count(*) AS n FROM events").get().n,
+    3,
+  );
+});
 test("interleaved sessions never inherit another session's project or identity", (t) => {
   const { runtime } = setup(t);
   runtime.signIn(account);

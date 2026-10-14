@@ -6,6 +6,15 @@ import { DatabaseSync } from "node:sqlite";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const agents = new Set(["codex", "claude-code", "antigravity"]);
+const ownTools = JSON.stringify([
+  "asip_recall",
+  "asip_record",
+  "asip_status",
+  "asip_connect",
+  "asip_projects",
+  "asip_connections",
+  "asip_api_request",
+]);
 
 export class Runtime {
   constructor(
@@ -359,11 +368,12 @@ export class Runtime {
     this.storage();
     const rows = this.db
       .prepare(
-        "SELECT * FROM events WHERE (? IS NULL OR project=?) AND (instr(lower(summary),lower(?)) > 0 OR instr(lower(data),lower(?)) > 0) ORDER BY at DESC,rowid DESC LIMIT ?",
+        "SELECT * FROM events WHERE (? IS NULL OR project=?) AND NOT EXISTS (SELECT 1 FROM json_each(?) WHERE substr(COALESCE(json_extract(events.data,'$.tool'),''),-length(value))=value) AND (instr(lower(summary),lower(?)) > 0 OR instr(lower(data),lower(?)) > 0) ORDER BY at DESC,rowid DESC LIMIT ?",
       )
       .all(
         project || null,
         project || null,
+        ownTools,
         query,
         query,
         Math.max(1, Math.min(100, Number(limit) || 20)),

@@ -276,6 +276,15 @@ func trace(value any, depth int) any {
 	}
 }
 
+func asipTool(name string) bool {
+	for _, tool := range []string{"asip_recall", "asip_record", "asip_status", "asip_connect", "asip_projects", "asip_connections", "asip_api_request"} {
+		if strings.HasSuffix(name, tool) {
+			return true
+		}
+	}
+	return false
+}
+
 func hook(event string) (context map[string]any) {
 	credential := token()
 	if credential == "" {
@@ -319,12 +328,18 @@ func hook(event string) (context map[string]any) {
 		}
 	}
 	data := map[string]any{"tool": tool, "trace_sha256": digest(input), "cwd": cwd}
+	if asipTool(tool) {
+		data["asip_tool"] = true
+	}
 	for _, key := range []string{"tool_use_id", "turn_id", "agent_id", "stepIdx", "model", "modelName", "transcript_path", "transcriptPath", "workspacePaths"} {
 		if value, exists := input[key]; exists {
 			data[key] = value
 		}
 	}
 	for _, key := range []string{"prompt", "tool_input", "tool_response", "toolCall", "toolResult", "result", "error", "last_assistant_message", "assistantMessage"} {
+		if asipTool(tool) && (key == "tool_response" || key == "toolResult" || key == "result") {
+			continue
+		}
 		if value, exists := input[key]; exists {
 			data[key] = trace(value, 0)
 		}

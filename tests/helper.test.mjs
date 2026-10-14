@@ -293,6 +293,24 @@ test(
       JSON.parse(response.result.content[0].text).projects[0].name,
       "project",
     );
+    await runHook("codex", path.join(home, "codex"), "PostToolUse", {
+      session_id: "s1",
+      cwd: repository,
+      tool_name: "mcp__asip__asip_recall",
+      tool_response: {
+        content: [{ type: "text", text: "recursive memory response" }],
+      },
+    });
+    const own = runtime.db
+      .prepare("SELECT data FROM events ORDER BY rowid DESC LIMIT 1")
+      .get();
+    assert.equal(JSON.parse(own.data).asip_tool, true);
+    assert.equal(JSON.parse(own.data).tool_response, undefined);
+    response = await client.request("tools/call", {
+      name: "asip_recall",
+      arguments: { query: "recursive memory" },
+    });
+    assert.deepEqual(JSON.parse(response.result.content[0].text).events, []);
     runtime.disconnect("codex");
     await runHook("codex", path.join(home, "codex"), "PostToolUse", {
       session_id: "s1",
@@ -301,7 +319,7 @@ test(
     });
     assert.equal(
       runtime.db.prepare("SELECT count(*) AS n FROM events").get().n,
-      5,
+      6,
     );
     response = await client.request("tools/list");
     assert.equal(response.result.tools.length, 7);
