@@ -208,9 +208,16 @@ test(
     assert.equal(events[0].data.tool_response.output, "12 tests passed");
     assert.equal(events[0].kind, "tool_succeeded");
     assert.equal(events[0].data.project_evidence.method, "git-origin");
-    assert.equal(
+    // Windows Git can expand an 8.3 path while Node retains its short alias.
+    // Verify the root is the same directory rather than equating path spelling.
+    const actualRoot = fs.statSync(
       events[0].data.project_evidence.repositoryRoot,
-      fs.realpathSync(repository).replaceAll("\\", "/"),
+      { bigint: true },
+    );
+    const expectedRoot = fs.statSync(repository, { bigint: true });
+    assert.deepEqual(
+      [actualRoot.dev, actualRoot.ino],
+      [expectedRoot.dev, expectedRoot.ino],
     );
     assert.equal(events[1].kind, "intent");
     response = await client.request("tools/call", {
