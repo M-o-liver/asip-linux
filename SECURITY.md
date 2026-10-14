@@ -2,6 +2,34 @@
 
 ASIP grants local authority and records its use. It is not a command sandbox.
 
+## Portable agent memory
+
+ASIP 3's memory and Beacon run as the login user, independently of the Linux
+root services described below. Native agent/client labels are self-reported;
+the OS account owns their records. SQLite transactions and a hash chain detect
+local corruption, but the owner/root can rewrite the database.
+
+Hooks retain metadata, input/output hashes and pointers to agent-owned traces;
+they do not read transcripts or retain raw tool arguments, results or prompts.
+Explicit summaries/evidence are sanitized, but arbitrary prose can still contain
+sensitive information. Keep private state and checkpoints out of Git.
+
+Beacon is loopback-only with a private bootstrap token, HttpOnly SameSite cookie,
+exact Host/Origin checks, JSON-only mutations and CSP. It exposes no elevated
+execution endpoint. Local processes with the account's filesystem access can
+read its bootstrap file; it is not a network or multi-user security boundary.
+
+Portable connections use native OS vaults and explicit project grants. API
+requests use fixed HTTPS provider origins and refuse redirects. Credential
+children have bounded output/deadlines, but authorized children can disclose or
+misuse injected values; transformed values cannot be reliably redacted. ASIP
+does not extract native agents' subscription logins. The existing root-owned
+named-authority system remains separate and retains its original permissions.
+
+Memory recovery retains at most ten checkpoints and excludes credential values
+and project files. Stop all agents before restore; Beacon's lock alone cannot
+prove that no external MCP/hook process is still active.
+
 ## Authority
 
 `/run/asip/sock` is `root:asip`, mode `0660`. Membership in `asip` is

@@ -1,5 +1,9 @@
 # Architecture
 
+ASIP 3's portable agent memory, native integrations and project workspace are
+described in [Next architecture](NEXT_ARCHITECTURE.md). This document describes
+the retained Linux administration layer and legacy GTK agent application.
+
 ASIP is a local Linux operation and continuity layer. Socket permissions are
 the authority boundary; the admin group is root-equivalent.
 

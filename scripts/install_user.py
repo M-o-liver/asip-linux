@@ -22,7 +22,8 @@ def install(kind, prepare=False):
         raise SystemExit("Install user runtimes as the operator, not root")
     data = Path(os.environ.get("XDG_DATA_HOME", str(Path.home()/".local/share"))) / "asip"
     binary = Path.home()/".local/bin"
-    files = ([SOURCE/"pyproject.toml", SOURCE/"asip_mcp.py", SOURCE/"VERSION", SOURCE/"LICENSE"] + sorted((SOURCE/"core").glob("*.py"))
+    files = ([SOURCE/"pyproject.toml", SOURCE/"asip_mcp.py", SOURCE/"VERSION", SOURCE/"LICENSE"] +
+             [p for directory in ("core","memory","integrations") for p in sorted((SOURCE/directory).rglob("*")) if p.is_file() and "__pycache__" not in p.parts]
              if kind == "mcp" else [SOURCE/"desktop/requirements.in"])
     digest = hashlib.sha256((sys.executable + sys.version + kind).encode())
     for path in files:
@@ -45,7 +46,7 @@ def install(kind, prepare=False):
                             target = build/path.relative_to(SOURCE)
                             target.parent.mkdir(parents=True, exist_ok=True)
                             shutil.copyfile(path, target)
-                        run(str(python), "-m", "pip", "install", "--no-input", str(build))
+                        run(str(python), "-m", "pip", "install", "--no-input", str(build)+"[admin]")
                     run(str(python), "-c", "import asip_mcp; from mcp.server import MCPServer")
                 else:
                     run(str(python), "-m", "pip", "install", "--no-input", "-r", str(SOURCE/"desktop/requirements.in"))

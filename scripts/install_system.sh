@@ -28,7 +28,7 @@ for path in usr/lib/asip usr/share/asip usr/local/bin/asip usr/local/bin/a \
 done
 tar -C / -cpf "$backup" -T "$backup_list"
 chmod 0600 "$backup"
-for directory in core cli desktop scripts systemd; do cp -R "$source_root/$directory" "$stage/"; done
+for directory in core cli desktop scripts systemd memory integrations; do cp -R "$source_root/$directory" "$stage/"; done
 for file in asip asip-inspect a asip_mcp.py pyproject.toml VERSION LICENSE install.sh; do cp "$source_root/$file" "$stage/"; done
 find "$stage" -type d -name __pycache__ -prune -exec rm -rf {} +
 find "$stage" -type d -exec chmod 0755 {} +

@@ -1,0 +1,14 @@
+{
+  "name": "asip",
+  "owner": {
+    "name": "M-o-liver"
+  },
+  "plugins": [
+    {
+      "name": "asip-memory",
+      "source": "./integrations/claude-code",
+      "description": "The memory of your agents",
+      "version": "3.0.0"
+    }
+  ]
+}

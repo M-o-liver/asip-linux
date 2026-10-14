@@ -1268,7 +1268,7 @@ def associated_change_data(request, records=None):
     }
 
 
-RECOVERY_TIMELINE_LIMIT = 20
+RECOVERY_TIMELINE_LIMIT = 10
 
 
 def _snapper_entries(payload):
@@ -1342,7 +1342,7 @@ def recovery_data(records=None, timeline_limit=RECOVERY_TIMELINE_LIMIT):
     snaps = [record for record in records
              if record.get("op") == "snap" and record.get("state") == "finished"
              and record.get("exit") == 0]
-    journal_snapshots = [recovery_identity(record) for record in snaps[-5:]]
+    journal_snapshots = [recovery_identity(record) for record in snaps[-10:]]
     for item in journal_snapshots:
         item["journal_id"] = item["recovery_handle"]
         item["snapshotter"] = item["backend"]

@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "asip-memory": {
+      "command": "asip-memory",
+      "args": [
+        "mcp",
+        "--agent",
+        "codex"
+      ]
+    }
+  }
+}

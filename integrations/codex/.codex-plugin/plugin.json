@@ -1,0 +1,8 @@
+{
+  "name": "asip-memory",
+  "version": "3.0.0",
+  "description": "Shared project memory, intent, audit and named API access for your agents",
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "hooks": "./hooks/hooks.json"
+}

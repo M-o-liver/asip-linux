@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "asip-memory": {
+      "type": "stdio",
+      "command": "asip-memory",
+      "args": [
+        "mcp",
+        "--agent",
+        "codex"
+      ]
+    }
+  }
+}

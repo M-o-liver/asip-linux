@@ -14,3 +14,8 @@ id_*
 .local/
 agent-feedback.md
 agent_feedback
+qualification-state/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.asip-backup-*

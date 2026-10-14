@@ -1,0 +1,5 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "asip-memory",
+  "description": "Shared project memory, intent, audit and named API access for your agents"
+}

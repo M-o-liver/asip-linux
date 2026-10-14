@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ASIP · Agent memory</title><link rel="stylesheet" href="/app.css"><script defer src="/app.js"></script></head>
+<body>
+<aside class="sidebar">
+  <a class="brand" href="/"><span class="brandmark">A</span><span>ASIP<small>the memory of your agents</small></span></a>
+  <nav aria-label="Workspace"><button data-view="projects" class="active"><span>◈</span> Projects</button><button data-view="activity"><span>≋</span> Activity</button><button data-view="connections"><span>⌘</span> API connections</button><button data-view="recovery"><span>↶</span> Recovery</button><button data-view="agents"><span>◇</span> Agents</button><button data-view="computer"><span>▣</span> This computer</button></nav>
+  <div class="side-heading">PROJECTS <button id="add-project" title="Register project" aria-label="Register project">+</button></div><div id="project-tree"></div>
+  <div class="side-footer"><span class="dot" id="health-dot"></span><span id="health-label">Connecting…</span><small id="version"></small></div>
+</aside>
+<div class="workspace"><header><div id="breadcrumb">Workspace / Projects</div><div class="header-actions"><span id="agent-count">Local memory</span><button id="refresh" title="Refresh">↻</button></div></header><main id="main" aria-live="polite"><div class="empty">Connecting to your local ASIP workspace…</div></main></div>
+<aside id="inspector" class="inspector hidden" aria-label="Evidence inspector"></aside>
+<div id="toast" role="status" class="hidden"></div>
+<dialog id="project-dialog"><form id="project-form"><h2>Register a project</h2><p>Give durable work a home. Repositories are discovered automatically when agents work in them.</p><label>Project name<input name="name" required placeholder="My project"></label><label>Absolute root directory<input name="root" required placeholder="/home/me/Projects/my-project"></label><label>Description<textarea name="description" rows="3"></textarea></label><div class="dialog-actions"><button type="button" data-close>Cancel</button><button class="primary">Register project</button></div></form></dialog>
+<dialog id="connection-dialog"><form id="connection-form"><h2>Connect an API</h2><p>ASIP stores the credential in your operating system’s vault. Authorize each project separately.</p><label>Provider<select name="provider"><option value="github">GitHub</option><option value="google">Google OAuth access token</option><option value="gemini">Google Gemini API</option><option value="openai">OpenAI API</option><option value="anthropic">Anthropic API</option><option value="typesafe">TypeSafe Jev</option></select></label><label>Authority name<input name="name" required pattern="[a-z][a-z0-9._-]{0,63}" placeholder="github.api_token"></label><label>Label<input name="label" placeholder="GitHub API"></label><label>Credential<input type="password" name="value" required autocomplete="off"></label><p class="muted">For browser sign-in, use the GitHub or Google OAuth commands shown in API connections. Agent subscription sign-ins stay with their native apps.</p><div class="dialog-actions"><button type="button" data-close>Cancel</button><button class="primary">Save to OS vault</button></div></form></dialog>
+</body></html>

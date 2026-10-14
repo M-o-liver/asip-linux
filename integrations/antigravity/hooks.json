@@ -1,0 +1,42 @@
+{
+  "asip-memory": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "asip-memory hook --agent antigravity --event SessionStart",
+        "timeout": 10
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "asip-memory hook --agent antigravity --event PreToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "asip-memory hook --agent antigravity --event PostToolUse",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "command": "asip-memory hook --agent antigravity --event Stop",
+        "timeout": 10
+      }
+    ]
+  }
+}

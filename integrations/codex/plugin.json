@@ -1,0 +1,14 @@
+{
+  "name": "asip-memory",
+  "version": "3.0.0",
+  "description": "Shared project memory, intent, audit and named API access for your agents",
+  "author": {
+    "name": "M-o-liver"
+  },
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "extensions": {
+    "com.openai": {
+      "hooks": "./hooks/hooks.json"
+    }
+  }
+}
