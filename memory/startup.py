@@ -8,7 +8,7 @@ import sys
 
 def install():
     from .integrations import backup
-    argv=[sys.executable,"-m","memory","beacon"]
+    argv=[sys.executable,"-m","memory","beacon","--service"]
     if sys.platform=="darwin":
         path=Path.home()/"Library/LaunchAgents/org.asip.beacon.plist"
         value={"Label":"org.asip.beacon","ProgramArguments":argv+["--tray"],"RunAtLoad":True,

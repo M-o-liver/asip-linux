@@ -200,6 +200,10 @@ class Beacon:
             if open_browser:
                 self.open()
             print(json.dumps({"origin":self.origin,"health":"ready","state":str(self.store.home)}),flush=True)
+            previous_signal=None
+            if threading.current_thread() is threading.main_thread():
+                import signal
+                previous_signal=signal.signal(signal.SIGTERM,self.stop)
             try:
                 if tray:
                     try:
@@ -220,6 +224,8 @@ class Beacon:
                 self.server.shutdown()
                 self.server.server_close()
                 (self.store.home/"beacon.json").unlink(missing_ok=True)
+                if previous_signal is not None:
+                    signal.signal(signal.SIGTERM,previous_signal)
 
 
 def tray_image(active):

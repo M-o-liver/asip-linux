@@ -19,6 +19,7 @@ def main(argv=None):
     hook = commands.add_parser("hook"); hook.add_argument("--agent",required=True); hook.add_argument("--event")
     beacon = commands.add_parser("beacon"); beacon.add_argument("--port",type=int,default=0)
     beacon.add_argument("--open",action="store_true"); beacon.add_argument("--tray",action="store_true")
+    beacon.add_argument("--service",action="store_true",help="Require ownership when launched by the native service manager")
     commands.add_parser("status"); commands.add_parser("doctor")
     commands.add_parser("startup")
     sync = commands.add_parser("sync-system"); sync.add_argument("--limit",type=int,default=200)
@@ -52,8 +53,28 @@ def main(argv=None):
             from .beacon import Beacon,existing
             active = existing(store,args.open)
             if active:
+                if args.service:
+                    raise RuntimeError("Another Beacon owns this state; service manager will retry")
                 result = active
             else:
+                # Opening a managed Linux installation must let its service own
+                # the process. Avoid a console/service race after boot/restart.
+                from pathlib import Path
+                unit=Path(os.environ.get("XDG_CONFIG_HOME",str(Path.home()/".config")))/"systemd/user/asip-beacon.service"
+                if args.open and not args.service and sys.platform.startswith("linux") and unit.exists():
+                    import time
+                    subprocess.run(["systemctl","--user","start","asip-beacon.service"],check=True)
+                    deadline=time.monotonic()+10
+                    while time.monotonic()<deadline:
+                        active=existing(store,False)
+                        if active:
+                            result=existing(store,True)
+                            break
+                        time.sleep(.1)
+                    else:
+                        raise RuntimeError("Beacon did not become ready; inspect its user-service log")
+                    print(json.dumps(result,indent=2))
+                    return 0
                 Beacon(store,args.port).serve(args.open,args.tray)
                 return 0
         elif args.command=="status":
