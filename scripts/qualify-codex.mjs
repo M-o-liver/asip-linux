@@ -5,7 +5,7 @@ const version = JSON.parse(
   fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ).version;
 
-export async function qualifyCodex() {
+export async function qualifyCodex({ connected = false, apiConnection } = {}) {
   const child = spawn(
     process.platform === "win32" ? "codex.cmd" : "codex",
     ["app-server"],
@@ -100,14 +100,43 @@ export async function qualifyCodex() {
       arguments: {},
     });
     assert.equal(
-      disconnected.isError,
-      true,
+      Boolean(disconnected.isError),
+      !connected,
       "Disconnected plugins cannot access memory.",
     );
+    let api;
+    if (apiConnection) {
+      const response = await request("mcpServer/tool/call", {
+        threadId: started.thread.id,
+        server: server.name,
+        tool: "asip_api_request",
+        arguments: {
+          name: apiConnection,
+          path: "/repos/M-o-liver/asip-linux",
+          project: "github.com/M-o-liver/asip-linux",
+        },
+      });
+      assert.equal(
+        Boolean(response.isError),
+        false,
+        "The installed plugin must call the named API: " +
+          JSON.stringify(response),
+      );
+      const result = JSON.parse(response.content[0].text);
+      assert.equal(result.status, 200);
+      assert.equal(result.body.full_name, "M-o-liver/asip-linux");
+      api = {
+        connection: apiConnection,
+        status: result.status,
+        repository: result.body.full_name,
+        auditId: result.auditId,
+      };
+    }
     return {
       server: server.name,
       tools: Object.keys(server.tools),
       nativeMcpStartup: true,
+      ...(api ? { api } : {}),
       nativeHooks: nativeHooks.map((hook) => ({
         event: hook.eventName,
         trust: hook.trustStatus,

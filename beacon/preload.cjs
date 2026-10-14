@@ -1,7 +1,11 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("asip", {
   status: () => ipcRenderer.invoke("asip:status"),
+  startup: (enabled) => ipcRenderer.invoke("asip:startup", enabled),
   projects: () => ipcRenderer.invoke("asip:projects"),
+  recoveryList: () => ipcRenderer.invoke("asip:recovery-list"),
+  recoverySave: () => ipcRenderer.invoke("asip:recovery-save"),
+  recoveryRestore: (id) => ipcRenderer.invoke("asip:recovery-restore", id),
   signIn: (provider) => ipcRenderer.invoke("asip:signin", provider),
   connect: () => ipcRenderer.invoke("asip:connect"),
   saveConnection: (input) => ipcRenderer.invoke("asip:save-connection", input),

@@ -192,21 +192,32 @@ func outcome(input map[string]any) (string, string) {
 	return "", ""
 }
 func project(cwd string) string {
+	identity, _ := resolveProject(cwd)
+	return identity
+}
+
+func resolveProject(cwd string) (string, map[string]any) {
+	evidence := map[string]any{"workingDirectory": cwd, "method": "unresolved"}
 	if cwd == "" {
-		return ""
+		return "", evidence
 	}
 	root := git(cwd, "rev-parse", "--show-toplevel")
 	if root == "" {
-		return cwd
+		evidence["method"] = "working-directory"
+		return cwd, evidence
 	}
+	evidence["repositoryRoot"] = root
+	evidence["method"] = "git-root"
 	remote := git(root, "remote", "get-url", "origin")
 	if remote == "" {
-		return root
+		return root, evidence
 	}
 	if canonical := repository(remote); canonical != "" {
-		return canonical
+		evidence["method"] = "git-origin"
+		evidence["repository"] = canonical
+		return canonical, evidence
 	}
-	return root
+	return root, evidence
 }
 
 func repository(remote string) string {
@@ -342,7 +353,8 @@ func hook(event string) (context map[string]any) {
 		}
 		data["trace_truncated"] = true
 	}
-	identity := project(cwd)
+	identity, association := resolveProject(cwd)
+	data["project_evidence"] = association
 	_, err = call("/events", map[string]any{"session": session, "kind": kind, "project": identity, "summary": summary, "data": data}, credential)
 	if err == nil && (event == "SessionStart" || event == "UserPromptSubmit") {
 		value, _ := json.Marshal(map[string]any{"session": session, "project": identity})

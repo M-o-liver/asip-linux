@@ -20,14 +20,16 @@ ASIP's Google desktop client and GitHub OAuth app are registered. Public client 
 ## What is implemented
 
 - A tray/menu-bar Beacon with an account window, plugin export, connection status, disconnect, and sign-out.
+- Optional launch at login using each platform's startup mechanism.
 - A standalone compiled helper bundled with each plugin. Users do not install Python, Node, or Go.
 - Native Codex and Claude Code plugin manifests, onboarding skills, MCP tools, and lifecycle hooks.
-- An Antigravity plugin bundle using its own hook format and conversation metadata. Native installation remains unqualified.
+- An Antigravity plugin bundle using its own hook format and conversation metadata, installed and inspected through its native CLI on all three operating systems.
 - Google authorization code sign-in with PKCE and verified identity tokens; GitHub device sign-in with a verified provider account.
 - A connection handshake between the installed plugin and Beacon.
 - Durable account-specific activity records: agent, native session, project, intent, tool input/result, failure, repository revision, worktree state, and trace reference.
 - Project identity shared across SSH and HTTPS repository URLs, plus working-directory fallback.
 - Search and manual intent/result/evidence records through the connected plugin.
+- Activity-history recovery with up to ten saved checkpoints; restore saves current history before replacement.
 - Named API connections for OpenAI, Anthropic, Gemini, GitHub, and custom HTTP APIs, with optional project assignments.
 - GitHub repository authorization from Beacon; encrypted API credentials and request/result records linked to the calling agent's project and session.
 
@@ -40,6 +42,8 @@ Connected agents use `asip_connections` to find available connections and `asip_
 API requests currently support JSON bodies up to 64 KiB and responses up to 64 KiB. Larger responses return `truncated: true` without a body; use the provider's pagination or filtering. Streaming and file uploads are not implemented. Google API access currently uses Gemini keys; Google account sign-in does not authorize other Google APIs.
 
 The account is identified by the Google or GitHub provider's stable subject. Account linking, hosted account management, and cross-device synchronization are not implemented.
+
+[Implementation notes](ARCHITECTURE.md) describe record attribution, project association, API behavior, platform qualification, and the Jev investigation.
 
 ## Build
 
@@ -59,13 +63,13 @@ The CI workflow runs connection and OAuth fixture tests, installs the Codex and 
 
 ## Current limits
 
-Manual record/recall through the installed Codex plugin has passed with a real account, and native CLI session-end hooks have produced records automatically. Automatic capture of a full normal agent turn still needs qualification. Named API calls have passed through the compiled plugin against a real HTTP test service; GitHub API authorization still needs a real login check. The project workspace, recovery records, and probabilistic project classification remain pending. The old administration daemon is not a dependency of this implementation.
+Manual record/recall through the installed Codex plugin has passed with a real account, and native CLI session-end hooks have produced records automatically. Automatic capture of a full normal agent turn still needs qualification. GitHub repository authorization and a real API call through Codex's installed plugin have passed, including the stored request/result audit. The project workspace and probabilistic project classification remain pending. Recovery checkpoints contain ASIP activity history; they do not restore project files or the operating system. The old administration daemon is not a dependency of this implementation.
 
 Windows and macOS installers currently lack publisher signatures and macOS notarization. Linux tray display depends on the desktop's status-indicator support. Antigravity bundles use the exported helper's absolute path; keep the exported directory in place.
 
 Linux packages include `.deb`, `.rpm`, and AppImage. Use the native package on systems that restrict portable applications' user namespaces; the package registers Chromium's sandbox support through the platform installer.
 
-Electron provides the desktop shell. Its installer footprint is substantial; this preview has not yet been qualified for memory use or idle CPU cost.
+Electron provides the desktop shell. Its installer footprint is substantial. On the development Linux machine, Beacon 0.2.0 with its account window open used approximately 322 MiB of proportional memory across seven processes and 0.3% of one CPU core in a ten-second idle sample. This is one measurement, not qualification across all operating systems.
 
 ## Integration references
 

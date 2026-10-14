@@ -19,6 +19,7 @@ if (userDataDirectory) {
 let runtime,
   identity,
   connections,
+  recovery,
   window,
   tray,
   pending = null,
@@ -55,6 +56,8 @@ function persist() {
   });
 }
 
+const loginStartup = require("./startup.cjs").startup(app);
+
 function snapshot() {
   let configuredConnections = [];
   if (runtime.account && connections) {
@@ -78,6 +81,8 @@ function snapshot() {
       github: Boolean(identity.config.githubClientId),
     },
     connections: configuredConnections,
+    launchAtLogin: loginStartup.enabled(),
+    installed: app.isPackaged,
   };
 }
 function send() {
@@ -94,7 +99,7 @@ function updateTray(state) {
       Date.now() - Date.parse(client.lastActivity) < 10000,
   );
   const icon =
-    !available || state.pending || state.signingIn
+    !available || state.error || state.pending || state.signingIn
       ? "attention"
       : active
         ? "active"
@@ -103,17 +108,19 @@ function updateTray(state) {
           : "inactive";
   const label = !available
     ? "Service unavailable"
-    : state.pending
-      ? "Waiting to connect"
-      : state.signingIn
-        ? "Waiting for sign-in"
-        : !state.account
-          ? "Signed out"
-          : active
-            ? "Recording activity"
-            : state.recording
-              ? "Ready"
-              : "No plugins connected";
+    : state.error
+      ? "Needs attention"
+      : state.pending
+        ? "Waiting to connect"
+        : state.signingIn
+          ? "Waiting for sign-in"
+          : !state.account
+            ? "Signed out"
+            : active
+              ? "Recording activity"
+              : state.recording
+                ? "Ready"
+                : "No plugins connected";
   const key = JSON.stringify([icon, label, state.clients, state.records]);
   if (key === trayState) return;
   trayState = key;
@@ -181,6 +188,7 @@ if (!app.requestSingleInstanceLock()) {
     const { Runtime } = await import("./runtime.mjs");
     const { Identity } = await import("./identity.mjs");
     const { Connections } = await import("./connections.mjs");
+    const { Recovery } = await import("./recovery.mjs");
     const { rebindAntigravity } = await import("../scripts/plugins.mjs");
     const configPath = path.join(__dirname, "signin.json");
     const config = fs.existsSync(configPath)
@@ -210,6 +218,7 @@ if (!app.requestSingleInstanceLock()) {
         send();
       },
     });
+    recovery = new Recovery(runtime);
     identity = new Identity(config, {
       openBrowser: (url) => shell.openExternal(url),
       onCode: (code) => {
@@ -252,7 +261,38 @@ if (!app.requestSingleInstanceLock()) {
     updateTray(snapshot());
     tray.on("click", show);
     ipcMain.handle("asip:status", () => snapshot());
+    ipcMain.handle("asip:startup", (_event, enabled) => {
+      loginStartup.set(enabled);
+      send();
+      return snapshot();
+    });
     ipcMain.handle("asip:projects", () => runtime.projects());
+    ipcMain.handle("asip:recovery-list", () => recovery.list());
+    ipcMain.handle("asip:recovery-save", () => recovery.save());
+    ipcMain.handle("asip:recovery-restore", async (_event, id) => {
+      const record = recovery.list().find((entry) => entry.id === id);
+      if (!record) throw new Error("Choose an existing recovery record.");
+      const owner = runtime.account.accountId;
+      const answer = await dialog.showMessageBox(window, {
+        type: "question",
+        buttons: ["Cancel", "Restore history"],
+        defaultId: 0,
+        cancelId: 0,
+        message:
+          "Restore activity history from " +
+          new Date(record.at).toLocaleString() +
+          "?",
+        detail:
+          "Current history will be saved as a recovery record before it is replaced. API connections are unchanged.",
+      });
+      if (answer.response !== 1) return recovery.list();
+      if (runtime.account?.accountId !== owner)
+        throw new Error("The ASIP account changed.");
+      runtime.abortRequests();
+      const records = recovery.restore(id);
+      send();
+      return records;
+    });
     ipcMain.handle("asip:save-connection", (_event, input) => {
       connections.save(input);
       runtime.abortRequests(undefined, input.name);
@@ -391,7 +431,7 @@ if (!app.requestSingleInstanceLock()) {
       }
       send();
     }, 2000).unref();
-    show();
+    if (!loginStartup.background()) show();
   });
 app.on("window-all-closed", () => {});
 app.on("before-quit", () => {

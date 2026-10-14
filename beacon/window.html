@@ -124,10 +124,22 @@
               >Projects<select id="connection-projects" multiple></select
             ></label>
             <button id="connection-save" type="submit">Save connection</button>
+            <button id="connection-cancel" type="button">Cancel</button>
           </form>
         </details>
       </section>
+      <section id="recovery" hidden>
+        <details id="recovery-details">
+          <summary>Recovery</summary>
+          <button id="recovery-save">Save activity history</button>
+          <div id="recovery-list"></div>
+          <p>Up to ten saved histories.</p>
+        </details>
+      </section>
       <p id="error" role="alert"></p>
+      <label
+        ><input id="launch-at-login" type="checkbox" /> Launch at login</label
+      >
       <footer id="progress"></footer>
       <button id="signin-cancel" hidden>Cancel sign-in</button>
     </main>

@@ -90,7 +90,7 @@ export class Connections {
           !entry.projects.length ||
           entry.projects.includes(project),
       )
-      .map(({ credential, header, prefix, ...entry }) => entry);
+      .map(({ credential, prefix, ...entry }) => entry);
   }
   save(input) {
     this.load();

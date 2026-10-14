@@ -207,6 +207,11 @@ test(
     assert.equal(events.length, 2);
     assert.equal(events[0].data.tool_response.output, "12 tests passed");
     assert.equal(events[0].kind, "tool_succeeded");
+    assert.equal(events[0].data.project_evidence.method, "git-origin");
+    assert.equal(
+      events[0].data.project_evidence.repositoryRoot,
+      fs.realpathSync(repository).replaceAll("\\", "/"),
+    );
     assert.equal(events[1].kind, "intent");
     response = await client.request("tools/call", {
       name: "asip_status",
