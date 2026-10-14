@@ -83,13 +83,15 @@ class Authorities:
         if not ENV.fullmatch(env_var):
             raise ValueError("invalid environment variable")
         backend = vault()
-        backend.set_password("ASIP", name, json.dumps({"value":value.strip(), **(oauth or {})}))
         # Configuration writes are serialized across browser/CLI processes.
         from .paths import FileLock
         with FileLock(self.store.home/"connections.lock"):
             profiles = self.profiles()
+            previous=profiles.get(name,{})
+            backend.set_password("ASIP", name, json.dumps({"value":value.strip(), **(oauth or {})}))
+            grants=previous.get("grants",[]) if previous.get("provider")==provider and previous.get("env_var")==env_var else []
             profiles[name] = {"name":name,"provider":provider,"label":clean(label or name),"env_var":env_var,
-                              "grants":profiles.get(name,{}).get("grants",[]),"state":"available","storage":"os-vault"}
+                              "grants":grants,"state":"available","storage":"os-vault"}
             atomic_json(self.path,profiles)
         self.store.record("operator","connections","access.configured","Configured "+name,{"provider":provider})
         return profiles[name]
@@ -133,6 +135,11 @@ class Authorities:
                 "system_access":legacy.get("error") if "error" in legacy else "connected"}
 
     def resolve(self, name, intent_id):
+        from .paths import FileLock
+        with FileLock(self.store.home/"connections.lock"):
+            return self._resolve(name,intent_id)
+
+    def _resolve(self, name, intent_id):
         intent = self.store.intent(intent_id)
         if intent["status"] != "open":
             raise ValueError("API use requires an open intent")

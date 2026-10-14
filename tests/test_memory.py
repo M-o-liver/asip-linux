@@ -244,6 +244,9 @@ class MemoryTests(unittest.TestCase):
             self.assertNotIn(secret,json.dumps(self.store.events()))
             authorities.grant("github.test",intent["project_id"],False)
             with self.assertRaises(PermissionError):authorities.resolve("github.test",intent["id"])
+            authorities.grant("github.test",intent["project_id"])
+            authorities.configure("github.test","openai","replacement-test-key")
+            with self.assertRaises(PermissionError):authorities.resolve("github.test",intent["id"])
 
     def test_finite_process_timeout_and_bounded_output(self):
         output=execute([sys.executable,"-c","print('x'*30000)"],os.environ,timeout=5)
