@@ -4,6 +4,7 @@ import path from "node:path";
 import { qualifyCodex } from "./qualify-codex.mjs";
 import assert from "node:assert/strict";
 import { installAntigravity } from "./install-antigravity.mjs";
+import { qualifyClaude } from "./qualify-claude.mjs";
 
 // Native installation checks belong in disposable CI users, never the
 // developer's agent profile. This script does not sign in or run an agent.
@@ -55,6 +56,8 @@ assert.ok(
 assert.ok(asip.hooks?.length, "Antigravity must discover ASIP's native hooks.");
 const codexStartup = await qualifyCodex();
 console.log(JSON.stringify(codexStartup));
+const claudeStartup = await qualifyClaude();
+console.log(JSON.stringify(claudeStartup));
 fs.writeFileSync(
   "build/qualification.json",
   JSON.stringify(
@@ -62,6 +65,7 @@ fs.writeFileSync(
       platform: target,
       nativeInstallation: evidence,
       codexStartup,
+      claudeStartup,
       antigravity: {
         version: agy.version,
         sha512: agy.sha512,
