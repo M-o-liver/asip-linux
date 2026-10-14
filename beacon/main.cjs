@@ -171,15 +171,11 @@ if (!app.requestSingleInstanceLock()) {
       lastError = "";
       abort = new AbortController();
       send();
-      const controller = abort,
-        request = pending;
+      const controller = abort;
       try {
         const account = await identity.signIn(provider, controller.signal);
         controller.signal.throwIfAborted();
-        if (request) {
-          runtime.completeSignIn(request.id, account);
-          pending = null;
-        } else runtime.signIn(account);
+        runtime.signIn(account);
         persist();
       } catch (error) {
         lastError = error.message;
@@ -188,6 +184,18 @@ if (!app.requestSingleInstanceLock()) {
         deviceCode = null;
         send();
       }
+      return snapshot();
+    });
+    ipcMain.handle("asip:connect", () => {
+      try {
+        if (!pending) throw new Error("No plugin is waiting to connect.");
+        runtime.completeSignIn(pending.id, runtime.account);
+        pending = null;
+        lastError = "";
+      } catch (error) {
+        lastError = error.message;
+      }
+      send();
       return snapshot();
     });
     ipcMain.handle("asip:cancel", () => {

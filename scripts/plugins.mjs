@@ -7,7 +7,7 @@ name: asip
 description: Connect ASIP, recall earlier project work, and save intentions, results, evidence, and unfinished work.
 ---
 
-When the user asks to connect ASIP, call asip_connect. The Beacon opens sign-in.
+When the user asks to connect ASIP, call asip_connect. Tell them to click Connect in Beacon.
 If Beacon is missing or the plugin is disconnected, explain the reported status and continue the user's work. Do not configure agent hooks or MCP servers yourself.
 
 Once connected, call asip_recall when continuing work on a project. Use the repository identity returned by asip_status or provide the project's repository identity.
@@ -37,7 +37,7 @@ export function buildPlugin({ root, target, agent, binary }) {
   write("skills/asip/SKILL.md", skill);
   write(
     "skills/setup/SKILL.md",
-    "---\nname: setup\ndescription: Sign in to the ASIP plugin.\n---\n\nCall asip_connect. Tell the user to finish sign-in in ASIP Beacon. Use asip_status to check the connection when they return.\n",
+    "---\nname: setup\ndescription: Connect the ASIP plugin.\n---\n\nCall asip_connect. Tell the user to click Connect in ASIP Beacon. Use asip_status to check the connection when they return.\n",
   );
   const variable =
     agent === "claude-code" ? "${CLAUDE_PLUGIN_ROOT}" : "${PLUGIN_ROOT}";

@@ -342,12 +342,11 @@ func hook(event string) {
 
 func tools() []map[string]any {
 	empty := map[string]any{"type": "object", "properties": map[string]any{}, "additionalProperties": false}
-	result := []map[string]any{{"name": "asip_connect", "description": "Sign in to the ASIP plugin through Beacon.", "inputSchema": empty}, {"name": "asip_status", "description": "ASIP account and Beacon connection.", "inputSchema": empty}}
-	if _, err := call("/plugin/status", map[string]any{}, token()); err == nil {
-		result = append(result, map[string]any{"name": "asip_recall", "description": "Find previous project work and results.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"project": map[string]string{"type": "string"}, "query": map[string]string{"type": "string"}}}},
-			map[string]any{"name": "asip_record", "description": "Save the intended work, result, or supporting evidence for this project.", "inputSchema": map[string]any{"type": "object", "required": []string{"session", "kind", "summary"}, "properties": map[string]any{"session": map[string]string{"type": "string"}, "kind": map[string]string{"type": "string"}, "summary": map[string]string{"type": "string"}, "project": map[string]string{"type": "string"}, "data": map[string]string{"type": "object"}}}})
-	}
-	return result
+	// Keep the catalog stable: native clients may cache it across sign-in.
+	// Every memory operation still requires a connected account in Beacon.
+	return []map[string]any{{"name": "asip_connect", "description": "Connect this plugin to your ASIP account in Beacon.", "inputSchema": empty}, {"name": "asip_status", "description": "ASIP account and Beacon connection.", "inputSchema": empty},
+		{"name": "asip_recall", "description": "Find previous project work and results. Connect ASIP first.", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"project": map[string]string{"type": "string"}, "query": map[string]string{"type": "string"}}}},
+		{"name": "asip_record", "description": "Save the intended work, result, or supporting evidence for this project. Connect ASIP first.", "inputSchema": map[string]any{"type": "object", "required": []string{"session", "kind", "summary"}, "properties": map[string]any{"session": map[string]string{"type": "string"}, "kind": map[string]string{"type": "string"}, "summary": map[string]string{"type": "string"}, "project": map[string]string{"type": "string"}, "data": map[string]string{"type": "object"}}}}}
 }
 
 func mcp() {
@@ -394,6 +393,9 @@ func mcp() {
 			var err error
 			switch name {
 			case "asip_connect":
+				if data, err = call("/plugin/status", map[string]any{}, token()); err == nil {
+					break
+				}
 				if err = beaconReady(); err != nil {
 					break
 				}
@@ -408,7 +410,7 @@ func mcp() {
 						}
 					}()
 				}
-				data = map[string]any{"state": "signing-in", "message": "Finish sign-in in ASIP Beacon."}
+				data = map[string]any{"state": "connecting", "message": "Click Connect in ASIP Beacon."}
 			case "asip_status":
 				data, err = call("/plugin/status", map[string]any{}, token())
 			case "asip_recall":

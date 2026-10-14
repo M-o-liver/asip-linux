@@ -12,12 +12,10 @@ function render(state) {
   $("request").hidden = !state.pending;
   $("error").textContent = state.error || "";
   $("progress").textContent = state.signingIn ? "Waiting for sign-in…" : "";
-  for (const id of ["google", "request-google"])
+  for (const id of ["google"])
     $(id).disabled = state.signingIn || !state.providers.google;
-  for (const id of ["github", "request-github"])
+  for (const id of ["github"])
     $(id).disabled = state.signingIn || !state.providers.github;
-  $("request-google").hidden = state.pending?.provider === "github";
-  $("request-github").hidden = state.pending?.provider === "google";
   $("preview").hidden = state.providers.google || state.providers.github;
   if (state.account) {
     $("account-name").textContent = state.account.name;
@@ -43,16 +41,15 @@ function render(state) {
   }
   if (state.pending) {
     $("request-title").textContent = "Connect " + names[state.pending.agent];
-    $("request-account").textContent = "Sign in as " + state.pending.account;
+    $("request-account").textContent = state.pending.account;
   }
   $("device").hidden = !state.deviceCode;
   $("device-code").textContent = state.deviceCode?.code || "";
 }
-for (const id of ["google", "request-google"])
-  $(id).onclick = () => window.asip.signIn("google");
-for (const id of ["github", "request-github"])
-  $(id).onclick = () => window.asip.signIn("github");
+for (const id of ["google"]) $(id).onclick = () => window.asip.signIn("google");
+for (const id of ["github"]) $(id).onclick = () => window.asip.signIn("github");
 $("cancel").onclick = () => window.asip.cancel();
+$("connect").onclick = () => window.asip.connect();
 $("signout").onclick = () => window.asip.signOut();
 $("export").onclick = async () => {
   try {

@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("asip", {
   status: () => ipcRenderer.invoke("asip:status"),
   signIn: (provider) => ipcRenderer.invoke("asip:signin", provider),
+  connect: () => ipcRenderer.invoke("asip:connect"),
   cancel: () => ipcRenderer.invoke("asip:cancel"),
   signOut: () => ipcRenderer.invoke("asip:signout"),
   disconnect: (agent) => ipcRenderer.invoke("asip:disconnect", agent),

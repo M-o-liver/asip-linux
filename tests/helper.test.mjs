@@ -9,6 +9,7 @@ import { Runtime } from "../beacon/runtime.mjs";
 import { accountId } from "../beacon/identity.mjs";
 
 let binary;
+const children = new Set();
 const account = {
   provider: "github",
   subject: "42",
@@ -17,10 +18,13 @@ const account = {
   accountId: accountId("github", "42"),
 };
 function helper(mode, agent, home, args = []) {
-  return spawn(binary, [mode, "--agent", agent, ...args], {
+  const child = spawn(binary, [mode, "--agent", agent, ...args], {
     env: { ...process.env, ASIP_PLUGIN_STATE: home },
     stdio: ["pipe", "pipe", "pipe"],
   });
+  children.add(child);
+  child.once("exit", () => children.delete(child));
+  return child;
 }
 function rpc(child) {
   let buffer = "",
@@ -77,6 +81,13 @@ test(
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-helper-")),
       runtime = new Runtime(path.join(home, "beacon"));
     t.after(async () => {
+      await Promise.all(
+        [...children].map(async (child) => {
+          const exited = once(child, "exit");
+          child.kill();
+          await exited;
+        }),
+      );
       await runtime.close();
       fs.rmSync(home, { recursive: true, force: true });
     });
@@ -97,7 +108,6 @@ test(
       },
     );
     const child = helper("mcp", "codex", path.join(home, "codex"));
-    t.after(() => child.kill());
     const client = rpc(child);
     let response = await client.request("initialize", {
       protocolVersion: "2025-06-18",
@@ -106,13 +116,17 @@ test(
     response = await client.request("tools/list");
     assert.deepEqual(
       response.result.tools.map((t) => t.name),
-      ["asip_connect", "asip_status"],
+      ["asip_connect", "asip_status", "asip_recall", "asip_record"],
     );
     response = await client.request("tools/call", {
       name: "asip_connect",
       arguments: {},
     });
     assert.equal(response.result.isError, true);
+    for (const name of ["asip_record", "asip_recall"]) {
+      response = await client.request("tools/call", { name, arguments: {} });
+      assert.equal(response.result.isError, true);
+    }
     await runHook("codex", path.join(home, "codex"), "UserPromptSubmit", {
       session_id: "s1",
       prompt: "Should not record",
@@ -128,7 +142,7 @@ test(
     });
     assert.equal(
       JSON.parse(response.result.content[0].text).state,
-      "signing-in",
+      "connecting",
     );
     const request = await requested;
     // Ping remains responsive while the user signs in.
@@ -182,12 +196,16 @@ test(
       2,
     );
     response = await client.request("tools/list");
-    assert.equal(response.result.tools.length, 2);
+    assert.equal(response.result.tools.length, 4);
+    response = await client.request("tools/call", {
+      name: "asip_recall",
+      arguments: {},
+    });
+    assert.equal(response.result.isError, true);
 
     for (const agent of ["claude-code", "antigravity"]) {
       const state = path.join(home, agent),
         connecting = helper("connect", agent, state);
-      t.after(() => connecting.kill());
       let begin;
       const pending = new Promise((resolve) => (begin = resolve));
       runtime.onPluginSignIn = (request) => begin(request);

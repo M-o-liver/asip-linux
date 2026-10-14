@@ -75,10 +75,16 @@ export async function qualifyCodex() {
         " " +
         errors,
     );
+    const disconnected = await request("mcpServer/tool/call", {
+      threadId: started.thread.id,
+      server: server.name,
+      tool: "asip_recall",
+      arguments: {},
+    });
     assert.equal(
-      Object.keys(server.tools).includes("asip_record"),
-      false,
-      "Memory tools stay unavailable before account connection.",
+      disconnected.isError,
+      true,
+      "Disconnected plugins cannot access memory.",
     );
     return {
       server: server.name,
