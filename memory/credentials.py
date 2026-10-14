@@ -154,6 +154,12 @@ class Authorities:
             vault().set_password("ASIP",name,json.dumps(credential))
         return profile, credential["value"], intent
 
+    def audit(self,intent,kind,summary,data):
+        # Attribute API use to the native agent/session that owns the intention.
+        with self.store.connect(True) as db:
+            item=self.store._append(db,kind,summary,data,intent["session_id"],intent["project_id"],intent["id"])
+        return self.store.decode(item)
+
     def call(self, name, intent_id, path, method="GET", body=None):
         profile, value, intent = self.resolve(name,intent_id)
         provider = PROVIDERS[profile["provider"]]
@@ -165,16 +171,16 @@ class Authorities:
         if profile["provider"] == "anthropic":
             headers["anthropic-version"] = "2023-06-01"
         data = {"authority":name,"method":method,"path":clean(path),"request_sha256":digest(body)}
-        started = self.store.record("api",name,"api.started",method+" "+clean(path), data, project_id=intent["project_id"])
+        started = self.audit(intent,"api.started",method+" "+clean(path),data)
         try:
             result = request_json(provider["origin"]+path,body,headers,method)
             # Mask the exact credential even if a provider echoes it unexpectedly.
             result = json.loads(json.dumps(clean(result)).replace(value,"[redacted]"))
-            self.store.record("api",name,"api.finished",str(result["status"]),
-                              {**data,"status":result["status"],"operation":started["id"],"intent":intent_id}, project_id=intent["project_id"])
+            self.audit(intent,"api.finished" if result["status"]<400 else "api.failed",str(result["status"]),
+                       {**data,"status":result["status"],"operation":started["id"]})
             return result
         except Exception:
-            self.store.record("api",name,"api.failed","API request failed",{**data,"operation":started["id"],"intent":intent_id}, project_id=intent["project_id"])
+            self.audit(intent,"api.failed","API request failed",{**data,"operation":started["id"]})
             raise RuntimeError("API request failed; inspect connection and provider availability") from None
 
     def use(self, name, intent_id, argv, cwd=None, timeout=300):
@@ -183,7 +189,7 @@ class Authorities:
             raise ValueError("argv must be a nonempty list of strings")
         timeout = max(1,min(int(timeout),300))
         data = {"authority":name,"argv_sha256":digest(argv),"cwd":cwd,"intent":intent_id}
-        started = self.store.record("api",name,"access.started","Named credential child",data,project_id=intent["project_id"])
+        started = self.audit(intent,"access.started","Named credential child",data)
         try:
             from .process import execute
             result = execute(argv,cwd=cwd,env={**os.environ,profile["env_var"]:value},timeout=timeout)
@@ -193,12 +199,12 @@ class Authorities:
                         "timed_out":result["timed_out"],"output_limited":result["output_limited"],
                         "capture_incomplete":result["capture_incomplete"],
                         "truncated":any(result.get(s,{}).get("truncated") for s in ("stdout","stderr"))}
-            self.store.record("api",name,"access.finished",str(result["exit"]),
+            self.audit(intent,"access.finished" if result["exit"]==0 and not result["capture_incomplete"] else "access.failed",str(result["exit"]),
                               {**data,"exit":result["exit"],"operation":started["id"],"stdout_sha256":result.get("stdout",{}).get("sha256"),
-                               "timed_out":result["timed_out"],"output_limited":result["output_limited"]},project_id=intent["project_id"])
+                               "timed_out":result["timed_out"],"output_limited":result["output_limited"]})
             return clean(response)
         except Exception:
-            self.store.record("api",name,"access.failed","Credential child failed or timed out",{**data,"operation":started["id"]},project_id=intent["project_id"])
+            self.audit(intent,"access.failed","Credential child failed or timed out",{**data,"operation":started["id"]})
             raise RuntimeError("Credential child failed or timed out; effects may be partial") from None
 
 

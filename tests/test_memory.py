@@ -229,6 +229,9 @@ class MemoryTests(unittest.TestCase):
             result=authorities.use("github.test",intent["id"],[sys.executable,"-c","import os; print(os.environ['GH_TOKEN'])"])
             self.assertNotIn(secret,json.dumps(result))
             self.assertEqual(result["exit"],0)
+            audit=self.store.events(query="access.finished")["events"][0]
+            self.assertEqual(audit["session_id"],intent["session_id"])
+            self.assertEqual(audit["intent_id"],intent["id"])
             with self.assertRaises(ValueError):authorities.call("github.test",intent["id"],"//evil.example")
             with patch("memory.credentials.request_json",return_value={"status":200,"data":{"message":secret}}) as request:
                 result=authorities.call("github.test",intent["id"],"/user")

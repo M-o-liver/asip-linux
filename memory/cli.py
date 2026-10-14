@@ -68,7 +68,11 @@ def main(argv=None):
             from .system import sync
             result = sync(store,max(1,min(args.limit,10000)))
         elif args.command=="project":
-            result = store.register(args.name,args.root,args.description) if args.name and args.root else store.projects()
+            if args.name and args.root:
+                project=store.register(args.name,args.root,args.description)
+                result={k:project[k] for k in ("id","name","repository","roots")}
+            else:
+                result=store.projects()
         elif args.command=="recall":
             result = store.events(project_id=args.project_id,query=args.query,before=args.before,limit=args.limit)
         elif args.command=="integrate":
