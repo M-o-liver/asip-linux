@@ -172,3 +172,19 @@ test("HTTP interface rejects disconnected activity and browser-origin requests",
   });
   assert.equal((await response.json()).events.length, 1);
 });
+
+test("ambiguous native project evidence is retained without inheriting the previous project", (t) => {
+  const { runtime } = setup(t);
+  runtime.signIn(account);
+  const token = connect(runtime);
+  runtime.record(token, event);
+  runtime.record(token, {
+    ...event,
+    project: null,
+    summary: "Multiple workspaces",
+    data: { workspacePaths: ["/projects/one", "/projects/two"] },
+  });
+  const row = runtime.recall(token, { query: "Multiple" }).events[0];
+  assert.equal(row.project, null);
+  assert.equal(row.data.workspacePaths.length, 2);
+});

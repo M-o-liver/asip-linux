@@ -84,7 +84,12 @@ export class Runtime {
       expires: Date.now() + 300000,
       accountId: this.account.accountId,
     });
-    this.onPluginSignIn({ id, agent, account: this.account.handle });
+    this.onPluginSignIn({
+      id,
+      agent,
+      account: this.account.handle,
+      provider: this.account.provider,
+    });
     return { requestId: id };
   }
 
@@ -169,7 +174,9 @@ export class Runtime {
     if (!event || typeof event !== "object")
       throw new Error("An event is required.");
     const session = event.session || client.lastSession,
-      project = event.project || client.lastProject || null;
+      project = Object.hasOwn(event, "project")
+        ? event.project || null
+        : client.lastProject || null;
     if (
       typeof session !== "string" ||
       !session ||

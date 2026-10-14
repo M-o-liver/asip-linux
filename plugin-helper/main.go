@@ -70,6 +70,24 @@ func call(route string, body any, credential string) (map[string]any, error) {
 	return result, nil
 }
 
+func beaconReady() error {
+	response, err := client.Get(endpoint + "/status")
+	if err != nil {
+		return errors.New("Open ASIP Beacon and sign in.")
+	}
+	defer response.Body.Close()
+	var state struct {
+		SignedIn bool `json:"signedIn"`
+	}
+	if response.StatusCode != 200 || json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&state) != nil {
+		return errors.New("ASIP Beacon is unavailable.")
+	}
+	if !state.SignedIn {
+		return errors.New("Sign in to ASIP Beacon first.")
+	}
+	return nil
+}
+
 func signin() (map[string]any, error) {
 	verifier := make([]byte, 32)
 	if _, err := rand.Read(verifier); err != nil {
@@ -141,7 +159,32 @@ func git(cwd string, args ...string) string {
 	if err != nil {
 		return ""
 	}
+	if len(output) > 16000 {
+		output = output[:16000]
+	}
 	return strings.TrimSpace(string(output))
+}
+
+func outcome(input map[string]any) (string, string) {
+	if message := stringValue(input["error"]); message != "" {
+		return "failed", message
+	}
+	for _, key := range []string{"tool_response", "toolResult", "result"} {
+		if result, ok := input[key].(map[string]any); ok {
+			if failed, ok := result["isError"].(bool); ok && failed {
+				return "failed", "Tool reported a failure"
+			}
+			for _, field := range []string{"exit_code", "exitCode", "returncode"} {
+				if code, ok := result[field].(float64); ok {
+					if code != 0 {
+						return "failed", fmt.Sprintf("Tool exited with code %.0f", code)
+					}
+					return "tool_succeeded", "Tool exited with code 0"
+				}
+			}
+		}
+	}
+	return "", ""
 }
 func project(cwd string) string {
 	if cwd == "" {
@@ -242,6 +285,11 @@ func hook(event string) {
 		return
 	}
 	cwd := stringValue(input["cwd"])
+	if arguments, ok := input["tool_input"].(map[string]any); ok {
+		if directory := stringValue(arguments["workdir"]); directory != "" {
+			cwd = directory
+		}
+	}
 	if cwd == "" {
 		if paths, ok := input["workspacePaths"].([]any); ok && len(paths) == 1 {
 			cwd = stringValue(paths[0])
@@ -255,7 +303,7 @@ func hook(event string) {
 		}
 	}
 	data := map[string]any{"tool": tool, "trace_sha256": digest(input), "cwd": cwd}
-	for _, key := range []string{"tool_use_id", "turn_id", "agent_id", "stepIdx", "model", "modelName", "transcript_path", "transcriptPath"} {
+	for _, key := range []string{"tool_use_id", "turn_id", "agent_id", "stepIdx", "model", "modelName", "transcript_path", "transcriptPath", "workspacePaths"} {
 		if value, exists := input[key]; exists {
 			data[key] = value
 		}
@@ -267,7 +315,7 @@ func hook(event string) {
 	}
 	if cwd != "" {
 		data["head"] = git(cwd, "rev-parse", "HEAD")
-		data["worktree"] = git(cwd, "status", "--porcelain=v1", "--untracked-files=no")
+		data["worktree"] = git(cwd, "status", "--porcelain=v1", "--untracked-files=all")
 	}
 	kind := event
 	summary := strings.TrimSpace(event + " " + tool)
@@ -278,9 +326,9 @@ func hook(event string) {
 	if message := stringValue(input["last_assistant_message"]); message != "" {
 		summary = message
 	}
-	if message := stringValue(input["error"]); message != "" {
-		kind = "failed"
-		summary = message
+	if observed, message := outcome(input); observed != "" {
+		kind = observed
+		summary = strings.TrimSpace(tool + " " + message)
 	}
 	encoded, _ := json.Marshal(data)
 	if len(encoded) > 60000 {
@@ -346,6 +394,9 @@ func mcp() {
 			var err error
 			switch name {
 			case "asip_connect":
+				if err = beaconReady(); err != nil {
+					break
+				}
 				if connecting.CompareAndSwap(false, true) {
 					go func() {
 						defer connecting.Store(false)

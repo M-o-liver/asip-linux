@@ -4,7 +4,9 @@ const names = {
   "claude-code": "Claude Code",
   antigravity: "Antigravity",
 };
+let platform;
 function render(state) {
+  platform = state.platform;
   $("signed-out").hidden = Boolean(state.account) || Boolean(state.pending);
   $("account").hidden = !state.account || Boolean(state.pending);
   $("request").hidden = !state.pending;
@@ -14,6 +16,8 @@ function render(state) {
     $(id).disabled = state.signingIn || !state.providers.google;
   for (const id of ["github", "request-github"])
     $(id).disabled = state.signingIn || !state.providers.github;
+  $("request-google").hidden = state.pending?.provider === "github";
+  $("request-github").hidden = state.pending?.provider === "google";
   $("preview").hidden = state.providers.google || state.providers.github;
   if (state.account) {
     $("account-name").textContent = state.account.name;
@@ -55,9 +59,13 @@ $("export").onclick = async () => {
     const agent = $("agent").value,
       directory = await window.asip.exportPlugin(agent);
     if (!directory) return;
-    const quoted = '"' + directory + '"';
+    const quoted =
+      platform === "win32"
+        ? "'" + directory.replaceAll("'", "''") + "'"
+        : "'" + directory.replaceAll("'", "'\\''") + "'";
     $("install-command").textContent =
-      agent === "codex"
+      (platform === "win32" ? "# PowerShell\n" : "") +
+      (agent === "codex"
         ? "codex plugin marketplace add " +
           quoted +
           "\ncodex plugin add asip@asip-local"
@@ -65,7 +73,7 @@ $("export").onclick = async () => {
           ? "claude plugin marketplace add " +
             quoted +
             "\nclaude plugin install asip@asip-local"
-          : "agy plugin install " + quoted;
+          : "agy plugin install " + quoted);
   } catch (error) {
     $("error").textContent = error.message;
   }

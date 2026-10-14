@@ -97,6 +97,11 @@ test(
       response.result.tools.map((t) => t.name),
       ["asip_connect", "asip_status"],
     );
+    response = await client.request("tools/call", {
+      name: "asip_connect",
+      arguments: {},
+    });
+    assert.equal(response.result.isError, true);
     await runHook("codex", path.join(home, "codex"), "UserPromptSubmit", {
       session_id: "s1",
       prompt: "Should not record",
@@ -153,6 +158,7 @@ test(
     let events = JSON.parse(response.result.content[0].text).events;
     assert.equal(events.length, 2);
     assert.equal(events[0].data.tool_response.output, "12 tests passed");
+    assert.equal(events[0].kind, "tool_succeeded");
     assert.equal(events[1].kind, "intent");
     runtime.disconnect("codex");
     await runHook("codex", path.join(home, "codex"), "PostToolUse", {

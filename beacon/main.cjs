@@ -51,6 +51,7 @@ function persist() {
 function snapshot() {
   return {
     ...runtime.status(),
+    platform: process.platform,
     pending,
     deviceCode,
     error: lastError,

@@ -32,3 +32,20 @@ func TestBoundedUsefulTrace(t *testing.T) {
 		t.Fatal("unbounded output")
 	}
 }
+
+func TestOutcomeUsesExplicitEvidence(t *testing.T) {
+	for _, fixture := range []struct {
+		input map[string]any
+		want  string
+	}{
+		{map[string]any{"tool_response": map[string]any{"exit_code": float64(0)}}, "tool_succeeded"},
+		{map[string]any{"tool_response": map[string]any{"exit_code": float64(1)}}, "failed"},
+		{map[string]any{"error": "exit status 1"}, "failed"},
+		{map[string]any{"tool_response": map[string]any{"output": "done"}}, ""},
+	} {
+		kind, _ := outcome(fixture.input)
+		if kind != fixture.want {
+			t.Fatalf("wanted %s got %s", fixture.want, kind)
+		}
+	}
+}
