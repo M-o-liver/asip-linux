@@ -59,18 +59,15 @@ test("recorded commands omit authentication values and old history is repaired w
   assert.equal(fresh.data.headers.Authorization, "[credential]");
   assert.match(fresh.data.command, /Bearer \[credential\]/);
 
-  runtime.db
-    .prepare("UPDATE events SET summary=?,data=? WHERE id=?")
-    .run(
-      "Legacy Bearer historical-credential",
-      JSON.stringify({
-        command:
-          "curl -H 'Authorization: Bearer historical-credential' /recall",
-        password: "old-password",
-        head: "revision",
-      }),
-      recorded.id,
-    );
+  runtime.db.prepare("UPDATE events SET summary=?,data=? WHERE id=?").run(
+    "Legacy Bearer historical-credential",
+    JSON.stringify({
+      command: "curl -H 'Authorization: Bearer historical-credential' /recall",
+      password: "old-password",
+      head: "revision",
+    }),
+    recorded.id,
+  );
   runtime.db.exec("PRAGMA user_version=0");
   runtime.db.close();
   runtime.db = null;
