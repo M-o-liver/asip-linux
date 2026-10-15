@@ -376,6 +376,30 @@ test(
       assert.equal(row.kind, "failed");
       assert.equal(row.project, "github.com/example/project");
       assert.equal(JSON.parse(row.data).error, "exit status 1");
+      if (agent === "antigravity") {
+        await runHook(agent, state, "Stop", {
+          conversationId: "a1",
+          workspacePaths: [repository],
+          terminationReason: "model_stop",
+          fullyIdle: false,
+          executionNum: 2,
+        });
+        const stopped = runtime.db
+          .prepare("SELECT data FROM events WHERE agent=? AND kind='Stop'")
+          .get(agent);
+        assert.deepEqual(
+          (({ terminationReason, fullyIdle, executionNum }) => ({
+            terminationReason,
+            fullyIdle,
+            executionNum,
+          }))(JSON.parse(stopped.data)),
+          {
+            terminationReason: "model_stop",
+            fullyIdle: false,
+            executionNum: 2,
+          },
+        );
+      }
     }
   },
 );

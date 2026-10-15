@@ -41,6 +41,51 @@ const event = {
   data: { evidence: "build log" },
 };
 
+test("recorded commands omit authentication values and old history is repaired without losing events", (t) => {
+  const { runtime } = setup(t);
+  runtime.signIn(account);
+  const token = connect(runtime);
+  const recorded = runtime.record(token, {
+    ...event,
+    summary: "Inspect Bearer " + token,
+    data: {
+      command: 'curl -H "Authorization: Bearer ' + token + '" /status',
+      response: JSON.stringify({ token }),
+      headers: { Authorization: "different-header-value" },
+    },
+  });
+  const fresh = runtime.recall(token).events[0];
+  assert.equal(JSON.stringify(fresh).includes(token), false);
+  assert.equal(fresh.data.headers.Authorization, "[credential]");
+  assert.match(fresh.data.command, /Bearer \[credential\]/);
+
+  runtime.db
+    .prepare("UPDATE events SET summary=?,data=? WHERE id=?")
+    .run(
+      "Legacy Bearer historical-credential",
+      JSON.stringify({
+        command:
+          "curl -H 'Authorization: Bearer historical-credential' /recall",
+        password: "old-password",
+        head: "revision",
+      }),
+      recorded.id,
+    );
+  runtime.db.exec("PRAGMA user_version=0");
+  runtime.db.close();
+  runtime.db = null;
+  const repaired = runtime.recall(token).events;
+  assert.equal(repaired.length, 1);
+  assert.equal(repaired[0].id, recorded.id);
+  assert.equal(repaired[0].data.head, "revision");
+  assert.equal(
+    JSON.stringify(repaired).includes("historical-credential"),
+    false,
+  );
+  assert.equal(JSON.stringify(repaired).includes("old-password"), false);
+  assert.equal(runtime.db.prepare("PRAGMA user_version").get().user_version, 1);
+});
+
 test("nothing is collected before Beacon and plugin authentication", (t) => {
   const { home, runtime } = setup(t);
   assert.throws(() => runtime.record("", event), /Sign in/);

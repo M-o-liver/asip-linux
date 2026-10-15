@@ -28,6 +28,6 @@ The same Beacon exports their plugins and shows their native installation comman
 - The browser workspace against those records.
 - Automated tests, native plugin installation, Codex/Claude MCP startup, packaging, and packaged application startup on Windows, macOS, and Linux. The release links to those build checks.
 
-Claude Code and Antigravity still need a complete interactive session check. Installing a plugin or starting its MCP server does not establish that its hooks capture a complete session. The Windows installer also needs this first human installation and sign-in check.
+Claude Code still needs a complete interactive session check. A real Antigravity session recorded tool events, Git evidence, Stop events, and an explicit result, but the agent used the local API to work around missing native MCP tools. Its normal MCP workflow still needs verification. Installing a plugin or starting its MCP server does not establish that its hooks capture a complete session. The Windows installer also needs this first human installation and sign-in check.
 
 Activity stays on the computer where Beacon runs. Account linking and cross-device history synchronization are not implemented. Recovery keeps up to ten ASIP history checkpoints; it does not back up repository files.

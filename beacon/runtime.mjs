@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
+import { redactTrace } from "./trace.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const agents = new Set(["codex", "claude-code", "antigravity"]);
@@ -187,6 +188,28 @@ export class Runtime {
       this.db.exec(
         "CREATE INDEX IF NOT EXISTS events_project_time ON events(project,at); CREATE INDEX IF NOT EXISTS events_session ON events(agent,session,at);",
       );
+      if (this.db.prepare("PRAGMA user_version").get().user_version < 1) {
+        this.db.exec("BEGIN IMMEDIATE");
+        try {
+          const update = this.db.prepare(
+            "UPDATE events SET summary=?,data=? WHERE id=?",
+          );
+          for (const row of this.db
+            .prepare("SELECT id,summary,data FROM events")
+            .iterate()) {
+            const summary = redactTrace(row.summary);
+            const data = JSON.stringify(redactTrace(JSON.parse(row.data)));
+            if (summary !== row.summary || data !== row.data)
+              update.run(summary, data, row.id);
+          }
+          this.db.exec("PRAGMA user_version=1; COMMIT");
+        } catch (error) {
+          this.db.exec("ROLLBACK");
+          this.db.close();
+          this.db = null;
+          throw error;
+        }
+      }
       this.recordCount = this.db
         .prepare("SELECT count(*) AS n FROM events")
         .get().n;
@@ -218,7 +241,7 @@ export class Runtime {
       throw new Error("Invalid project.");
     const id = crypto.randomUUID(),
       at = new Date().toISOString();
-    const data = JSON.stringify(event.data || {});
+    const data = JSON.stringify(redactTrace(event.data || {}, token));
     if (data.length > 65536) throw new Error("Event is too large.");
     this.storage()
       .prepare("INSERT INTO events VALUES(?,?,?,?,?,?,?,?)")
@@ -229,7 +252,7 @@ export class Runtime {
         session,
         event.kind,
         project,
-        String(event.summary || event.kind).slice(0, 2000),
+        redactTrace(String(event.summary || event.kind), token).slice(0, 2000),
         data,
       );
     client.lastActivity = at;

@@ -20,6 +20,9 @@ func TestRepositoryIdentity(t *testing.T) {
 }
 
 func TestBoundedUsefulTrace(t *testing.T) {
+	if got := trace(`curl -H "Authorization: Bearer local-plugin-token" /status`, 0); got != `curl -H "Authorization: Bearer [credential]" /status` {
+		t.Fatal("command authentication header was retained")
+	}
 	input := map[string]any{"command": "npm test", "access_token": "fixture-secret", "nested": map[string]any{"password": "fixture-password", "path": "src/app.ts"}, "output": strings.Repeat("x", 17000)}
 	value := trace(input, 0).(map[string]any)
 	if value["command"] != "npm test" || value["access_token"] != "[credential]" {

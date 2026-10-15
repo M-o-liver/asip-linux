@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -27,6 +28,7 @@ var version = "dev"
 
 var agent string
 var client = &http.Client{Timeout: 10 * time.Second}
+var bearer = regexp.MustCompile(`(?i)\bBearer\s+[A-Za-z0-9._~+/\-]+=*`)
 
 func home() string {
 	if root := os.Getenv("ASIP_PLUGIN_STATE"); root != "" {
@@ -247,6 +249,7 @@ func trace(value any, depth int) any {
 	}
 	switch typed := value.(type) {
 	case string:
+		typed = bearer.ReplaceAllString(typed, "Bearer [credential]")
 		if len(typed) > 16000 {
 			return typed[:16000] + "…"
 		}
@@ -331,7 +334,7 @@ func hook(event string) (context map[string]any) {
 	if asipTool(tool) {
 		data["asip_tool"] = true
 	}
-	for _, key := range []string{"tool_use_id", "turn_id", "agent_id", "stepIdx", "model", "modelName", "transcript_path", "transcriptPath", "workspacePaths"} {
+	for _, key := range []string{"tool_use_id", "turn_id", "agent_id", "stepIdx", "model", "modelName", "transcript_path", "transcriptPath", "workspacePaths", "executionNum", "terminationReason", "fullyIdle"} {
 		if value, exists := input[key]; exists {
 			data[key] = value
 		}
