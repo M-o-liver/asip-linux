@@ -10,10 +10,19 @@ This branch starts with an installable Beacon and native agent plugins. It repla
 
 1. Install **ASIP Beacon** for your operating system.
 2. Open Beacon and sign in with Google or GitHub.
-3. Save the plugin for your agent from Beacon, then install it through that agent's plugin manager.
+3. In Beacon, choose **Agents → Add agent**, select your agent, and save its plugin to a folder. Run the install commands shown there, then start a new agent session.
 4. Run the plugin's setup skill or ask your agent to connect ASIP. Click **Connect** in Beacon.
 
 Recording starts after the plugin finishes connecting. Signing out or disconnecting a plugin stops its recording.
+
+For **Claude Code**, select Claude Code in **Add agent** and click **Save plugin…**. Saving exports the plugin; the next step installs it. Run these commands in your terminal, using the folder Beacon shows:
+
+```sh
+claude plugin marketplace add '/path/to/asip-claude-code'
+claude plugin install asip@asip-local
+```
+
+Start a new Claude Code session, ask it to **Connect ASIP**, and click **Connect** in Beacon. Beacon should list Claude Code under **Agents**. On Windows, copy the PowerShell commands from Beacon to use the correct folder path.
 
 Codex also requires reviewing the ASIP hooks in `/hooks` before automatic recording starts. Its MCP memory tools can work before that review. This bundle uses Codex's native manifest because version 0.162.1 skips lifecycle hooks in portable Agent Plugins packages.
 

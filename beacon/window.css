@@ -62,7 +62,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 30px;
+  margin-bottom: 16px;
 }
 .account-row p {
   font-size: 12px;
@@ -84,7 +84,85 @@ button:disabled {
   padding: 6px 10px;
 }
 section {
-  margin-bottom: 28px;
+  margin-bottom: 24px;
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.section-heading h2 {
+  margin: 0;
+}
+.compact {
+  font-size: 12px;
+  padding: 7px 11px;
+}
+.primary {
+  width: 100%;
+  background: Highlight;
+  color: HighlightText;
+  border-color: transparent;
+}
+#agents {
+  border-top: 1px solid #8884;
+  padding-top: 20px;
+}
+#record-count {
+  font-size: 12px;
+  margin-bottom: 0;
+}
+dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 24px;
+  color: CanvasText;
+  background: Canvas;
+  border: 1px solid #8885;
+  border-radius: 12px;
+  box-shadow: 0 12px 48px #0003;
+}
+dialog::backdrop {
+  background: #0006;
+}
+body:has(dialog[open]) {
+  overflow: hidden;
+}
+dialog > .section-heading {
+  position: sticky;
+  top: 0;
+  background: Canvas;
+  padding-bottom: 8px;
+}
+dialog h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 24px 0 8px;
+}
+dialog p {
+  font-size: 13px;
+  margin: 8px 0 12px;
+}
+#install-command {
+  padding: 12px;
+  background: color-mix(in srgb, CanvasText 6%, Canvas);
+  border: 1px solid #8884;
+  border-radius: 6px;
+}
+#setup-error {
+  color: #c34c44;
+}
+#settings {
+  border-top: 1px solid #8884;
+}
+button:focus-visible,
+summary:focus-visible,
+pre:focus-visible {
+  outline: 2px solid Highlight;
+  outline-offset: 3px;
 }
 #error {
   color: #c34c44;

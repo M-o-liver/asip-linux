@@ -26,17 +26,20 @@
         </p>
       </section>
       <section id="account" hidden>
-        <button id="open-workspace">Open ASIP</button>
-        <button id="import-history">Import previous history</button>
-        <p id="import-result" role="status"></p>
         <div class="account-row">
           <div>
             <strong id="account-name"></strong>
             <p id="account-handle"></p>
           </div>
-          <button id="signout">Sign out</button>
         </div>
-        <h2 id="connection-state">No plugins connected</h2>
+        <button id="open-workspace" class="primary">Open ASIP</button>
+      </section>
+      <section id="agents" hidden>
+        <div class="section-heading">
+          <h2>Agents</h2>
+          <button id="add-agent" class="compact">Add agent</button>
+        </div>
+        <p id="connection-state">No agents connected</p>
         <div id="clients"></div>
         <p id="record-count"></p>
       </section>
@@ -51,16 +54,6 @@
       <section id="device" hidden>
         <p>Enter this code on GitHub:</p>
         <code id="device-code"></code>
-      </section>
-      <section id="plugins">
-        <h2>Install a plugin</h2>
-        <select id="agent" aria-label="Agent">
-          <option value="codex">Codex</option>
-          <option value="claude-code">Claude Code</option>
-          <option value="antigravity">Antigravity</option>
-        </select>
-        <button id="export">Save plugin</button>
-        <pre id="install-command"></pre>
       </section>
       <section id="connections" hidden>
         <h2>API connections</h2>
@@ -134,17 +127,52 @@
       <section id="recovery" hidden>
         <details id="recovery-details">
           <summary>Recovery</summary>
+          <button id="import-history">Import previous history</button>
+          <p id="import-result" role="status"></p>
           <button id="recovery-save">Save activity history</button>
           <div id="recovery-list"></div>
           <p>Up to ten saved histories.</p>
         </details>
       </section>
+      <details id="settings">
+        <summary>Settings</summary>
+        <label
+          ><input id="launch-at-login" type="checkbox" /> Launch at login</label
+        >
+        <button id="signout" hidden>Sign out</button>
+      </details>
       <p id="error" role="alert"></p>
-      <label
-        ><input id="launch-at-login" type="checkbox" /> Launch at login</label
-      >
       <footer id="progress"></footer>
       <button id="signin-cancel" hidden>Cancel sign-in</button>
     </main>
+    <dialog id="agent-setup" aria-labelledby="agent-setup-title">
+      <div class="section-heading">
+        <h2 id="agent-setup-title">Add an agent</h2>
+        <button id="close-agent-setup" class="compact">Close</button>
+      </div>
+      <label
+        >Agent<select id="agent">
+          <option value="codex">Codex</option>
+          <option value="claude-code">Claude Code</option>
+          <option value="antigravity">Antigravity</option>
+        </select></label
+      >
+      <h3>1. Save the plugin</h3>
+      <p>Choose a folder to keep it in.</p>
+      <button id="export">Save plugin…</button>
+      <div id="install-steps" hidden>
+        <h3 id="install-title"></h3>
+        <p id="install-shell"></p>
+        <pre id="install-command" tabindex="0"></pre>
+        <button id="copy-install" class="compact">Copy commands</button>
+        <p id="install-reload"></p>
+        <h3>3. Connect</h3>
+        <p id="install-connect"></p>
+        <p id="install-hooks" hidden>
+          Review ASIP in Codex’s /hooks to turn on automatic recording.
+        </p>
+      </div>
+      <p id="setup-error" role="alert"></p>
+    </dialog>
   </body>
 </html>

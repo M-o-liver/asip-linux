@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld("asip", {
   signOut: () => ipcRenderer.invoke("asip:signout"),
   disconnect: (agent) => ipcRenderer.invoke("asip:disconnect", agent),
   exportPlugin: (agent) => ipcRenderer.invoke("asip:export-plugin", agent),
+  copyText: (text) => ipcRenderer.invoke("asip:copy-text", text),
   onStatus: (callback) =>
     ipcRenderer.on("asip:status", (_event, status) => callback(status)),
 });

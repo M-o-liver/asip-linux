@@ -5,6 +5,7 @@ const names = {
   antigravity: "Antigravity",
 };
 let platform,
+  connectedAgents = [],
   renderedAccount = "",
   formError = "";
 function resetConnectionForm() {
@@ -27,6 +28,10 @@ function render(state) {
     ? state.account.provider + ":" + state.account.handle
     : "";
   if (accountKey !== renderedAccount) {
+    $("agent-setup").close();
+    $("install-steps").hidden = true;
+    $("install-command").textContent = "";
+    $("setup-error").textContent = "";
     resetConnectionForm();
     $("connection-details").open = false;
     $("connection-custom").hidden = true;
@@ -39,6 +44,9 @@ function render(state) {
   }
   $("signed-out").hidden = Boolean(state.account) || Boolean(state.pending);
   $("account").hidden = !state.account || Boolean(state.pending);
+  $("agents").hidden = !state.account || Boolean(state.pending);
+  $("signout").hidden = !state.account || Boolean(state.pending);
+  if (state.pending) $("agent-setup").close();
   $("request").hidden = !state.pending;
   $("connections").hidden = !state.account || Boolean(state.pending);
   $("recovery").hidden = !state.account || Boolean(state.pending);
@@ -97,11 +105,13 @@ function render(state) {
     $(id).disabled = state.signingIn || !state.providers.github;
   $("preview").hidden = state.providers.google || state.providers.github;
   if (state.account) {
+    connectedAgents = state.clients.map((client) => client.agent);
     $("account-name").textContent = state.account.name;
     $("account-handle").textContent = state.account.handle;
     $("connection-state").textContent = state.clients.length
-      ? "Connected plugins"
-      : "No plugins connected";
+      ? ""
+      : "No agents connected";
+    $("connection-state").hidden = Boolean(state.clients.length);
     $("record-count").textContent = state.clients.length
       ? state.records + " recorded events"
       : "";
@@ -222,6 +232,20 @@ $("connection-form").onsubmit = async (event) => {
 };
 $("signout").onclick = () => window.asip.signOut();
 $("open-workspace").onclick = () => window.asip.openWorkspace();
+$("add-agent").onclick = () => {
+  if ($("install-steps").hidden)
+    $("agent").value =
+      Object.keys(names).find((agent) => !connectedAgents.includes(agent)) ||
+      "codex";
+  $("agent-setup").showModal();
+};
+$("close-agent-setup").onclick = () => $("agent-setup").close();
+$("agent").onchange = () => {
+  $("install-steps").hidden = true;
+  $("install-command").textContent = "";
+  $("setup-error").textContent = "";
+  $("copy-install").textContent = "Copy commands";
+};
 $("import-history").onclick = async () => {
   $("import-history").disabled = true;
   try {
@@ -281,6 +305,9 @@ $("recovery-save").onclick = async () => {
   }
 };
 $("export").onclick = async () => {
+  $("export").disabled = true;
+  $("agent").disabled = true;
+  $("setup-error").textContent = "";
   try {
     const agent = $("agent").value,
       directory = await window.asip.exportPlugin(agent);
@@ -290,8 +317,7 @@ $("export").onclick = async () => {
         ? "'" + directory.replaceAll("'", "''") + "'"
         : "'" + directory.replaceAll("'", "'\\''") + "'";
     $("install-command").textContent =
-      (platform === "win32" ? "# PowerShell\n" : "") +
-      (agent === "codex"
+      agent === "codex"
         ? "codex plugin marketplace add " +
           quoted +
           "\ncodex plugin add asip@asip-local"
@@ -299,9 +325,33 @@ $("export").onclick = async () => {
           ? "claude plugin marketplace add " +
             quoted +
             "\nclaude plugin install asip@asip-local"
-          : "agy plugin install " + quoted);
+          : "agy plugin install " + quoted;
+    $("install-title").textContent = "2. Install in " + names[agent];
+    $("install-shell").textContent =
+      platform === "win32" ? "Run in PowerShell:" : "Run in a terminal:";
+    $("install-reload").textContent =
+      "Then start a new " + names[agent] + " session.";
+    $("install-connect").textContent =
+      "Ask " +
+      names[agent] +
+      " to “Connect ASIP”, then click Connect in Beacon.";
+    $("install-hooks").hidden = agent !== "codex";
+    $("copy-install").textContent = "Copy commands";
+    $("install-steps").hidden = false;
+    $("install-title").scrollIntoView({ block: "nearest" });
   } catch (error) {
-    $("error").textContent = error.message;
+    $("setup-error").textContent = error.message;
+  } finally {
+    $("export").disabled = false;
+    $("agent").disabled = false;
+  }
+};
+$("copy-install").onclick = async () => {
+  try {
+    await window.asip.copyText($("install-command").textContent);
+    $("copy-install").textContent = "Copied";
+  } catch (error) {
+    $("setup-error").textContent = error.message;
   }
 };
 window.asip.onStatus(render);

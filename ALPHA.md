@@ -5,7 +5,7 @@ Download Beacon from the [alpha release](https://github.com/M-o-liver/asip-linux
 ## Windows with Claude Code
 
 1. Install and open Beacon. Sign in with Google or GitHub. Use your own account; no access to the developer's computer is needed.
-2. Choose **Claude Code** in Beacon and save its plugin folder somewhere permanent, such as `C:\Users\YourName\ASIP\claude-code`.
+2. In Beacon, open **Agents → Add agent**, choose **Claude Code**, and save its plugin folder somewhere permanent, such as `C:\Users\YourName\ASIP`.
 3. Copy the installation commands shown by Beacon into PowerShell. They use Claude Code's plugin manager. Claude Code must already be installed.
 4. Start a new Claude Code session in a Git repository. Ask it to connect ASIP, then click **Connect** in Beacon.
 5. Ask: “Use ASIP to recall this project, inspect git status, and record the result.” Close that session when it finishes.

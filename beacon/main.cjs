@@ -8,6 +8,7 @@ const {
   nativeImage,
   safeStorage,
   dialog,
+  clipboard,
 } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -293,6 +294,11 @@ if (!app.requestSingleInstanceLock()) {
     tray.on("click", openWorkspace);
     ipcMain.handle("asip:open-workspace", openWorkspace);
     ipcMain.handle("asip:status", () => snapshot());
+    ipcMain.handle("asip:copy-text", (_event, text) => {
+      if (typeof text !== "string" || text.length > 12000)
+        throw new Error("Could not copy these commands.");
+      clipboard.writeText(text);
+    });
     ipcMain.handle("asip:startup", (_event, enabled) => {
       loginStartup.set(enabled);
       send();
