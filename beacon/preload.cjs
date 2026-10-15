@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("asip", {
   openWorkspace: () => ipcRenderer.invoke("asip:open-workspace"),
   startup: (enabled) => ipcRenderer.invoke("asip:startup", enabled),
   projects: () => ipcRenderer.invoke("asip:projects"),
+  importHistory: () => ipcRenderer.invoke("asip:import-history"),
   recoveryList: () => ipcRenderer.invoke("asip:recovery-list"),
   recoverySave: () => ipcRenderer.invoke("asip:recovery-save"),
   recoveryRestore: (id) => ipcRenderer.invoke("asip:recovery-restore", id),

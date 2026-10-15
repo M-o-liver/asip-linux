@@ -222,6 +222,24 @@ $("connection-form").onsubmit = async (event) => {
 };
 $("signout").onclick = () => window.asip.signOut();
 $("open-workspace").onclick = () => window.asip.openWorkspace();
+$("import-history").onclick = async () => {
+  $("import-history").disabled = true;
+  try {
+    const result = await window.asip.importHistory();
+    if (result)
+      $("import-result").textContent = result.alreadyImported
+        ? "This history is already imported."
+        : "Imported " +
+          result.projects +
+          " projects and " +
+          result.events +
+          " events.";
+  } catch (error) {
+    $("error").textContent = error.message;
+  } finally {
+    $("import-history").disabled = false;
+  }
+};
 function renderRecovery(records) {
   $("recovery-list").replaceChildren();
   for (const record of records) {

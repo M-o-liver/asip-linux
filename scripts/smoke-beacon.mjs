@@ -27,9 +27,13 @@ if (process.platform === "darwin") {
 if (process.platform === "linux" && process.argv.includes("--installed"))
   executable = "/usr/bin/asip-beacon";
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "asip-beacon-smoke-"));
-const child = spawn(executable, ["--user-data-dir=" + profile], {
-  stdio: ["ignore", "pipe", "pipe"],
-});
+const child = spawn(
+  executable,
+  ["--user-data-dir=" + profile, "--background"],
+  {
+    stdio: ["ignore", "pipe", "pipe"],
+  },
+);
 let errors = "";
 child.stderr.on("data", (chunk) => (errors += chunk));
 child.stdout.on("data", () => {});

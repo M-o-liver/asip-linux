@@ -84,7 +84,7 @@ function map(data) {
   const svg = $("map"),
     ns = "http://www.w3.org/2000/svg";
   svg.replaceChildren();
-  const projects = data.projects.slice(0, 12);
+  const projects = data.projects;
   $("map-empty").hidden = Boolean(projects.length);
   svg.hidden = !projects.length;
   $("map-count").textContent = data.projects.length + " projects";
@@ -114,6 +114,7 @@ function map(data) {
       line.setAttribute(key, value);
     const title = document.createElementNS(ns, "title");
     title.textContent =
+      relation.relation ||
       relation.sessions + " sessions shared across these projects";
     line.append(title);
     svg.append(line);
@@ -307,19 +308,19 @@ async function load() {
       state.agent = "";
       state.selected = null;
       history.replaceState({}, "", "/workspace/");
-      render({
-        account: null,
-        projects: [],
-        events: [],
-        sessions: [],
-        relationships: [],
-        connections: [],
-        directories: [],
-      });
+      document.body.classList.add("signed-out");
+      $("account").textContent = "";
+      $("projects").replaceChildren();
+      $("events").replaceChildren();
+      $("reopen").hidden = false;
+      $("error").hidden = true;
+      return;
     }
     if (!response.ok)
       throw new Error(data.error || "ASIP could not load project history.");
     if (controller !== request) return;
+    document.body.classList.remove("signed-out");
+    $("reopen").hidden = true;
     $("error").hidden = true;
     render(data);
   } catch (error) {
@@ -338,6 +339,15 @@ async function beacon() {
   }
 }
 $("beacon").onclick = beacon;
+$("reopen-workspace").onclick = async () => {
+  try {
+    const response = await fetch("reopen", { method: "POST" });
+    if (!response.ok) throw new Error("Could not reopen ASIP.");
+  } catch (error) {
+    $("error").textContent = error.message;
+    $("error").hidden = false;
+  }
+};
 $("manage-connections").onclick = beacon;
 $("refresh").onclick = load;
 $("kind").onchange = () => {

@@ -23,7 +23,7 @@ ASIP's Google desktop client and GitHub OAuth app are registered. Public client 
 
 - A tray/menu-bar Beacon with an account window, plugin export, connection status, disconnect, and sign-out.
 - A browser workspace with projects, a project map, sessions, intent/result filters, searchable history, API connections, and an evidence inspector. Map links represent actual sessions shared across projects.
-- Optional launch at login using each platform's startup mechanism.
+- Starts at login by default using each platform's startup mechanism. You can turn this off in Beacon settings.
 - A standalone compiled helper bundled with each plugin. Users do not install Python, Node, or Go.
 - Native Codex and Claude Code plugin manifests, onboarding skills, MCP tools, and lifecycle hooks.
 - An Antigravity plugin bundle using its own hook format and conversation metadata, installed and inspected through its native CLI on all three operating systems.
@@ -59,6 +59,10 @@ npm run package
 ```
 
 `npm run build:all-helpers` also compiles helpers for Windows, Linux, and macOS on x64 and arm64. Installer builds include only their own platform's helper and plugins.
+
+Launching ASIP or choosing **Open ASIP** opens the local project workspace in your browser. **Beacon settings** opens the small connection/settings window. Beacon starts in the background at login by default; an explicit opt-out is retained. An expired browser connection offers **Open ASIP** instead of displaying an empty project map.
+
+If you used the earlier ASIP workspace, choose **Import previous history** in Beacon settings and select its `memory.sqlite3` file. The import restores the project catalogue, directories, relationships, events, session metadata, and intent outcomes into the signed-in account. It preserves the original database and saves the current history as a recovery record before importing. Repeating an import does not duplicate records. Projects with no activity remain visible in the map.
 
 `npm start` runs Beacon from source after `npm run build:helper`. Use `--user-data-dir=/absolute/path` when exercising a separate development profile.
 

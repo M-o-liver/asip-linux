@@ -151,6 +151,11 @@ header p {
   font-size: 11px;
   color: var(--muted);
 }
+body.signed-out main > :not(#error):not(#reopen),
+body.signed-out #projects,
+body.signed-out .sidebar h2 {
+  display: none;
+}
 .map {
   margin-bottom: 24px;
 }
@@ -159,7 +164,6 @@ header p {
   width: 100%;
   height: auto;
   min-height: 140px;
-  max-height: 320px;
 }
 .map p {
   padding: 0 20px 18px;

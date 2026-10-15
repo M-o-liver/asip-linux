@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 function startup(app) {
+  const preference = path.join(app.getPath("userData"), "startup.json");
   const executable = process.env.APPIMAGE || app.getPath("exe");
   const file = path.join(
     process.env.XDG_CONFIG_HOME || path.join(app.getPath("home"), ".config"),
@@ -13,6 +14,11 @@ function startup(app) {
       ? { path: executable, args: ["--background"] }
       : {};
   return {
+    initialize() {
+      if (!app.isPackaged) return;
+      if (!fs.existsSync(preference)) this.set(true);
+      else if (this.enabled()) this.set(true);
+    },
     enabled() {
       if (!app.isPackaged) return false;
       return process.platform === "linux"
@@ -26,10 +32,18 @@ function startup(app) {
         throw new Error("Choose whether Beacon launches at login.");
       if (process.platform !== "linux") {
         app.setLoginItemSettings({ ...options, openAtLogin: enabled });
+        fs.mkdirSync(path.dirname(preference), { recursive: true });
+        fs.writeFileSync(preference, JSON.stringify({ enabled }), {
+          mode: 0o600,
+        });
         return;
       }
       if (!enabled) {
         fs.rmSync(file, { force: true });
+        fs.mkdirSync(path.dirname(preference), { recursive: true });
+        fs.writeFileSync(preference, JSON.stringify({ enabled }), {
+          mode: 0o600,
+        });
         return;
       }
       // Desktop Entry string escaping follows Exec argument escaping. Percent
@@ -47,6 +61,10 @@ function startup(app) {
           " --background\nTerminal=false\n",
         { mode: 0o600 },
       );
+      fs.mkdirSync(path.dirname(preference), { recursive: true });
+      fs.writeFileSync(preference, JSON.stringify({ enabled }), {
+        mode: 0o600,
+      });
     },
     background() {
       return (

@@ -3,9 +3,13 @@ import crypto from "node:crypto";
 import { ownTools } from "./runtime.mjs";
 
 export class Workspace {
-  constructor(runtime, { openBeacon = () => {} } = {}) {
+  constructor(
+    runtime,
+    { openBeacon = () => {}, openWorkspace = () => {} } = {},
+  ) {
     this.runtime = runtime;
     this.openBeacon = openBeacon;
+    this.openWorkspace = openWorkspace;
     this.tickets = new Map();
     this.sessions = new Map();
     this.assets = new Map(
@@ -81,12 +85,17 @@ export class Workspace {
       });
       return;
     }
-    if (req.method === "POST" && url.pathname === "/workspace/beacon") {
+    if (
+      req.method === "POST" &&
+      ["/workspace/beacon", "/workspace/reopen"].includes(url.pathname)
+    ) {
       if (req.headers.origin !== "http://" + this.runtime.host) {
         send(403, { error: "Open ASIP from Beacon." });
         return;
       }
-      this.openBeacon();
+      if (url.pathname === "/workspace/reopen" && this.runtime.account)
+        await this.openWorkspace();
+      else this.openBeacon();
       send(200, { opened: true });
       return;
     }
@@ -181,20 +190,31 @@ export class Workspace {
       )
       .all(restrict, scope)
       .map((row) => row.directory);
+    base.directories = [
+      ...new Set([
+        ...base.directories,
+        ...base.projects
+          .filter((entry) => !project || entry.id === project)
+          .flatMap((entry) => entry.roots || []),
+      ]),
+    ];
     base.relationships = db
       .prepare(
         "WITH memberships AS (SELECT DISTINCT agent,session,project FROM events WHERE project IS NOT NULL) SELECT a.project AS source,b.project AS target,COUNT(*) AS sessions FROM memberships a JOIN memberships b ON a.agent=b.agent AND a.session=b.session AND a.project<b.project GROUP BY a.project,b.project LIMIT 100",
       )
       .all();
+    base.relationships.push(
+      ...db.prepare("SELECT source,target,relation FROM project_links").all(),
+    );
     const category =
       kind === "work"
-        ? " AND kind IN ('intent','result','evidence','Stop','tool_succeeded','api_result','api_failed','failed','unresolved','api_unresolved','PostToolUseFailure','StopFailure')"
+        ? " AND (kind IN ('intent','result','evidence','Stop','tool_succeeded','api_result','api_failed','failed','unresolved','api_unresolved','PostToolUseFailure','StopFailure') OR kind LIKE 'intent.%' OR kind LIKE 'system.%' OR kind LIKE 'verification.%')"
         : kind === "intent"
-          ? " AND kind='intent'"
+          ? " AND (kind='intent' OR kind='intent.started')"
           : kind === "results"
-            ? " AND kind IN ('result','evidence','Stop','tool_succeeded','api_result','api_failed','failed')"
+            ? " AND kind IN ('result','evidence','Stop','tool_succeeded','api_result','api_failed','failed','intent.finished','intent.failed','system.verify','verification.passed')"
             : kind === "unresolved"
-              ? " AND kind IN ('unresolved','api_unresolved')"
+              ? " AND kind IN ('unresolved','api_unresolved','intent.held')"
               : "";
     const offset = Math.max(
       0,

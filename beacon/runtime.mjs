@@ -188,6 +188,9 @@ export class Runtime {
       this.db.exec(
         "CREATE INDEX IF NOT EXISTS events_project_time ON events(project,at); CREATE INDEX IF NOT EXISTS events_session ON events(agent,session,at);",
       );
+      this.db.exec(
+        "CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,name TEXT NOT NULL,description TEXT NOT NULL,repository TEXT NOT NULL,created_at TEXT NOT NULL,roots TEXT NOT NULL); CREATE TABLE IF NOT EXISTS project_links(source TEXT NOT NULL,target TEXT NOT NULL,relation TEXT NOT NULL,PRIMARY KEY(source,target,relation)); CREATE TABLE IF NOT EXISTS session_details(agent TEXT NOT NULL,session TEXT NOT NULL,details TEXT NOT NULL,PRIMARY KEY(agent,session));",
+      );
       if (this.db.prepare("PRAGMA user_version").get().user_version < 1) {
         this.db.exec("BEGIN IMMEDIATE");
         try {
@@ -283,13 +286,14 @@ export class Runtime {
     if (!this.db && !fs.existsSync(this.databasePath())) return [];
     return this.storage()
       .prepare(
-        "SELECT project AS id,COUNT(*) AS events,COUNT(DISTINCT agent || char(0) || session) AS sessions,group_concat(DISTINCT agent) AS agents,MAX(at) AS lastActivity FROM events WHERE project IS NOT NULL GROUP BY project ORDER BY MAX(at) DESC",
+        "WITH known AS (SELECT project AS id FROM events WHERE project IS NOT NULL UNION SELECT id FROM projects) SELECT known.id,p.name,p.description,p.repository,p.roots,COUNT(e.id) AS events,COUNT(DISTINCT e.agent || char(0) || e.session) AS sessions,group_concat(DISTINCT e.agent) AS agents,MAX(e.at) AS lastActivity FROM known LEFT JOIN projects p ON p.id=known.id LEFT JOIN events e ON e.project=known.id GROUP BY known.id ORDER BY COALESCE(MAX(e.at),p.created_at) DESC,known.id",
       )
       .all()
       .map((row) => ({
         ...row,
-        name: row.id.split("/").filter(Boolean).at(-1),
-        agents: row.agents.split(","),
+        name: row.name || row.id.split("/").filter(Boolean).at(-1),
+        roots: JSON.parse(row.roots || "[]"),
+        agents: row.agents ? row.agents.split(",") : [],
       }));
   }
 
@@ -418,6 +422,11 @@ export class Runtime {
       };
       if (req.headers.host !== this.host) {
         send(403, { error: "Use the installed ASIP plugin." });
+        return;
+      }
+      if (req.method === "GET" && req.url === "/" && this.workspace) {
+        res.writeHead(302, { Location: "/workspace/" });
+        res.end();
         return;
       }
       if (req.url.startsWith("/workspace/") && this.workspace) {

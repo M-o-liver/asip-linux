@@ -182,12 +182,16 @@ function show() {
 }
 
 async function openWorkspace() {
-  if (!runtime?.account || !runtime?.workspace) {
+  if (!runtime?.server?.listening || !runtime?.workspace) {
     show();
     return;
   }
   try {
-    await shell.openExternal(runtime.workspace.openURL());
+    await shell.openExternal(
+      runtime.account
+        ? runtime.workspace.openURL()
+        : "http://" + runtime.host + "/workspace/",
+    );
   } catch (error) {
     lastError = error.message;
     show();
@@ -198,14 +202,23 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else
   app.whenReady().then(async () => {
-    app.on("second-instance", (_event, argv) =>
-      argv.includes("--open-workspace") ? openWorkspace() : show(),
-    );
+    app.on("second-instance", (_event, argv) => {
+      if (argv.includes("--background")) return;
+      if (argv.includes("--beacon-settings")) show();
+      else openWorkspace();
+    });
+    try {
+      loginStartup.initialize();
+    } catch (error) {
+      lastError = "Could not enable launch at login: " + error.message;
+    }
     const { Runtime } = await import("./runtime.mjs");
     const { Identity } = await import("./identity.mjs");
     const { Connections } = await import("./connections.mjs");
     const { Recovery } = await import("./recovery.mjs");
     const { Workspace } = await import("./workspace.mjs");
+    const { importHistory, previousHistoryPath } =
+      await import("./import-history.mjs");
     const { rebindAntigravity } = await import("../scripts/plugins.mjs");
     const configPath = path.join(__dirname, "signin.json");
     const config = fs.existsSync(configPath)
@@ -236,7 +249,7 @@ if (!app.requestSingleInstanceLock()) {
       },
     });
     recovery = new Recovery(runtime);
-    new Workspace(runtime, { openBeacon: show });
+    new Workspace(runtime, { openBeacon: show, openWorkspace });
     identity = new Identity(config, {
       openBrowser: (url) => shell.openExternal(url),
       onCode: (code) => {
@@ -286,6 +299,30 @@ if (!app.requestSingleInstanceLock()) {
       return snapshot();
     });
     ipcMain.handle("asip:projects", () => runtime.projects());
+    ipcMain.handle("asip:import-history", async () => {
+      if (!runtime.account)
+        throw new Error("Sign in before importing history.");
+      const owner = runtime.account.accountId;
+      const selection = await dialog.showOpenDialog(window, {
+        title: "Import previous ASIP history",
+        defaultPath: previousHistoryPath(),
+        filters: [
+          {
+            name: "ASIP workspace database",
+            extensions: ["sqlite3", "sqlite", "db"],
+          },
+        ],
+        properties: ["openFile"],
+      });
+      if (selection.canceled) return null;
+      if (runtime.account?.accountId !== owner)
+        throw new Error("The ASIP account changed.");
+      const result = importHistory(runtime, selection.filePaths[0], {
+        checkpoint: () => recovery.save("Before history import"),
+      });
+      send();
+      return result;
+    });
     ipcMain.handle("asip:recovery-list", () => recovery.list());
     ipcMain.handle("asip:recovery-save", () => recovery.save());
     ipcMain.handle("asip:recovery-restore", async (_event, id) => {
@@ -450,8 +487,8 @@ if (!app.requestSingleInstanceLock()) {
       }
       send();
     }, 2000).unref();
-    if (process.argv.includes("--open-workspace")) openWorkspace();
-    else if (!loginStartup.background()) show();
+    if (process.argv.includes("--beacon-settings")) show();
+    else if (!loginStartup.background()) openWorkspace();
   });
 app.on("window-all-closed", () => {});
 app.on("before-quit", () => {

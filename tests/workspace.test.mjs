@@ -12,12 +12,20 @@ test("workspace opens through Beacon, shows actual projects, and invalidates bro
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-workspace-"));
   const runtime = new Runtime(home);
   let opened = 0;
-  const workspace = new Workspace(runtime, { openBeacon: () => opened++ });
+  let reopened = 0;
+  const workspace = new Workspace(runtime, {
+    openBeacon: () => opened++,
+    openWorkspace: () => reopened++,
+  });
   t.after(async () => {
     await runtime.close();
     fs.rmSync(home, { recursive: true, force: true });
   });
   const endpoint = await runtime.listen();
+  const root = await fetch(endpoint + "/", { redirect: "manual" });
+  assert.equal(root.status, 302);
+  assert.equal(root.headers.get("location"), "/workspace/");
+  assert.equal((await fetch(endpoint + "/workspace/")).status, 200);
   assert.throws(() => workspace.openURL(), /Sign in/);
   assert.equal((await fetch(endpoint + "/workspace/data")).status, 401);
   assert.equal(fs.existsSync(path.join(home, "accounts")), false);
@@ -28,6 +36,26 @@ test("workspace opens through Beacon, shows actual projects, and invalidates bro
     handle: "fixture",
   };
   runtime.signIn(account);
+  assert.equal(
+    (
+      await fetch(endpoint + "/workspace/reopen", {
+        method: "POST",
+        headers: { Origin: "https://elsewhere.test" },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(
+    (
+      await fetch(endpoint + "/workspace/reopen", {
+        method: "POST",
+        headers: { Origin: endpoint },
+      })
+    ).status,
+    200,
+  );
+  assert.equal(reopened, 1);
+  assert.equal((await fetch(endpoint + "/workspace/data")).status, 401);
   const verifier = crypto.randomBytes(32).toString("hex");
   const pending = runtime.requestSignIn({
     agent: "codex",
