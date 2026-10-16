@@ -37,6 +37,16 @@ export class Runtime {
   }
 
   status() {
+    const connected = new Map();
+    for (const client of this.clients.values()) {
+      const previous = connected.get(client.agent);
+      if (
+        !previous ||
+        (client.lastActivity || client.connectedAt) >=
+          (previous.lastActivity || previous.connectedAt)
+      )
+        connected.set(client.agent, client);
+    }
     let records = 0;
     if (this.account && fs.existsSync(this.databasePath())) {
       this.storage();
@@ -51,7 +61,7 @@ export class Runtime {
           }
         : null,
       recording: Boolean(this.account && this.clients.size),
-      clients: [...this.clients.values()].map((c) => ({
+      clients: [...connected.values()].map((c) => ({
         agent: c.agent,
         connectedAt: c.connectedAt,
         lastActivity: c.lastActivity,
@@ -166,7 +176,9 @@ export class Runtime {
     )
       throw new Error("Plugin sign-in expired. Try again.");
     if (!request.token) return { state: "pending" };
-    this.disconnect(request.agent);
+    // Native agents can start several MCP helpers at once. Each approved
+    // handshake remains valid, including when polls and token-file writes
+    // finish in different orders. Disconnect explicitly revokes every token.
     this.clients.set(hash(request.token), request.client);
     this.onConnectionChange();
     this.requests.delete(id);

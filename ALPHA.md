@@ -1,6 +1,6 @@
 # ASIP alpha test
 
-Download Beacon from the [0.4 alpha release](https://github.com/M-o-liver/asip-linux/releases/tag/v0.4.0-alpha.3). Windows users should choose **ASIP.Beacon.Setup.0.4.0.exe**. Mac users should choose the **arm64** DMG for Apple Silicon or the **x64** DMG for Intel. These installers do not yet have publisher signatures.
+Download Beacon from the [0.4 alpha release](https://github.com/M-o-liver/asip-linux/releases/tag/v0.4.0-alpha.4). Windows users should choose **ASIP.Beacon.Setup.0.4.0.exe**. Mac users should choose the **arm64** DMG for Apple Silicon or the **x64** DMG for Intel. These installers do not yet have publisher signatures.
 
 ## Windows with Claude Code
 

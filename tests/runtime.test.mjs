@@ -187,6 +187,36 @@ test("an approved request abandoned before polling does not block another agent"
   assert.equal(runtime.pollSignIn(next.requestId, "two").agent, "claude-code");
 });
 
+test("simultaneous MCP starts keep approved connections valid regardless of poll order", (t) => {
+  const { runtime } = setup(t);
+  runtime.signIn(account);
+  const first = runtime.requestSignIn({
+    agent: "codex",
+    challenge: hash("first"),
+  });
+  const second = runtime.requestSignIn({
+    agent: "codex",
+    challenge: hash("second"),
+  });
+  runtime.completeSignIn(first.requestId, account);
+  runtime.completeSignIn(second.requestId, account);
+  const secondToken = runtime.pollSignIn(second.requestId, "second").token;
+  const firstToken = runtime.pollSignIn(first.requestId, "first").token;
+  const secondResult = runtime.record(secondToken, event);
+  const firstResult = runtime.record(firstToken, event);
+  // Also check state reloaded from the encrypted desktop session.
+  runtime.clients = new Map(JSON.parse(JSON.stringify([...runtime.clients])));
+  assert.equal(runtime.status().clients.length, 1);
+  assert.equal(
+    runtime.status().clients[0].lastActivity,
+    [secondResult.at, firstResult.at].sort().at(-1),
+  );
+  assert.equal(runtime.status().records, 2);
+  runtime.disconnect("codex");
+  assert.throws(() => runtime.record(firstToken, event), /Sign in/);
+  assert.throws(() => runtime.record(secondToken, event), /Sign in/);
+});
+
 test("record attribution comes from the connected plugin; logout and disconnect stop it", (t) => {
   const { runtime } = setup(t);
   runtime.signIn(account);
