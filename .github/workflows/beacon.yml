@@ -2,6 +2,7 @@ name: Beacon and plugins
 on:
   push:
     branches: [main]
+    tags: ["v0.*"]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -59,3 +60,21 @@ jobs:
             artifacts/*.zip
             build/qualification.json
           if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v0.')
+    needs: native
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-builds
+      - run: node scripts/publish-release.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}

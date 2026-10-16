@@ -4,7 +4,7 @@ ASIP keeps project history across Codex, Claude Code, and Antigravity.
 
 This branch starts with an installable Beacon and native agent plugins. It replaces the earlier daemon-based prototype. It is an alpha, not a completed release.
 
-The 0.4 installation flow below is available in this branch's [native build artifacts](https://github.com/M-o-liver/asip-linux/actions/workflows/beacon.yml). The [previous alpha release](https://github.com/M-o-liver/asip-linux/releases/tag/v0.3.1-alpha.2) has the older Beacon interface. [Installation and test guide](ALPHA.md).
+[Download ASIP 0.4 alpha](https://github.com/M-o-liver/asip-linux/releases/tag/v0.4.0-alpha.1) · [Installation and test guide](ALPHA.md).
 
 ## Install and connect
 
@@ -71,6 +71,8 @@ If you used the earlier ASIP workspace, choose **Import previous history** in Be
 `npm start` runs Beacon from source after `npm run build:helper`. Use `--user-data-dir=/absolute/path` when exercising a separate development profile.
 
 The CI workflow runs connection and OAuth fixture tests, installs the Codex and Claude plugins into disposable runner profiles, and builds native installers on Windows, Linux, and both Apple Silicon and Intel Macs. These checks do not verify a real provider login.
+
+Alpha tags matching the application version, such as `v0.4.0-alpha.1`, also publish the installers, native qualification records, and SHA-256 checksums after all four native jobs pass. Release publishing uses the build's repository token; it does not require a personal API credential.
 
 ## Current limits
 
