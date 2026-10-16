@@ -1,1 +1,0 @@
-"""ASIP command-line interface."""

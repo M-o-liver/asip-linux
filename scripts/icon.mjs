@@ -1,0 +1,129 @@
+import fs from "node:fs";
+import zlib from "node:zlib";
+
+// A simple connected-node mark. Generate the raster needed by native trays.
+const size = 512,
+  pixels = Buffer.alloc(size * (size * 4 + 1));
+const nodes = [
+  [160, 156],
+  [352, 156],
+  [256, 352],
+];
+function distance(x, y, a, b) {
+  const dx = b[0] - a[0],
+    dy = b[1] - a[1];
+  const t = Math.max(
+    0,
+    Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy)),
+  );
+  return Math.hypot(x - a[0] - t * dx, y - a[1] - t * dy);
+}
+function paint(background) {
+  for (let y = 0; y < size; y++)
+    for (let x = 0; x < size; x++) {
+      const offset = y * (size * 4 + 1) + 1 + x * 4;
+      const ink =
+        nodes.some((n) => Math.hypot(x - n[0], y - n[1]) < 44) ||
+        nodes.some((n, i) => distance(x, y, n, nodes[(i + 1) % 3]) < 12);
+      const radius = Math.hypot(
+        Math.max(0, Math.abs(x - 256) - 172),
+        Math.max(0, Math.abs(y - 256) - 172),
+      );
+      const color = ink
+        ? [255, 255, 255, 255]
+        : radius < 76
+          ? [...background, 255]
+          : [0, 0, 0, 0];
+      color.forEach((c, i) => (pixels[offset + i] = c));
+    }
+}
+function crc(buffer) {
+  let value = 0xffffffff;
+  for (const byte of buffer) {
+    value ^= byte;
+    for (let i = 0; i < 8; i++)
+      value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+  }
+  return (value ^ 0xffffffff) >>> 0;
+}
+function chunk(type, data) {
+  const tag = Buffer.from(type),
+    size = Buffer.alloc(4),
+    checksum = Buffer.alloc(4);
+  size.writeUInt32BE(data.length);
+  checksum.writeUInt32BE(crc(Buffer.concat([tag, data])));
+  return Buffer.concat([size, tag, data, checksum]);
+}
+const header = Buffer.alloc(13);
+header.writeUInt32BE(size, 0);
+header.writeUInt32BE(size, 4);
+header[8] = 8;
+header[9] = 6;
+for (const [name, color] of Object.entries({
+  icon: [38, 67, 137],
+  inactive: [91, 99, 111],
+  ready: [31, 125, 81],
+  active: [38, 102, 220],
+  attention: [166, 94, 12],
+})) {
+  paint(color);
+  fs.writeFileSync(
+    new URL("../beacon/" + name + ".png", import.meta.url),
+    Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      chunk("IHDR", header),
+      chunk("IDAT", zlib.deflateSync(pixels)),
+      chunk("IEND", Buffer.alloc(0)),
+    ]),
+  );
+}
+
+// Monochrome menu-bar variants of trayTemplate.svg. Supersampling preserves
+// the thin graph edges at normal and retina densities without a build dependency.
+for (const [dimension, suffix, density] of [
+  [22, "", 2835],
+  [44, "@2x", 5669],
+]) {
+  const data = Buffer.alloc(dimension * (dimension * 4 + 1));
+  const points = [
+    [5, 5],
+    [19, 5],
+    [12, 19],
+  ];
+  for (let y = 0; y < dimension; y++)
+    for (let x = 0; x < dimension; x++) {
+      let covered = 0;
+      for (let j = 0; j < 4; j++)
+        for (let i = 0; i < 4; i++) {
+          const px = ((x + (i + 0.5) / 4) * 24) / dimension,
+            py = ((y + (j + 0.5) / 4) * 24) / dimension;
+          if (
+            points.some((n) => Math.hypot(px - n[0], py - n[1]) < 3) ||
+            points.some((n, k) => distance(px, py, n, points[(k + 1) % 3]) < 1)
+          )
+            covered++;
+        }
+      data[y * (dimension * 4 + 1) + 1 + x * 4 + 3] = Math.round(
+        (covered / 16) * 255,
+      );
+    }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(dimension, 0);
+  ihdr.writeUInt32BE(dimension, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const phys = Buffer.alloc(9);
+  phys.writeUInt32BE(density, 0);
+  phys.writeUInt32BE(density, 4);
+  phys[8] = 1;
+  fs.writeFileSync(
+    new URL("../beacon/trayTemplate" + suffix + ".png", import.meta.url),
+    Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      chunk("IHDR", ihdr),
+      chunk("pHYs", phys),
+      chunk("IDAT", zlib.deflateSync(data)),
+      chunk("IEND", Buffer.alloc(0)),
+    ]),
+  );
+}

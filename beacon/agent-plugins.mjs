@@ -1,0 +1,208 @@
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { rebindAntigravity } from "../scripts/plugins.mjs";
+
+const execute = promisify(execFile);
+export const agents = {
+  codex: { name: "Codex", command: "codex" },
+  "claude-code": { name: "Claude Code", command: "claude" },
+  antigravity: { name: "Antigravity", command: "agy" },
+};
+
+export function findAgentCommand(
+  agent,
+  { platform = process.platform, env = process.env, home = os.homedir() } = {},
+) {
+  if (!agents[agent]) throw new Error("Choose a supported agent.");
+  const directories = [
+    ...(env.PATH || "").split(platform === "win32" ? ";" : ":"),
+    path.join(home, ".local", "bin"),
+    path.join(home, ".npm-global", "bin"),
+    ...(platform === "win32"
+      ? [
+          path.join(
+            env.LOCALAPPDATA || path.join(home, "AppData", "Local"),
+            "agy",
+            "bin",
+          ),
+          env.APPDATA && path.join(env.APPDATA, "npm"),
+        ]
+      : ["/opt/homebrew/bin", "/usr/local/bin"]),
+  ].filter(Boolean);
+  for (const directory of directories)
+    for (const suffix of platform === "win32"
+      ? [".exe", ".cmd", ".bat"]
+      : [""]) {
+      const file = path.join(directory, agents[agent].command + suffix);
+      try {
+        fs.accessSync(
+          file,
+          platform === "win32" ? fs.constants.F_OK : fs.constants.X_OK,
+        );
+        if (fs.statSync(file).isFile()) return file;
+      } catch {}
+    }
+  return null;
+}
+
+// Arguments remain data, including paths with spaces and shell punctuation.
+// PowerShell invokes npm's Windows .cmd wrappers without assembling a command.
+export async function runAgentCommand(
+  file,
+  args,
+  { platform = process.platform, env = process.env } = {},
+) {
+  const options = {
+    timeout: 90000,
+    maxBuffer: 1024 * 1024,
+    windowsHide: true,
+    env,
+  };
+  if (platform === "win32" && /\.(cmd|bat)$/i.test(file))
+    return execute(
+      "powershell.exe",
+      [
+        "-NoLogo",
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        "$nativeArgs = ConvertFrom-Json $env:ASIP_INSTALL_ARGS; & $env:ASIP_INSTALL_CLI @nativeArgs; exit $LASTEXITCODE",
+      ],
+      {
+        ...options,
+        env: {
+          ...env,
+          ASIP_INSTALL_CLI: file,
+          ASIP_INSTALL_ARGS: JSON.stringify(args),
+        },
+      },
+    );
+  return execute(file, args, options);
+}
+
+export class AgentPlugins {
+  constructor({
+    home,
+    source,
+    target = process.platform + "-" + process.arch,
+    find = findAgentCommand,
+    run = runAgentCommand,
+  }) {
+    Object.assign(this, { home, source, target, find, run });
+    this.busy = new Set();
+    this.receipts = path.join(home, "plugin-installs.json");
+  }
+  directory(agent) {
+    if (!agents[agent]) throw new Error("Choose a supported agent.");
+    return path.join(this.home, "plugins", "asip-" + agent);
+  }
+  prepare() {
+    for (const agent of Object.keys(agents)) {
+      const destination = this.directory(agent);
+      const staging = destination + ".new";
+      fs.rmSync(staging, { recursive: true, force: true });
+      fs.mkdirSync(path.dirname(staging), { recursive: true });
+      fs.cpSync(path.join(this.source, this.target, "asip-" + agent), staging, {
+        recursive: true,
+      });
+      // Absolute Antigravity commands must name the final, durable directory.
+      if (agent === "antigravity") rebindAntigravity(staging, destination);
+      // Provider caches are independent. Keep the managed source path stable
+      // across Beacon upgrades so existing marketplace registrations still work.
+      const previous = destination + ".previous";
+      fs.rmSync(previous, { recursive: true, force: true });
+      if (fs.existsSync(destination)) fs.renameSync(destination, previous);
+      try {
+        fs.renameSync(staging, destination);
+      } catch (error) {
+        if (fs.existsSync(previous)) fs.renameSync(previous, destination);
+        throw error;
+      }
+      fs.rmSync(previous, { recursive: true, force: true });
+    }
+  }
+  saved() {
+    try {
+      return JSON.parse(fs.readFileSync(this.receipts, "utf8"));
+    } catch {
+      return {};
+    }
+  }
+  list() {
+    const receipts = this.saved();
+    return Object.entries(agents).map(([id, agent]) => ({
+      id,
+      name: agent.name,
+      directory: this.directory(id),
+      available: Boolean(this.find(id)),
+      installing: this.busy.has(id),
+      addedAt: receipts[id]?.at || null,
+    }));
+  }
+  async install(agent) {
+    const directory = this.directory(agent);
+    if (this.busy.has(agent))
+      throw new Error("Installation is already running.");
+    const file = this.find(agent);
+    if (!file)
+      throw new Error(
+        "ASIP could not find " +
+          agents[agent].name +
+          "’s command-line installer. Use its plugin manager with the ASIP folder below.",
+      );
+    this.busy.add(agent);
+    try {
+      const commands =
+        agent === "antigravity"
+          ? [["plugin", "install", directory]]
+          : [
+              ["plugin", "marketplace", "add", directory],
+              ["plugin", agent === "codex" ? "add" : "install", "asip@asip"],
+            ];
+      for (const args of commands) await this.run(file, args);
+      if (agent !== "antigravity") {
+        const { stdout } = await this.run(file, ["plugin", "list", "--json"]);
+        const listing = JSON.parse(stdout);
+        const installed = Array.isArray(listing)
+          ? listing
+          : listing.installed || [];
+        if (
+          installed.some(
+            (entry) => (entry.pluginId || entry.id) === "asip@asip-local",
+          )
+        )
+          await this.run(file, [
+            "plugin",
+            agent === "codex" ? "remove" : "uninstall",
+            "asip@asip-local",
+          ]);
+      }
+      const receipts = this.saved();
+      receipts[agent] = { at: new Date().toISOString() };
+      fs.writeFileSync(this.receipts, JSON.stringify(receipts), {
+        mode: 0o600,
+      });
+      return {
+        agent,
+        directory,
+        message:
+          agent === "codex"
+            ? "Added to Codex. Review ASIP in /hooks for automatic recording, then open a new session."
+            : "Added to " +
+              agents[agent].name +
+              ". Open a new session; ASIP sign-in will appear automatically.",
+      };
+    } catch (error) {
+      throw new Error(
+        (error.stderr || error.message || "Installation failed.")
+          .trim()
+          .slice(-1600),
+      );
+    } finally {
+      this.busy.delete(agent);
+    }
+  }
+}
