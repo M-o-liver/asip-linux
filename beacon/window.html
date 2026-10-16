@@ -11,166 +11,336 @@
     <script defer src="window.js"></script>
   </head>
   <body>
-    <header>
-      <img src="icon.png" alt="" />
-      <h1>ASIP</h1>
-    </header>
-    <main>
-      <section id="signed-out">
-        <h2>Sign in</h2>
-        <div class="buttons">
-          <button id="google">Google</button><button id="github">GitHub</button>
+    <svg class="symbols" aria-hidden="true">
+      <defs>
+        <symbol id="i-overview" viewBox="0 0 24 24">
+          <rect x="3" y="3" width="7" height="7" rx="1.5" />
+          <rect x="14" y="3" width="7" height="7" rx="1.5" />
+          <rect x="3" y="14" width="7" height="7" rx="1.5" />
+          <rect x="14" y="14" width="7" height="7" rx="1.5" />
+        </symbol>
+        <symbol id="i-agents" viewBox="0 0 24 24">
+          <path d="m8 5-6 7 6 7m8-14 6 7-6 7m-3-14-2 14" />
+        </symbol>
+        <symbol id="i-key" viewBox="0 0 24 24">
+          <circle cx="8" cy="9" r="5" />
+          <path d="m12 13 8 8m-3-3 3-3m-6 0 3-3" />
+        </symbol>
+        <symbol id="i-recovery" viewBox="0 0 24 24">
+          <path d="M4 7v5h5M4 12a8 8 0 1 1 2 6" />
+          <path d="M12 7v5l3 2" />
+        </symbol>
+        <symbol id="i-settings" viewBox="0 0 24 24">
+          <path
+            d="M12 3v3m0 12v3M3 12h3m12 0h3M5.6 5.6l2.1 2.1m8.6 8.6 2.1 2.1m0-12.8-2.1 2.1m-8.6 8.6-2.1 2.1"
+          />
+          <circle cx="12" cy="12" r="5" />
+        </symbol>
+        <symbol id="i-arrow" viewBox="0 0 24 24">
+          <path d="M5 19 19 5M5 5h14v14" />
+        </symbol>
+        <symbol id="i-folder" viewBox="0 0 24 24">
+          <path
+            d="M3 7V5a2 2 0 0 1 2-2h5l3 4h6a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"
+          />
+        </symbol>
+        <symbol id="i-copy" viewBox="0 0 24 24">
+          <rect x="8" y="8" width="12" height="13" rx="2" />
+          <path d="M15 8V3H3v13h5" />
+        </symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24">
+          <path d="M12 5v14M5 12h14" />
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+          <path d="m4 12 5 5L20 6" />
+        </symbol>
+        <symbol id="i-expand" viewBox="0 0 24 24">
+          <path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" />
+        </symbol>
+        <symbol id="i-close" viewBox="0 0 24 24">
+          <path d="m6 6 12 12M6 18 18 6" />
+        </symbol>
+        <symbol id="i-codex" viewBox="0 0 24 24">
+          <path d="m7 5-5 7 5 7m10-14 5 7-5 7m-4-13-2 12" />
+        </symbol>
+        <symbol id="i-claude-code" viewBox="0 0 24 24">
+          <path
+            d="m12 2 1 7 5-5-3 6 7 1-7 2 5 5-6-3-1 7-2-7-5 5 3-6-7-1 7-2-5-5 6 3Z"
+          />
+        </symbol>
+        <symbol id="i-antigravity" viewBox="0 0 24 24">
+          <path d="m3 19 9-15 9 15-9-5-9 5Z" />
+        </symbol>
+      </defs>
+    </svg>
+    <aside class="sidebar">
+      <div class="brand">
+        <img src="icon.png" alt="" />
+        <div><strong>ASIP</strong><span>Beacon</span></div>
+      </div>
+      <nav aria-label="Beacon">
+        <button class="nav-item" data-nav="overview" title="Overview">
+          <svg aria-hidden="true"><use href="#i-overview" /></svg
+          ><span>Overview</span></button
+        ><button class="nav-item" data-nav="agents" title="Agents">
+          <svg aria-hidden="true"><use href="#i-agents" /></svg
+          ><span>Agents</span></button
+        ><button
+          class="nav-item"
+          data-nav="connections"
+          title="API connections"
+        >
+          <svg aria-hidden="true"><use href="#i-key" /></svg
+          ><span>API connections</span></button
+        ><button class="nav-item" data-nav="recovery" title="Recovery">
+          <svg aria-hidden="true"><use href="#i-recovery" /></svg
+          ><span>Recovery</span></button
+        ><button class="nav-item" data-nav="settings" title="Settings">
+          <svg aria-hidden="true"><use href="#i-settings" /></svg
+          ><span>Settings</span>
+        </button>
+      </nav>
+      <div class="sidebar-status">
+        <span class="status-dot"></span
+        ><span id="sidebar-status">Starting</span>
+      </div>
+    </aside>
+    <div class="application">
+      <header class="topbar">
+        <div class="page-label" id="page-label">Overview</div>
+        <div class="window-actions">
+          <button
+            class="icon-button"
+            id="expand-window"
+            aria-label="Open full window"
+            title="Open full window"
+          >
+            <svg aria-hidden="true"><use href="#i-expand" /></svg></button
+          ><button
+            class="icon-button"
+            id="hide-window"
+            aria-label="Hide Beacon"
+            title="Hide Beacon"
+          >
+            <svg aria-hidden="true"><use href="#i-close" /></svg>
+          </button>
         </div>
-        <p id="preview" hidden>
-          Sign-in is not configured in this preview build.
-        </p>
-      </section>
-      <section id="account" hidden>
-        <div class="account-row">
-          <div>
-            <strong id="account-name"></strong>
-            <p id="account-handle"></p>
+      </header>
+      <main>
+        <section id="request" class="request-banner" hidden>
+          <div class="request-icon">
+            <svg aria-hidden="true"><use href="#i-agents" /></svg>
           </div>
-        </div>
-        <button id="open-workspace" class="primary">Open ASIP</button>
-      </section>
-      <section id="agents" hidden>
-        <div class="section-heading">
-          <h2>Agents</h2>
-          <button id="add-agent" class="compact">Add agent</button>
-        </div>
-        <p id="connection-state">No agents connected</p>
-        <div id="clients"></div>
-        <p id="record-count"></p>
-      </section>
-      <section id="request" hidden>
-        <h2 id="request-title"></h2>
-        <p id="request-account"></p>
-        <div class="buttons">
-          <button id="connect">Connect</button
-          ><button id="cancel">Cancel</button>
-        </div>
-      </section>
-      <section id="device" hidden>
-        <p>Enter this code on GitHub:</p>
-        <code id="device-code"></code>
-      </section>
-      <section id="connections" hidden>
-        <h2>API connections</h2>
-        <div id="connection-list"></div>
-        <details id="connection-details">
-          <summary>Add connection</summary>
-          <form id="connection-form">
-            <label
-              >Name<input
-                id="connection-name"
-                placeholder="openai.work"
-                required
-                pattern="[a-z][a-z0-9._-]{1,79}"
-                autocomplete="off"
-            /></label>
-            <label
-              >Provider<select id="connection-provider">
-                <option value="openai">OpenAI</option>
-                <option value="anthropic">Anthropic</option>
-                <option value="gemini">Google Gemini</option>
-                <option value="github">GitHub</option>
-                <option value="custom">Other API</option>
-              </select></label
-            >
-            <div id="connection-custom" hidden>
-              <label
-                >API origin<input
-                  id="connection-origin"
-                  placeholder="https://api.example.com"
-                  type="url"
-              /></label>
-              <label
-                >Authentication header<input
-                  id="connection-header"
-                  value="Authorization"
-              /></label>
+          <div>
+            <h2 id="request-title"></h2>
+            <p id="request-account"></p>
+            <div class="buttons">
+              <button id="connect" class="primary">Connect</button
+              ><button id="cancel" class="secondary">Cancel</button>
             </div>
-            <label id="connection-credential-label"
-              >API key or token<input
-                id="connection-credential"
-                type="password"
-                required
-                autocomplete="off"
-            /></label>
-            <div id="connection-github" hidden>
+          </div>
+        </section>
+        <section class="page" data-page="overview" id="overview">
+          <div class="page-heading">
+            <h1 id="overview-title">Beacon</h1>
+            <p id="overview-caption">Connect your agents to ASIP.</p>
+          </div>
+          <section id="signed-out" class="surface">
+            <h2>Sign in to ASIP</h2>
+            <div class="buttons">
+              <button id="google" class="provider-button">Google</button
+              ><button id="github" class="provider-button">GitHub</button>
+            </div>
+            <p id="preview" hidden>Sign-in is not configured in this build.</p>
+          </section>
+          <section id="account" hidden>
+            <div class="workspace-card">
+              <div class="workspace-icon">
+                <svg aria-hidden="true"><use href="#i-overview" /></svg>
+              </div>
+              <div>
+                <h2>Your projects</h2>
+                <p id="project-count">Project history and agent activity</p>
+              </div>
+              <button id="open-workspace" class="primary">
+                Open ASIP <svg aria-hidden="true"><use href="#i-arrow" /></svg>
+              </button>
+            </div>
+            <div class="metrics">
+              <div>
+                <span>Projects</span><strong id="metric-projects">0</strong>
+              </div>
+              <div>
+                <span>Agents</span><strong id="metric-agents">0</strong>
+              </div>
+              <div>
+                <span>Records</span><strong id="metric-records">0</strong>
+              </div>
+            </div>
+            <div class="section-heading">
+              <h2>Recent work</h2>
+              <button class="text-button" id="view-agents">
+                Manage agents
+                <svg aria-hidden="true"><use href="#i-arrow" /></svg>
+              </button>
+            </div>
+            <div id="recent-work" class="surface recent-work"></div>
+          </section>
+        </section>
+        <section id="agents" class="page" data-page="agents" hidden>
+          <div class="page-heading">
+            <h2>Agents</h2>
+            <p>Install ASIP once in each agent you use.</p>
+          </div>
+          <div id="agent-cards" class="agent-cards"></div>
+          <p id="agent-result" role="status"></p>
+          <p class="help">
+            Installing opens ASIP sign-in when the agent starts. Existing
+            sessions may need to be reopened.
+          </p>
+        </section>
+        <section id="connections" class="page" data-page="connections" hidden>
+          <div class="page-heading">
+            <h2>API connections</h2>
+            <p>Choose which APIs your agents can use.</p>
+          </div>
+          <div id="connection-list"></div>
+          <details id="connection-details">
+            <summary>Add connection</summary>
+            <form id="connection-form">
               <label
-                >Repository access<select id="connection-github-scope">
-                  <option value="public_repo">Public repositories</option>
-                  <option value="repo">Public and private repositories</option>
+                >Name<input
+                  id="connection-name"
+                  placeholder="openai.work"
+                  required
+                  pattern="[a-z][a-z0-9._-]{1,79}"
+                  autocomplete="off"
+              /></label>
+              <label
+                >Provider<select id="connection-provider">
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="gemini">Google Gemini</option>
+                  <option value="github">GitHub</option>
+                  <option value="custom">Other API</option>
                 </select></label
               >
-              <button id="connection-github-signin" type="button">
-                Connect GitHub
+              <div id="connection-custom" hidden>
+                <label
+                  >API origin<input
+                    id="connection-origin"
+                    placeholder="https://api.example.com"
+                    type="url"
+                /></label>
+                <label
+                  >Authentication header<input
+                    id="connection-header"
+                    value="Authorization"
+                /></label>
+              </div>
+              <label id="connection-credential-label"
+                >API key or token<input
+                  id="connection-credential"
+                  type="password"
+                  required
+                  autocomplete="off"
+              /></label>
+              <div id="connection-github" hidden>
+                <label
+                  >Repository access<select id="connection-github-scope">
+                    <option value="public_repo">Public repositories</option>
+                    <option value="repo">
+                      Public and private repositories
+                    </option>
+                  </select></label
+                >
+                <button id="connection-github-signin" type="button">
+                  Connect GitHub
+                </button>
+                <button id="connection-github-token" type="button">
+                  Use a token
+                </button>
+              </div>
+              <label
+                ><input id="connection-all-projects" type="checkbox" checked />
+                All projects</label
+              >
+              <label id="connection-project-label" hidden
+                >Projects<select id="connection-projects" multiple></select
+              ></label>
+              <button id="connection-save" type="submit">
+                Save connection
               </button>
-              <button id="connection-github-token" type="button">
-                Use a token
-              </button>
+              <button id="connection-cancel" type="button">Cancel</button>
+            </form>
+          </details>
+        </section>
+        <section id="recovery" class="page" data-page="recovery" hidden>
+          <div class="page-heading">
+            <h2>Recovery</h2>
+            <p>Save or restore ASIP’s activity history.</p>
+          </div>
+          <details id="recovery-details" open>
+            <summary>Saved histories</summary>
+            <button id="import-history">Import previous history</button>
+            <p id="import-result" role="status"></p>
+            <button id="recovery-save">Save activity history</button>
+            <div id="recovery-list"></div>
+            <p>Up to ten saved histories.</p>
+          </details>
+        </section>
+        <section id="settings" class="page" data-page="settings" hidden>
+          <div class="page-heading"><h2>Settings</h2></div>
+          <div class="surface settings-group">
+            <div class="setting-row">
+              <div>
+                <strong>Launch at login</strong>
+                <p>Keep Beacon running in the background.</p>
+              </div>
+              <input
+                id="launch-at-login"
+                type="checkbox"
+                aria-label="Launch at login"
+              />
             </div>
-            <label
-              ><input id="connection-all-projects" type="checkbox" checked />
-              All projects</label
-            >
-            <label id="connection-project-label" hidden
-              >Projects<select id="connection-projects" multiple></select
-            ></label>
-            <button id="connection-save" type="submit">Save connection</button>
-            <button id="connection-cancel" type="button">Cancel</button>
-          </form>
-        </details>
-      </section>
-      <section id="recovery" hidden>
-        <details id="recovery-details">
-          <summary>Recovery</summary>
-          <button id="import-history">Import previous history</button>
-          <p id="import-result" role="status"></p>
-          <button id="recovery-save">Save activity history</button>
-          <div id="recovery-list"></div>
-          <p>Up to ten saved histories.</p>
-        </details>
-      </section>
-      <details id="settings">
-        <summary>Settings</summary>
-        <label
-          ><input id="launch-at-login" type="checkbox" /> Launch at login</label
-        >
-        <button id="signout" hidden>Sign out</button>
-      </details>
-      <p id="error" role="alert"></p>
-      <footer id="progress"></footer>
-      <button id="signin-cancel" hidden>Cancel sign-in</button>
-    </main>
+          </div>
+          <div class="surface settings-group">
+            <div class="setting-row">
+              <div>
+                <strong id="account-name">ASIP account</strong>
+                <p id="account-handle">Signed out</p>
+              </div>
+              <button id="signout" class="secondary" hidden>Sign out</button>
+            </div>
+          </div>
+          <button id="quit" class="text-button">Quit Beacon</button>
+        </section>
+        <section id="device" class="surface" hidden>
+          <p>Enter this code on GitHub:</p>
+          <code id="device-code"></code>
+        </section>
+        <p id="error" role="alert"></p>
+        <footer id="progress"></footer>
+        <button id="signin-cancel" class="secondary" hidden>
+          Cancel sign-in
+        </button>
+      </main>
+    </div>
     <dialog id="agent-setup" aria-labelledby="agent-setup-title">
       <div class="section-heading">
-        <h2 id="agent-setup-title">Add an agent</h2>
-        <button id="close-agent-setup" class="compact">Close</button>
+        <h2 id="agent-setup-title">Plugin folder</h2>
+        <button id="close-agent-setup" class="icon-button" aria-label="Close">
+          <svg aria-hidden="true"><use href="#i-close" /></svg>
+        </button>
       </div>
-      <label
-        >Agent<select id="agent">
-          <option value="codex">Codex</option>
-          <option value="claude-code">Claude Code</option>
-          <option value="antigravity">Antigravity</option>
-        </select></label
-      >
-      <h3>1. Save the plugin</h3>
-      <p>Choose a folder to keep it in.</p>
-      <button id="export">Save plugin…</button>
-      <div id="install-steps" hidden>
-        <h3 id="install-title"></h3>
-        <p id="install-shell"></p>
-        <pre id="install-command" tabindex="0"></pre>
-        <button id="copy-install" class="compact">Copy commands</button>
-        <p id="install-reload"></p>
-        <h3>3. Connect</h3>
-        <p id="install-connect"></p>
-        <p id="install-hooks" hidden>
-          Review ASIP in Codex’s /hooks to turn on automatic recording.
-        </p>
+      <p id="setup-description"></p>
+      <pre id="plugin-directory" tabindex="0"></pre>
+      <div class="buttons">
+        <button id="show-plugin-folder" class="primary">
+          <svg aria-hidden="true"><use href="#i-folder" /></svg> Show folder</button
+        ><button id="copy-plugin-folder" class="secondary">
+          <svg aria-hidden="true"><use href="#i-copy" /></svg> Copy path
+        </button>
       </div>
       <p id="setup-error" role="alert"></p>
     </dialog>

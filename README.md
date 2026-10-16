@@ -9,32 +9,27 @@ This branch starts with an installable Beacon and native agent plugins. It repla
 ## Install and connect
 
 1. Install **ASIP Beacon** for your operating system.
-2. Open Beacon and sign in with Google or GitHub.
-3. In Beacon, choose **Agents → Add agent**, select your agent, and save its plugin to a folder. Run the install commands shown there, then start a new agent session.
-4. Run the plugin's setup skill or ask your agent to connect ASIP. Click **Connect** in Beacon.
+2. Open **Agents** and click **Install** for Codex, Claude Code, or Antigravity.
+3. Open a new agent session. ASIP opens its sign-in window automatically. Choose Google or GitHub, or click **Connect** if Beacon is already signed in.
+4. In Codex, review ASIP in **/hooks** to enable automatic recording.
 
-Recording starts after the plugin finishes connecting. Signing out or disconnecting a plugin stops its recording.
+Beacon keeps all three plugin bundles in its own application-data folder. **Show plugin folder** opens the relevant bundle if you prefer installing through your agent’s plugin manager. There is no export location to choose and no terminal command to copy in the normal install flow. The agent’s native manager creates its installed copy in that agent’s own profile. If its command-line installer is unavailable, use **Show plugin folder** with its native plugin manager.
 
-For **Claude Code**, select Claude Code in **Add agent** and click **Save plugin…**. Saving exports the plugin; the next step installs it. Run these commands in your terminal, using the folder Beacon shows:
+On Windows, the Install button runs the same native commands as on macOS and Linux, with arguments passed directly to the provider’s executable. Claude Code uses `claude plugin marketplace add <managed-folder>` followed by `claude plugin install asip@asip`. Codex uses `codex plugin marketplace add <managed-folder>` and `codex plugin add asip@asip`. Antigravity uses `agy plugin install <managed-folder>`.
 
-```sh
-claude plugin marketplace add '/path/to/asip-claude-code'
-claude plugin install asip@asip-local
-```
+Linux opens Beacon as a full desktop application. Windows and macOS open a nearly square panel anchored to the tray or menu-bar icon, with an **Open full window** control. If tray placement is unavailable, Beacon opens the full application. **Open ASIP** opens the project workspace in your browser.
 
-Start a new Claude Code session, ask it to **Connect ASIP**, and click **Connect** in Beacon. Beacon should list Claude Code under **Agents**. On Windows, copy the PowerShell commands from Beacon to use the correct folder path.
-
-Codex also requires reviewing the ASIP hooks in `/hooks` before automatic recording starts. Its MCP memory tools can work before that review. This bundle uses Codex's native manifest because version 0.162.1 skips lifecycle hooks in portable Agent Plugins packages.
+Recording starts after the plugin finishes connecting. Disconnecting a plugin stops its recording and does not trigger another automatic connection prompt. Use the plugin’s setup command or ask it to connect ASIP to reconnect. Codex’s native hook review remains necessary; MCP startup alone does not establish automatic capture.
 
 ASIP's Google desktop client and GitHub OAuth app are registered. Public client IDs live in `beacon/signin.json`. Google also requires its desktop client credential; use the registered client JSON as `ASIP_GOOGLE_DESKTOP_CLIENT_JSON` when running `node scripts/configure-signin.mjs` before packaging. The client JSON is excluded from Git. Google sign-in is disabled in builds missing it. Real Google sign-in, the installed Codex plugin's connection, and record/recall through Codex's MCP runtime have been verified. GitHub sign-in has fixture coverage but still needs a real login check.
 
 ## What is implemented
 
-- A tray/menu-bar Beacon with an account window, plugin export, connection status, disconnect, and sign-out.
+- A full Linux desktop Beacon and anchored Windows/macOS panels, with SVG controls, recent work, managed plugin installation, API connections, recovery, and account settings.
 - A browser workspace with projects, a project map, sessions, intent/result filters, searchable history, API connections, and an evidence inspector. Map links represent actual sessions shared across projects.
 - Starts at login by default using each platform's startup mechanism. You can turn this off in Beacon settings.
 - A standalone compiled helper bundled with each plugin. Users do not install Python, Node, or Go.
-- Native Codex and Claude Code plugin manifests, onboarding skills, MCP tools, and lifecycle hooks.
+- Native Codex and Claude Code plugin manifests, onboarding skills, MCP tools, and lifecycle hooks. First MCP startup opens the account connection without a model request.
 - An Antigravity plugin bundle using its own hook format and conversation metadata, installed and inspected through its native CLI on all three operating systems.
 - Google authorization code sign-in with PKCE and verified identity tokens; GitHub device sign-in with a verified provider account.
 - A connection handshake between the installed plugin and Beacon.
@@ -83,7 +78,7 @@ An actual Codex CLI session has automatically recorded prompts, tool calls/resul
 
 GitHub repository authorization and a real API call through Codex's installed plugin have passed, including the stored request/result audit. Recall excludes ASIP's own tool-call audit rows, and hooks retain their hashes without copying memory responses back into memory. The project workspace has been exercised in Chrome against those actual records. Probabilistic project classification remains an investigated future integration. Recovery checkpoints contain ASIP activity history; they do not restore project files or the operating system. The old administration daemon is not a dependency of this implementation.
 
-Windows and macOS installers currently lack publisher signatures and macOS notarization. Linux tray display depends on the desktop's status-indicator support. Antigravity bundles use the exported helper's absolute path; keep the exported directory in place.
+Windows and macOS installers currently lack publisher signatures and macOS notarization. Linux tray display depends on the desktop's status-indicator support. Antigravity uses the managed helper's absolute path; Beacon maintains that directory. The new Windows/macOS panel needs interactive qualification on each desktop in addition to CI startup checks.
 
 Linux packages include `.deb`, `.rpm`, and AppImage. Use the native package on systems that restrict portable applications' user namespaces; the package registers Chromium's sandbox support through the platform installer.
 

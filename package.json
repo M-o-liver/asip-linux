@@ -1,6 +1,6 @@
 {
   "name": "asip-beacon",
-  "version": "0.3.2",
+  "version": "0.4.0",
   "private": true,
   "description": "ASIP Beacon and native agent plugins",
   "author": "ASIP",

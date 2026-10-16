@@ -84,13 +84,10 @@ func beaconReady() error {
 	}
 	defer response.Body.Close()
 	var state struct {
-		SignedIn bool `json:"signedIn"`
+		Running bool `json:"running"`
 	}
-	if response.StatusCode != 200 || json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&state) != nil {
+	if response.StatusCode != 200 || json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&state) != nil || !state.Running {
 		return errors.New("ASIP Beacon is unavailable.")
-	}
-	if !state.SignedIn {
-		return errors.New("Sign in to ASIP Beacon first.")
 	}
 	return nil
 }
@@ -410,6 +407,20 @@ func mcp() {
 		fmt.Fprintln(writer, string(raw))
 		writer.Flush()
 	}
+	startConnection := func() {
+		if !connecting.CompareAndSwap(false, true) {
+			return
+		}
+		go func() {
+			defer connecting.Store(false)
+			_, failure := signin()
+			if failure != nil {
+				send(map[string]any{"jsonrpc": "2.0", "method": "notifications/message", "params": map[string]any{"level": "error", "logger": "asip", "data": failure.Error()}})
+			} else {
+				send(map[string]any{"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
+			}
+		}()
+	}
 	for reader.Scan() {
 		var message map[string]any
 		if json.Unmarshal(reader.Bytes(), &message) != nil {
@@ -418,6 +429,12 @@ func mcp() {
 		}
 		id, present := message["id"]
 		if !present {
+			// A newly installed plugin opens ASIP's account picker without a
+			// model turn or a setup prompt. Existing/revoked tokens never trigger
+			// automatic reauthorization, so Disconnect remains effective.
+			if stringValue(message["method"]) == "notifications/initialized" && token() == "" {
+				startConnection()
+			}
 			continue
 		}
 		method := stringValue(message["method"])
@@ -470,18 +487,8 @@ func mcp() {
 				if err = beaconReady(); err != nil {
 					break
 				}
-				if connecting.CompareAndSwap(false, true) {
-					go func() {
-						defer connecting.Store(false)
-						_, failure := signin()
-						if failure != nil {
-							send(map[string]any{"jsonrpc": "2.0", "method": "notifications/message", "params": map[string]any{"level": "error", "logger": "asip", "data": failure.Error()}})
-						} else {
-							send(map[string]any{"jsonrpc": "2.0", "method": "notifications/tools/list_changed"})
-						}
-					}()
-				}
-				data = map[string]any{"state": "connecting", "message": "Click Connect in ASIP Beacon."}
+				startConnection()
+				data = map[string]any{"state": "connecting", "message": "Finish connecting in ASIP Beacon."}
 			case "asip_status":
 				data, err = call("/plugin/status", map[string]any{"session": contextSession}, token())
 			case "asip_recall":

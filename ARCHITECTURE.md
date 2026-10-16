@@ -43,3 +43,11 @@ Requests currently use JSON with bounded bodies and responses. HTTP errors are r
 CI builds and starts native installers on all three operating systems, and compiles x64/arm64 plugin executables. Codex and Claude versions and Antigravity release hashes are pinned for reproducible qualification. Provider login remains an interactive check. Unsigned installers do not establish publisher trust or macOS notarization.
 
 Launch at login uses [Electron's native login-item APIs](https://www.electronjs.org/docs/latest/api/app#appsetloginitemsettingssettings-macos-windows) on Windows and macOS and the [XDG autostart specification](https://specifications.freedesktop.org/autostart/latest/) on Linux. It is opt-in. A login launch keeps Beacon in the tray/menu bar.
+
+## Managed installations and desktop shell
+
+Beacon stages all three platform-native bundles under its application-data `plugins` directory. Stable per-agent paths survive upgrades. Its Install action invokes the provider’s plugin manager; those managers own installed copies, enabled state, and hook review. No provider configuration or trust files are edited by Beacon. Installing the managed ASIP marketplace replaces only an earlier `asip@asip-local` plugin after the new installation succeeds. Windows npm wrappers receive argument data through a fixed PowerShell invocation; paths are not compiled into shell commands.
+
+A fresh helper starts the account connection after MCP initialization. Beacon can receive that request before an account is signed in; completing Google/GitHub sign-in completes the pending connection. Existing-account connections require Connect. Proof verification and account binding remain in the runtime. Multiple agents queue their requests. An existing token does not trigger automatic reauthorization after a disconnect.
+
+Linux uses a full desktop window, independent of status-indicator extensions. Windows and macOS use tray bounds and display work areas to position a nearly square panel. Right-click retains the native menu. The panel hides on focus loss, stays present during sign-in or a native dialog, and can expand into the full window. Missing tray placement falls back to a full window. macOS uses a monochrome template icon with a retina asset.

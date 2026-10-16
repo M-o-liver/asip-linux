@@ -18,7 +18,11 @@ contextBridge.exposeInMainWorld("asip", {
   cancel: () => ipcRenderer.invoke("asip:cancel"),
   signOut: () => ipcRenderer.invoke("asip:signout"),
   disconnect: (agent) => ipcRenderer.invoke("asip:disconnect", agent),
-  exportPlugin: (agent) => ipcRenderer.invoke("asip:export-plugin", agent),
+  installPlugin: (agent) => ipcRenderer.invoke("asip:install-plugin", agent),
+  pluginFolder: (agent) => ipcRenderer.invoke("asip:plugin-folder", agent),
+  showFull: () => ipcRenderer.invoke("asip:show-full"),
+  hideWindow: () => ipcRenderer.invoke("asip:hide-window"),
+  quit: () => ipcRenderer.invoke("asip:quit"),
   copyText: (text) => ipcRenderer.invoke("asip:copy-text", text),
   onStatus: (callback) =>
     ipcRenderer.on("asip:status", (_event, status) => callback(status)),

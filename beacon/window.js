@@ -4,10 +4,174 @@ const names = {
   "claude-code": "Claude Code",
   antigravity: "Antigravity",
 };
-let platform,
-  connectedAgents = [],
-  renderedAccount = "",
-  formError = "";
+let renderedAccount = "",
+  formError = "",
+  view = "overview",
+  currentState,
+  selectedPlugin,
+  lastCards = "",
+  lastConnections = "",
+  lastRecent = "",
+  lastPending = "";
+function icon(name) {
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("aria-hidden", "true");
+  const use = document.createElementNS(svg.namespaceURI, "use");
+  use.setAttribute("href", "#i-" + name);
+  svg.append(use);
+  return svg;
+}
+function navigate(page) {
+  view = page;
+  for (const element of document.querySelectorAll("[data-page]"))
+    element.hidden = element.dataset.page !== page;
+  for (const button of document.querySelectorAll("[data-nav]")) {
+    button.classList.toggle("selected", button.dataset.nav === page);
+    if (button.dataset.nav === page)
+      button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
+  }
+  $("page-label").textContent = {
+    overview: "Overview",
+    agents: "Agents",
+    connections: "API connections",
+    recovery: "Recovery",
+    settings: "Settings",
+  }[page];
+  if (page === "recovery" && currentState?.account)
+    $("recovery-details").ontoggle();
+}
+for (const button of document.querySelectorAll("[data-nav]"))
+  button.onclick = () => navigate(button.dataset.nav);
+$("view-agents").onclick = () => navigate("agents");
+$("expand-window").onclick = () => window.asip.showFull();
+$("hide-window").onclick = () => window.asip.hideWindow();
+$("quit").onclick = () => window.asip.quit();
+function openPluginFolder(plugin) {
+  selectedPlugin = plugin;
+  $("agent-setup-title").textContent = plugin.name + " plugin";
+  $("setup-description").textContent =
+    "ASIP keeps this folder up to date. You can use it as a source in " +
+    plugin.name +
+    "’s plugin manager.";
+  $("plugin-directory").textContent = plugin.directory;
+  $("setup-error").textContent = "";
+  $("agent-setup").showModal();
+}
+$("close-agent-setup").onclick = () => $("agent-setup").close();
+$("show-plugin-folder").onclick = () =>
+  window.asip.pluginFolder(selectedPlugin.id);
+$("copy-plugin-folder").onclick = async () => {
+  await window.asip.copyText(selectedPlugin.directory);
+};
+function renderAgents(state) {
+  const key = JSON.stringify([state.plugins, state.clients]);
+  if (key === lastCards) return;
+  lastCards = key;
+  $("agent-cards").replaceChildren();
+  for (const plugin of state.plugins || []) {
+    const connected = state.clients.some(
+      (client) => client.agent === plugin.id,
+    );
+    const card = document.createElement("article");
+    card.className = "agent-card";
+    const logo = document.createElement("div");
+    logo.className = "agent-logo " + plugin.id;
+    logo.append(icon(plugin.id));
+    const text = document.createElement("div");
+    text.className = "agent-info";
+    const title = document.createElement("h3");
+    title.textContent = plugin.name;
+    const status = document.createElement("p");
+    status.textContent = connected
+      ? "Connected"
+      : plugin.addedAt
+        ? "Added · Open a new session"
+        : "Not connected";
+    status.className = connected ? "connected" : "";
+    text.append(title, status);
+    const actions = document.createElement("div");
+    actions.className = "agent-actions";
+    const install = document.createElement("button");
+    install.className = connected ? "secondary" : "primary";
+    install.textContent = plugin.installing
+      ? "Installing…"
+      : !plugin.available
+        ? "Use plugin folder"
+        : plugin.addedAt || connected
+          ? "Update"
+          : "Install";
+    install.disabled = plugin.installing;
+    install.onclick = async () => {
+      if (!plugin.available) {
+        openPluginFolder(plugin);
+        return;
+      }
+      install.disabled = true;
+      install.textContent = "Installing…";
+      try {
+        const result = await window.asip.installPlugin(plugin.id);
+        formError = "";
+        $("agent-result").textContent = result.message;
+      } catch (error) {
+        formError = error.message;
+        $("error").textContent = formError;
+      } finally {
+        render(await window.asip.status());
+      }
+    };
+    const folder = document.createElement("button");
+    folder.className = "icon-button";
+    folder.title = "Show " + plugin.name + " plugin folder";
+    folder.setAttribute("aria-label", folder.title);
+    folder.append(icon("folder"));
+    folder.onclick = () => openPluginFolder(plugin);
+    actions.append(install, folder);
+    if (connected) {
+      const disconnect = document.createElement("button");
+      disconnect.className = "text-button disconnect";
+      disconnect.textContent = "Disconnect";
+      disconnect.onclick = () => window.asip.disconnect(plugin.id);
+      actions.append(disconnect);
+    }
+    card.append(logo, text, actions);
+    $("agent-cards").append(card);
+  }
+}
+function renderRecent(state) {
+  const recent = state.workspace?.recent || [],
+    key = JSON.stringify(recent);
+  if (key === lastRecent) return;
+  lastRecent = key;
+  $("recent-work").replaceChildren();
+  if (!recent.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty";
+    empty.textContent = "Your agents’ work will appear here.";
+    $("recent-work").append(empty);
+  }
+  for (const event of recent) {
+    const row = document.createElement("article");
+    row.className = "recent-row";
+    const marker = document.createElement("div");
+    marker.className = "record-marker";
+    marker.append(icon(event.kind === "unresolved" ? "recovery" : "check"));
+    const text = document.createElement("div"),
+      summary = document.createElement("p"),
+      meta = document.createElement("span");
+    summary.textContent = event.summary;
+    meta.textContent =
+      (names[event.agent] || event.agent) +
+      " · " +
+      new Date(event.at).toLocaleString(undefined, {
+        dateStyle: "short",
+        timeStyle: "short",
+      });
+    text.append(summary, meta);
+    row.append(marker, text);
+    $("recent-work").append(row);
+  }
+}
 function resetConnectionForm() {
   formError = "";
   $("connection-form").reset();
@@ -23,75 +187,37 @@ function resetConnectionForm() {
   $("connection-projects").required = false;
 }
 function render(state) {
-  platform = state.platform;
+  currentState = state;
+  document.body.dataset.panel = String(Boolean(state.panel));
+  document.body.dataset.platform = state.platform;
+  $("expand-window").hidden = !state.panel;
+  $("hide-window").hidden = !state.panel;
   const accountKey = state.account
     ? state.account.provider + ":" + state.account.handle
     : "";
   if (accountKey !== renderedAccount) {
     $("agent-setup").close();
-    $("install-steps").hidden = true;
-    $("install-command").textContent = "";
-    $("setup-error").textContent = "";
     resetConnectionForm();
     $("connection-details").open = false;
-    $("connection-custom").hidden = true;
-    $("connection-github").hidden = true;
-    $("connection-project-label").hidden = true;
     $("connection-projects").replaceChildren();
-    $("recovery-details").open = false;
     $("recovery-list").replaceChildren();
+    lastCards = "";
+    lastConnections = "";
+    lastRecent = "";
     renderedAccount = accountKey;
   }
-  $("signed-out").hidden = Boolean(state.account) || Boolean(state.pending);
-  $("account").hidden = !state.account || Boolean(state.pending);
-  $("agents").hidden = !state.account || Boolean(state.pending);
-  $("signout").hidden = !state.account || Boolean(state.pending);
-  if (state.pending) $("agent-setup").close();
-  $("request").hidden = !state.pending;
-  $("connections").hidden = !state.account || Boolean(state.pending);
-  $("recovery").hidden = !state.account || Boolean(state.pending);
-  $("connection-list").replaceChildren();
-  for (const connection of state.connections || []) {
-    const row = document.createElement("div");
-    row.className = "client";
-    const text = document.createElement("span");
-    text.textContent =
-      connection.name + " · " + (connection.account || connection.provider);
-    const remove = document.createElement("button");
-    remove.textContent = "Remove";
-    remove.onclick = async () => {
-      try {
-        await window.asip.removeConnection(connection.name);
-      } catch (error) {
-        $("error").textContent = error.message;
-      }
-    };
-    const edit = document.createElement("button");
-    edit.textContent = "Edit";
-    edit.onclick = async () => {
-      resetConnectionForm();
-      $("connection-details").open = true;
-      $("connection-name").value = connection.name;
-      $("connection-name").readOnly = true;
-      $("connection-provider").value = connection.provider;
-      $("connection-provider").disabled = true;
-      $("connection-origin").value = connection.origin;
-      $("connection-header").value = connection.header;
-      $("connection-custom").hidden = connection.provider !== "custom";
-      $("connection-credential").required = false;
-      $("connection-credential").placeholder =
-        "Leave empty to keep current key";
-      $("connection-all-projects").checked = !connection.projects.length;
-      $("connection-all-projects").onchange();
-      await loadProjects(connection.projects);
-      $("connection-form").scrollIntoView({ block: "nearest" });
-    };
-    const actions = document.createElement("div");
-    actions.className = "buttons";
-    actions.append(edit, remove);
-    row.append(text, actions);
-    $("connection-list").append(row);
+  if (state.pending?.id && lastPending !== state.pending.id) {
+    navigate("overview");
+    $("agent-setup").close();
   }
+  lastPending = state.pending?.id || "";
+  $("signed-out").hidden = Boolean(state.account);
+  $("account").hidden = !state.account;
+  $("overview").classList.toggle("onboarding", Boolean(state.pending));
+  $("signout").hidden = !state.account;
+  $("request").hidden = !state.pending;
+  $("connection-details").hidden = !state.account;
+  $("recovery-details").hidden = !state.account;
   $("error").textContent = state.error || formError;
   $("launch-at-login").checked = state.launchAtLogin;
   $("launch-at-login").disabled = !state.installed;
@@ -99,41 +225,89 @@ function render(state) {
   $("signin-cancel").hidden = !state.signingIn;
   $("connection-github-signin").disabled =
     state.signingIn || !state.providers.github;
-  for (const id of ["google"])
-    $(id).disabled = state.signingIn || !state.providers.google;
-  for (const id of ["github"])
-    $(id).disabled = state.signingIn || !state.providers.github;
+  for (const provider of ["google", "github"])
+    $(provider).disabled = state.signingIn || !state.providers[provider];
   $("preview").hidden = state.providers.google || state.providers.github;
-  if (state.account) {
-    connectedAgents = state.clients.map((client) => client.agent);
-    $("account-name").textContent = state.account.name;
-    $("account-handle").textContent = state.account.handle;
-    $("connection-state").textContent = state.clients.length
-      ? ""
-      : "No agents connected";
-    $("connection-state").hidden = Boolean(state.clients.length);
-    $("record-count").textContent = state.clients.length
-      ? state.records + " recorded events"
-      : "";
-    $("clients").replaceChildren();
-    for (const client of state.clients) {
-      const row = document.createElement("div");
-      row.className = "client";
-      const label = document.createElement("span");
-      label.textContent = names[client.agent] || client.agent;
-      const disconnect = document.createElement("button");
-      disconnect.textContent = "Disconnect";
-      disconnect.onclick = () => window.asip.disconnect(client.agent);
-      row.append(label, disconnect);
-      $("clients").append(row);
-    }
-  }
+  $("sidebar-status").textContent = state.online
+    ? "Service running"
+    : "Service unavailable";
+  document.body.classList.toggle("offline", !state.online);
+  $("overview-caption").textContent = !state.online
+    ? "Service unavailable"
+    : state.clients.length
+      ? state.clients.length +
+        " agent" +
+        (state.clients.length === 1 ? "" : "s") +
+        " connected"
+      : "Service running";
+  $("account-name").textContent = state.account?.name || "ASIP account";
+  $("account-handle").textContent = state.account?.handle || "Signed out";
+  $("metric-projects").textContent = state.workspace?.projects || 0;
+  $("metric-agents").textContent = state.clients.length;
+  $("metric-records").textContent = state.records;
+  $("project-count").textContent =
+    (state.workspace?.projects || 0) +
+    " projects · " +
+    state.records +
+    " records";
   if (state.pending) {
-    $("request-title").textContent = "Connect " + names[state.pending.agent];
-    $("request-account").textContent = state.pending.account;
+    $("request-title").textContent =
+      (state.account ? "Connect " : "Sign in to connect ") +
+      names[state.pending.agent];
+    $("request-account").textContent =
+      state.account?.handle || "Choose Google or GitHub below.";
+    $("connect").hidden = !state.account;
   }
   $("device").hidden = !state.deviceCode;
   $("device-code").textContent = state.deviceCode?.code || "";
+  renderAgents(state);
+  renderRecent(state);
+  const connectionKey = JSON.stringify(state.connections || []);
+  if (lastConnections !== connectionKey) {
+    lastConnections = connectionKey;
+    $("connection-list").replaceChildren();
+    for (const connection of state.connections || []) {
+      const row = document.createElement("div");
+      row.className = "client";
+      const text = document.createElement("span");
+      text.textContent =
+        connection.name + " · " + (connection.account || connection.provider);
+      const remove = document.createElement("button");
+      remove.textContent = "Remove";
+      remove.onclick = async () => {
+        try {
+          await window.asip.removeConnection(connection.name);
+        } catch (error) {
+          $("error").textContent = error.message;
+        }
+      };
+      const edit = document.createElement("button");
+      edit.textContent = "Edit";
+      edit.onclick = async () => {
+        resetConnectionForm();
+        $("connection-details").open = true;
+        $("connection-name").value = connection.name;
+        $("connection-name").readOnly = true;
+        $("connection-provider").value = connection.provider;
+        $("connection-provider").disabled = true;
+        $("connection-origin").value = connection.origin;
+        $("connection-header").value = connection.header;
+        $("connection-custom").hidden = connection.provider !== "custom";
+        $("connection-credential").required = false;
+        $("connection-credential").placeholder =
+          "Leave empty to keep current key";
+        $("connection-all-projects").checked = !connection.projects.length;
+        $("connection-all-projects").onchange();
+        await loadProjects(connection.projects);
+        $("connection-form").scrollIntoView({ block: "nearest" });
+      };
+      const actions = document.createElement("div");
+      actions.className = "buttons";
+      actions.append(edit, remove);
+      row.append(text, actions);
+      $("connection-list").append(row);
+    }
+  }
 }
 for (const id of ["google"]) $(id).onclick = () => window.asip.signIn("google");
 for (const id of ["github"]) $(id).onclick = () => window.asip.signIn("github");
@@ -232,20 +406,6 @@ $("connection-form").onsubmit = async (event) => {
 };
 $("signout").onclick = () => window.asip.signOut();
 $("open-workspace").onclick = () => window.asip.openWorkspace();
-$("add-agent").onclick = () => {
-  if ($("install-steps").hidden)
-    $("agent").value =
-      Object.keys(names).find((agent) => !connectedAgents.includes(agent)) ||
-      "codex";
-  $("agent-setup").showModal();
-};
-$("close-agent-setup").onclick = () => $("agent-setup").close();
-$("agent").onchange = () => {
-  $("install-steps").hidden = true;
-  $("install-command").textContent = "";
-  $("setup-error").textContent = "";
-  $("copy-install").textContent = "Copy commands";
-};
 $("import-history").onclick = async () => {
   $("import-history").disabled = true;
   try {
@@ -304,55 +464,8 @@ $("recovery-save").onclick = async () => {
     $("error").textContent = formError;
   }
 };
-$("export").onclick = async () => {
-  $("export").disabled = true;
-  $("agent").disabled = true;
-  $("setup-error").textContent = "";
-  try {
-    const agent = $("agent").value,
-      directory = await window.asip.exportPlugin(agent);
-    if (!directory) return;
-    const quoted =
-      platform === "win32"
-        ? "'" + directory.replaceAll("'", "''") + "'"
-        : "'" + directory.replaceAll("'", "'\\''") + "'";
-    $("install-command").textContent =
-      agent === "codex"
-        ? "codex plugin marketplace add " +
-          quoted +
-          "\ncodex plugin add asip@asip-local"
-        : agent === "claude-code"
-          ? "claude plugin marketplace add " +
-            quoted +
-            "\nclaude plugin install asip@asip-local"
-          : "agy plugin install " + quoted;
-    $("install-title").textContent = "2. Install in " + names[agent];
-    $("install-shell").textContent =
-      platform === "win32" ? "Run in PowerShell:" : "Run in a terminal:";
-    $("install-reload").textContent =
-      "Then start a new " + names[agent] + " session.";
-    $("install-connect").textContent =
-      "Ask " +
-      names[agent] +
-      " to “Connect ASIP”, then click Connect in Beacon.";
-    $("install-hooks").hidden = agent !== "codex";
-    $("copy-install").textContent = "Copy commands";
-    $("install-steps").hidden = false;
-    $("install-title").scrollIntoView({ block: "nearest" });
-  } catch (error) {
-    $("setup-error").textContent = error.message;
-  } finally {
-    $("export").disabled = false;
-    $("agent").disabled = false;
-  }
-};
-$("copy-install").onclick = async () => {
-  try {
-    await window.asip.copyText($("install-command").textContent);
-    $("copy-install").textContent = "Copied";
-  } catch (error) {
-    $("setup-error").textContent = error.message;
-  }
-};
 window.asip.onStatus(render);
-window.asip.status().then(render);
+window.asip.status().then((state) => {
+  render(state);
+  navigate("overview");
+});

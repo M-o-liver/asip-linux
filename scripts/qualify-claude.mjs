@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 // Exercise the CLI's native MCP startup over the Agent SDK control protocol.
 // No user message or model request is sent.
-export async function qualifyClaude({ pluginDirectory } = {}) {
+export async function qualifyClaude({ pluginDirectory, verify } = {}) {
   const args = [
     "--print",
     "--input-format",
@@ -95,6 +95,7 @@ export async function qualifyClaude({ pluginDirectory } = {}) {
       server.tools?.some((tool) => tool.name === "asip_api_request"),
       "Claude must discover ASIP API access.",
     );
+    if (verify) await verify();
     return {
       server: server.name,
       nativeMcpStartup: true,

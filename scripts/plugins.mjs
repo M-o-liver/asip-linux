@@ -10,7 +10,7 @@ name: asip
 description: Connect ASIP, recall earlier project work, and save intentions, results, evidence, and unfinished work.
 ---
 
-When the user asks to connect ASIP, call asip_connect. Tell them to click Connect in Beacon.
+ASIP opens its account connection when this plugin first starts. Use asip_status to check it. If the user asks to reconnect, call asip_connect and tell them to finish the connection in Beacon.
 If Beacon is missing or the plugin is disconnected, explain the reported status and continue the user's work. Do not configure agent hooks or MCP servers yourself.
 
 In Codex, automatic recording also requires reviewing ASIP's hooks in /hooks. Use Codex's native hook manager; do not edit hook trust files or bypass hook review.
@@ -45,7 +45,7 @@ export function buildPlugin({ root, target, agent, binary }) {
   write("skills/asip/SKILL.md", skill);
   write(
     "skills/setup/SKILL.md",
-    "---\nname: setup\ndescription: Connect the ASIP plugin.\n---\n\nCall asip_connect. Tell the user to click Connect in ASIP Beacon. Use asip_status to check the connection when they return.\n",
+    "---\nname: setup\ndescription: Connect the ASIP plugin.\n---\n\nCall asip_status first. If already connected, report it. Otherwise call asip_connect and tell the user to finish sign-in or click Connect in ASIP Beacon. Use asip_status to check the connection when they return.\n",
   );
   const variable =
     agent === "claude-code" ? "${CLAUDE_PLUGIN_ROOT}" : "${PLUGIN_ROOT}";
@@ -99,7 +99,7 @@ export function buildPlugin({ root, target, agent, binary }) {
       homepage: "https://github.com/M-o-liver/asip-linux",
     });
     write(".claude-plugin/marketplace.json", {
-      name: "asip-local",
+      name: "asip",
       description,
       owner: { name: "ASIP" },
       plugins: [{ name: "asip", source: "./", description, version }],
@@ -127,7 +127,7 @@ export function buildPlugin({ root, target, agent, binary }) {
     });
     write("hooks/hooks.json", { hooks });
     write(".agents/plugins/marketplace.json", {
-      name: "asip-local",
+      name: "asip",
       plugins: [
         {
           name: "asip",
@@ -159,9 +159,9 @@ export function buildPlugin({ root, target, agent, binary }) {
   return directory;
 }
 
-export function rebindAntigravity(directory) {
+export function rebindAntigravity(directory, destination = directory) {
   const binary = path.join(
-    directory,
+    destination,
     "bin",
     process.platform === "win32" ? "asip-plugin.exe" : "asip-plugin",
   );

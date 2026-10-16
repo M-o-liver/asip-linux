@@ -77,3 +77,53 @@ for (const [name, color] of Object.entries({
     ]),
   );
 }
+
+// Monochrome menu-bar variants of trayTemplate.svg. Supersampling preserves
+// the thin graph edges at normal and retina densities without a build dependency.
+for (const [dimension, suffix, density] of [
+  [22, "", 2835],
+  [44, "@2x", 5669],
+]) {
+  const data = Buffer.alloc(dimension * (dimension * 4 + 1));
+  const points = [
+    [5, 5],
+    [19, 5],
+    [12, 19],
+  ];
+  for (let y = 0; y < dimension; y++)
+    for (let x = 0; x < dimension; x++) {
+      let covered = 0;
+      for (let j = 0; j < 4; j++)
+        for (let i = 0; i < 4; i++) {
+          const px = ((x + (i + 0.5) / 4) * 24) / dimension,
+            py = ((y + (j + 0.5) / 4) * 24) / dimension;
+          if (
+            points.some((n) => Math.hypot(px - n[0], py - n[1]) < 3) ||
+            points.some((n, k) => distance(px, py, n, points[(k + 1) % 3]) < 1)
+          )
+            covered++;
+        }
+      data[y * (dimension * 4 + 1) + 1 + x * 4 + 3] = Math.round(
+        (covered / 16) * 255,
+      );
+    }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(dimension, 0);
+  ihdr.writeUInt32BE(dimension, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  const phys = Buffer.alloc(9);
+  phys.writeUInt32BE(density, 0);
+  phys.writeUInt32BE(density, 4);
+  phys[8] = 1;
+  fs.writeFileSync(
+    new URL("../beacon/trayTemplate" + suffix + ".png", import.meta.url),
+    Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      chunk("IHDR", ihdr),
+      chunk("pHYs", phys),
+      chunk("IDAT", zlib.deflateSync(data)),
+      chunk("IEND", Buffer.alloc(0)),
+    ]),
+  );
+}

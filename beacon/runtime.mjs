@@ -38,11 +38,7 @@ export class Runtime {
 
   status() {
     let records = 0;
-    if (
-      this.account &&
-      this.clients.size &&
-      fs.existsSync(this.databasePath())
-    ) {
+    if (this.account && fs.existsSync(this.databasePath())) {
       this.storage();
       records = this.recordCount;
     }
@@ -67,7 +63,13 @@ export class Runtime {
   signIn(account) {
     if (!/^[a-f0-9]{64}$/.test(account?.accountId || ""))
       throw new Error("An authenticated ASIP account is required.");
-    if (this.account?.accountId !== account.accountId) this.signOut();
+    if (this.account?.accountId !== account.accountId) {
+      const onboarding = !this.account
+        ? [...this.requests].filter(([, request]) => !request.accountId)
+        : [];
+      this.signOut();
+      this.requests = new Map(onboarding);
+    }
     this.account = account;
   }
   signOut() {
@@ -83,6 +85,7 @@ export class Runtime {
   }
   cancelSignIn(id) {
     this.requests.delete(id);
+    this.publishNextRequest();
   }
   disconnect(agent) {
     this.abortRequests(agent);
@@ -90,30 +93,41 @@ export class Runtime {
       if (client.agent === agent) this.clients.delete(token);
   }
   expireRequests() {
+    let expired = false;
     for (const [id, request] of this.requests)
-      if (request.expires < Date.now()) this.requests.delete(id);
+      if (request.expires < Date.now()) {
+        this.requests.delete(id);
+        expired = true;
+      }
+    if (expired) this.publishNextRequest();
+  }
+  publishNextRequest() {
+    const next = [...this.requests].find(([, request]) => !request.token);
+    if (!next) return;
+    const [id, request] = next;
+    request.accountId = this.account?.accountId || request.accountId;
+    this.onPluginSignIn({
+      id,
+      agent: request.agent,
+      account: this.account?.handle || null,
+      provider: this.account?.provider || null,
+    });
   }
 
   requestSignIn({ agent, challenge }) {
     if (!agents.has(agent) || !/^[a-f0-9]{64}$/.test(challenge || ""))
       throw new Error("Invalid plugin connection.");
-    if (!this.account) throw new Error("Sign in to ASIP Beacon first.");
     this.expireRequests();
-    if (this.requests.size)
+    if (this.requests.size >= 16)
       throw new Error("Finish the pending sign-in first.");
     const id = crypto.randomUUID();
     this.requests.set(id, {
       agent,
       challenge,
       expires: Date.now() + 300000,
-      accountId: this.account.accountId,
+      accountId: this.account?.accountId || null,
     });
-    this.onPluginSignIn({
-      id,
-      agent,
-      account: this.account.handle,
-      provider: this.account.provider,
-    });
+    if (this.requests.size === 1) this.publishNextRequest();
     return { requestId: id };
   }
 
@@ -124,7 +138,7 @@ export class Runtime {
     if (
       !this.account ||
       identity.accountId !== this.account.accountId ||
-      request.accountId !== identity.accountId
+      (request.accountId && request.accountId !== identity.accountId)
     )
       throw new Error("Sign in with the account shown in ASIP Beacon.");
     if (request.token) throw new Error("Plugin sign-in is already complete.");
@@ -153,6 +167,7 @@ export class Runtime {
     this.clients.set(hash(request.token), request.client);
     this.onConnectionChange();
     this.requests.delete(id);
+    this.publishNextRequest();
     return { state: "connected", token: request.token, agent: request.agent };
   }
 

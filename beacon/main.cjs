@@ -9,6 +9,7 @@ const {
   safeStorage,
   dialog,
   clipboard,
+  screen,
 } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -23,6 +24,8 @@ let runtime,
   recovery,
   window,
   tray,
+  pluginBundles,
+  dialogOpen = false,
   pending = null,
   abort = null,
   deviceCode = null,
@@ -71,6 +74,20 @@ function snapshot() {
   return {
     ...runtime.status(),
     platform: process.platform,
+    panel: Boolean(window?.asipPanel),
+    online: Boolean(runtime.server?.listening),
+    plugins: pluginBundles?.list() || [],
+    workspace: runtime.account
+      ? {
+          projects: runtime.projects().length,
+          recent: runtime
+            .storage()
+            .prepare(
+              "SELECT at,agent,kind,summary,project FROM events WHERE kind IN ('result','evidence','unresolved','intent.finished','intent.held','agent.result') ORDER BY at DESC LIMIT 4",
+            )
+            .all(),
+        }
+      : { projects: 0, recent: [] },
     pending,
     deviceCode,
     error: lastError || runtime.recordingError || "",
@@ -125,46 +142,79 @@ function updateTray(state) {
   const key = JSON.stringify([icon, label, state.clients, state.records]);
   if (key === trayState) return;
   trayState = key;
-  tray.setImage(
-    nativeImage
-      .createFromPath(path.join(__dirname, icon + ".png"))
-      .resize({ width: 22, height: 22 }),
-  );
+  if (process.platform !== "darwin")
+    tray.setImage(
+      nativeImage
+        .createFromPath(path.join(__dirname, icon + ".png"))
+        .resize({ width: 22, height: 22 }),
+    );
   tray.setToolTip("ASIP · " + label);
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label, enabled: false },
-      ...state.clients.map((client) => ({
-        label:
-          (agentNames[client.agent] || client.agent) +
-          (client.lastActivity
-            ? " · " + new Date(client.lastActivity).toLocaleTimeString()
-            : " · Connected"),
-        enabled: false,
-      })),
-      ...(state.recording
-        ? [{ label: state.records + " recorded events", enabled: false }]
-        : []),
-      { type: "separator" },
-      { label: "Open ASIP", click: openWorkspace },
-      { label: "Beacon settings", click: show },
-      { label: "Quit", click: () => app.quit() },
-    ]),
-  );
+  const menu = Menu.buildFromTemplate([
+    { label, enabled: false },
+    ...state.clients.map((client) => ({
+      label:
+        (agentNames[client.agent] || client.agent) +
+        (client.lastActivity
+          ? " · " + new Date(client.lastActivity).toLocaleTimeString()
+          : " · Connected"),
+      enabled: false,
+    })),
+    ...(state.recording
+      ? [{ label: state.records + " recorded events", enabled: false }]
+      : []),
+    { type: "separator" },
+    { label: "Open ASIP", click: openWorkspace },
+    { label: "Open Beacon", click: () => show({ full: true }) },
+    { label: "Quit", click: () => app.quit() },
+  ]);
+  if (process.platform === "linux") tray.setContextMenu(menu);
+  else tray.asipMenu = menu;
 }
 
-function show() {
-  if (window && !window.isDestroyed()) {
+function show({ full = process.platform === "linux", toggle = false } = {}) {
+  let placement;
+  if (!full && tray) {
+    try {
+      const bounds = tray.getBounds();
+      placement = require("./desktop.cjs").panelBounds(
+        bounds,
+        screen.getDisplayMatching(bounds).workArea,
+      );
+    } catch {}
+  }
+  const panel = Boolean(!full && placement);
+  if (window && !window.isDestroyed() && window.asipPanel === panel) {
+    if (toggle && panel && window.isVisible()) {
+      window.hide();
+      return;
+    }
+    if (panel) window.setBounds(placement);
     window.show();
     window.focus();
     send();
     return;
   }
+  window?.destroy();
+  const area = screen.getPrimaryDisplay().workArea;
   window = new BrowserWindow({
-    width: 440,
-    height: 680,
-    minWidth: 420,
-    minHeight: 500,
+    ...(panel
+      ? {
+          ...placement,
+          frame: false,
+          resizable: false,
+          skipTaskbar: true,
+          ...(process.platform === "darwin"
+            ? { vibrancy: "menu", visualEffectState: "active" }
+            : { backgroundMaterial: "mica" }),
+        }
+      : {
+          width: Math.min(1060, area.width - 32),
+          height: Math.min(780, area.height - 48),
+          minWidth: Math.min(760, area.width - 32),
+          minHeight: Math.min(560, area.height - 48),
+        }),
+    show: false,
+    backgroundColor: "#111417",
     title: "ASIP Beacon",
     autoHideMenuBar: true,
     webPreferences: {
@@ -174,12 +224,34 @@ function show() {
       sandbox: true,
     },
   });
-  window.loadFile(path.join(__dirname, "window.html"));
-  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  window.webContents.on("will-navigate", (event) => event.preventDefault());
-  window.on("closed", () => {
-    window = null;
+  const created = window;
+  created.asipPanel = panel;
+  if (process.platform === "darwin") {
+    if (panel) app.dock?.hide();
+    else app.dock?.show();
+  }
+  created.loadFile(path.join(__dirname, "window.html"));
+  created.once("ready-to-show", () => {
+    created.show();
+    created.focus();
   });
+  created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  created.webContents.on("will-navigate", (event) => event.preventDefault());
+  created.on("blur", () => {
+    if (panel && !dialogOpen && !pending && !abort) created.hide();
+  });
+  created.on("closed", () => {
+    if (window === created) window = null;
+  });
+}
+
+async function nativeDialog(method, options) {
+  dialogOpen = true;
+  try {
+    return await dialog[method](window, options);
+  } finally {
+    dialogOpen = false;
+  }
 }
 
 async function openWorkspace() {
@@ -206,7 +278,7 @@ if (!app.requestSingleInstanceLock()) {
     app.on("second-instance", (_event, argv) => {
       if (argv.includes("--background")) return;
       if (argv.includes("--beacon-settings")) show();
-      else openWorkspace();
+      else show();
     });
     try {
       loginStartup.initialize();
@@ -220,7 +292,18 @@ if (!app.requestSingleInstanceLock()) {
     const { Workspace } = await import("./workspace.mjs");
     const { importHistory, previousHistoryPath } =
       await import("./import-history.mjs");
-    const { rebindAntigravity } = await import("../scripts/plugins.mjs");
+    const { AgentPlugins } = await import("./agent-plugins.mjs");
+    pluginBundles = new AgentPlugins({
+      home: app.getPath("userData"),
+      source: app.isPackaged
+        ? path.join(process.resourcesPath, "plugins")
+        : path.join(__dirname, "..", "build", "plugins"),
+    });
+    try {
+      pluginBundles.prepare();
+    } catch (error) {
+      lastError = "Plugin setup failed: " + error.message;
+    }
     const configPath = path.join(__dirname, "signin.json");
     const config = fs.existsSync(configPath)
       ? JSON.parse(fs.readFileSync(configPath, "utf8"))
@@ -286,12 +369,26 @@ if (!app.requestSingleInstanceLock()) {
     } catch (error) {
       lastError = "ASIP Beacon could not start: " + error.message;
     }
-    const icon = path.join(__dirname, "icon.png");
-    tray = new Tray(
-      nativeImage.createFromPath(icon).resize({ width: 22, height: 22 }),
-    );
-    updateTray(snapshot());
-    tray.on("click", openWorkspace);
+    try {
+      const image = nativeImage
+        .createFromPath(
+          path.join(
+            __dirname,
+            process.platform === "darwin" ? "trayTemplate.png" : "icon.png",
+          ),
+        )
+        .resize({ width: 22, height: 22 });
+      if (process.platform === "darwin") image.setTemplateImage(true);
+      tray = new Tray(image);
+      if (process.platform === "darwin") app.dock?.hide();
+      updateTray(snapshot());
+      tray.on("click", () => show({ toggle: true }));
+      if (process.platform !== "linux")
+        tray.on("right-click", () => tray.popUpContextMenu(tray.asipMenu));
+    } catch {
+      tray = null;
+    }
+    app.on("activate", () => show({ full: true }));
     ipcMain.handle("asip:open-workspace", openWorkspace);
     ipcMain.handle("asip:status", () => snapshot());
     ipcMain.handle("asip:copy-text", (_event, text) => {
@@ -309,7 +406,7 @@ if (!app.requestSingleInstanceLock()) {
       if (!runtime.account)
         throw new Error("Sign in before importing history.");
       const owner = runtime.account.accountId;
-      const selection = await dialog.showOpenDialog(window, {
+      const selection = await nativeDialog("showOpenDialog", {
         title: "Import previous ASIP history",
         defaultPath: previousHistoryPath(),
         filters: [
@@ -335,7 +432,7 @@ if (!app.requestSingleInstanceLock()) {
       const record = recovery.list().find((entry) => entry.id === id);
       if (!record) throw new Error("Choose an existing recovery record.");
       const owner = runtime.account.accountId;
-      const answer = await dialog.showMessageBox(window, {
+      const answer = await nativeDialog("showMessageBox", {
         type: "question",
         buttons: ["Cancel", "Restore history"],
         defaultId: 0,
@@ -413,6 +510,10 @@ if (!app.requestSingleInstanceLock()) {
         const account = await identity.signIn(provider, controller.signal);
         controller.signal.throwIfAborted();
         runtime.signIn(account);
+        if (pending && !pending.account) {
+          runtime.completeSignIn(pending.id, account);
+          pending = null;
+        }
         persist();
       } catch (error) {
         lastError = error.message;
@@ -437,8 +538,9 @@ if (!app.requestSingleInstanceLock()) {
     });
     ipcMain.handle("asip:cancel", () => {
       abort?.abort();
-      if (pending) runtime.cancelSignIn(pending.id);
+      const id = pending?.id;
       pending = null;
+      if (id) runtime.cancelSignIn(id);
       deviceCode = null;
       send();
       return snapshot();
@@ -457,32 +559,20 @@ if (!app.requestSingleInstanceLock()) {
       send();
       return snapshot();
     });
-    ipcMain.handle("asip:export-plugin", async (_event, agent) => {
-      if (!["codex", "claude-code", "antigravity"].includes(agent))
-        throw new Error("Choose an agent.");
-      const selection = await dialog.showOpenDialog(window, {
-        title: "Save ASIP plugin",
-        properties: ["openDirectory", "createDirectory"],
-      });
-      if (selection.canceled) return null;
-      const sourceRoot = app.isPackaged
-        ? path.join(process.resourcesPath, "plugins")
-        : path.join(__dirname, "..", "build", "plugins");
-      const directory = path.join(selection.filePaths[0], "asip-" + agent);
-      if (fs.existsSync(directory))
-        throw new Error("Choose a folder without an existing ASIP plugin.");
-      fs.cpSync(
-        path.join(
-          sourceRoot,
-          process.platform + "-" + process.arch,
-          "asip-" + agent,
-        ),
-        directory,
-        { recursive: true },
-      );
-      if (agent === "antigravity") rebindAntigravity(directory);
-      await shell.openPath(directory);
-      return directory;
+    ipcMain.handle("asip:show-full", () => show({ full: true }));
+    ipcMain.handle("asip:hide-window", () => window?.hide());
+    ipcMain.handle("asip:quit", () => app.quit());
+    ipcMain.handle("asip:plugin-folder", (_event, agent) =>
+      shell.openPath(pluginBundles.directory(agent)),
+    );
+    ipcMain.handle("asip:install-plugin", async (_event, agent) => {
+      const operation = pluginBundles.install(agent);
+      send();
+      try {
+        return await operation;
+      } finally {
+        send();
+      }
     });
     setInterval(() => {
       runtime.expireRequests();
@@ -494,7 +584,8 @@ if (!app.requestSingleInstanceLock()) {
       send();
     }, 2000).unref();
     if (process.argv.includes("--beacon-settings")) show();
-    else if (!loginStartup.background()) openWorkspace();
+    else if (!loginStartup.background()) show();
+    else if (process.platform !== "linux" && !tray) show({ full: true });
   });
 app.on("window-all-closed", () => {});
 app.on("before-quit", () => {

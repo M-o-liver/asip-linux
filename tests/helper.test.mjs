@@ -129,11 +129,6 @@ test(
         "asip_record",
       ],
     );
-    response = await client.request("tools/call", {
-      name: "asip_connect",
-      arguments: {},
-    });
-    assert.equal(response.result.isError, true);
     for (const name of ["asip_record", "asip_recall"]) {
       response = await client.request("tools/call", { name, arguments: {} });
       assert.equal(response.result.isError, true);
@@ -149,21 +144,19 @@ test(
     );
     assert.deepEqual(inactiveHint, {});
     assert.equal(fs.existsSync(path.join(home, "beacon")), false);
-    runtime.signIn(account);
     let ready;
     const requested = new Promise((resolve) => (ready = resolve));
     runtime.onPluginSignIn = (request) => ready(request);
-    response = await client.request("tools/call", {
-      name: "asip_connect",
-      arguments: {},
-    });
-    assert.equal(
-      JSON.parse(response.result.content[0].text).state,
-      "connecting",
+    // First native MCP startup opens sign-in, without a model/setup tool call.
+    child.stdin.write(
+      JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) +
+        "\n",
     );
     const request = await requested;
+    assert.equal(request.account, null);
     // Ping remains responsive while the user signs in.
     assert.deepEqual((await client.request("ping")).result, {});
+    runtime.signIn(account);
     runtime.completeSignIn(request.id, account);
     await client.notification("notifications/tools/list_changed");
     response = await client.request("tools/list");

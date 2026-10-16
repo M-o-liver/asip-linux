@@ -86,19 +86,19 @@ test("recorded commands omit authentication values and old history is repaired w
 test("nothing is collected before Beacon and plugin authentication", (t) => {
   const { home, runtime } = setup(t);
   assert.throws(() => runtime.record("", event), /Sign in/);
-  assert.throws(
-    () => runtime.requestSignIn({ agent: "codex", challenge: hash("test") }),
-    /Beacon first/,
-  );
-  runtime.signIn(account);
-  assert.throws(() => runtime.record("", event), /Sign in/);
-  assert.deepEqual(fs.readdirSync(home), []);
-  assert.equal(runtime.status().recording, false);
   const verifier = "valid-proof",
     request = runtime.requestSignIn({
       agent: "codex",
       challenge: hash(verifier),
     });
+  assert.throws(
+    () => runtime.completeSignIn(request.requestId, account),
+    /Sign in/,
+  );
+  runtime.signIn(account);
+  assert.throws(() => runtime.record("", event), /Sign in/);
+  assert.deepEqual(fs.readdirSync(home), []);
+  assert.equal(runtime.status().recording, false);
   runtime.completeSignIn(request.requestId, account);
   assert.equal(runtime.status().recording, false);
   assert.deepEqual(fs.readdirSync(home), []);
@@ -146,6 +146,26 @@ test("wrong account, wrong proof, replay, and cancellation cannot connect", (t) 
     () => runtime.pollSignIn(cancelled.requestId, verifier),
     /expired/,
   );
+});
+
+test("first starts from three agents queue their account connections without losing the remaining requests", (t) => {
+  const { runtime } = setup(t);
+  const shown = [];
+  runtime.onPluginSignIn = (request) => shown.push(request.agent);
+  const requests = ["codex", "claude-code", "antigravity"].map((agent) => ({
+    agent,
+    ...runtime.requestSignIn({ agent, challenge: hash(agent) }),
+  }));
+  assert.deepEqual(shown, ["codex"]);
+  runtime.signIn(account);
+  for (const request of requests) {
+    runtime.completeSignIn(request.requestId, account);
+    const result = runtime.pollSignIn(request.requestId, request.agent);
+    assert.equal(result.state, "connected");
+  }
+  assert.deepEqual(shown, ["codex", "claude-code", "antigravity"]);
+  assert.equal(runtime.clients.size, 3);
+  assert.equal(runtime.requests.size, 0);
 });
 
 test("record attribution comes from the connected plugin; logout and disconnect stop it", (t) => {

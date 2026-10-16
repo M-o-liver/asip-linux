@@ -61,7 +61,7 @@ export async function qualifyCodex({ connected = false, apiConnection } = {}) {
     const hooks = await request("hooks/list", { cwds: [process.cwd()] });
     const nativeHooks = hooks.data
       .flatMap((entry) => entry.hooks)
-      .filter((hook) => hook.pluginId === "asip@asip-local");
+      .filter((hook) => hook.pluginId === "asip@asip");
     assert.equal(
       nativeHooks.length,
       9,
@@ -93,6 +93,27 @@ export async function qualifyCodex({ connected = false, apiConnection } = {}) {
       version,
       "The installed helper must match the Beacon version.",
     );
+    if (connected) {
+      let authenticated = false;
+      const deadline = Date.now() + 15000;
+      while (Date.now() < deadline) {
+        const response = await request("mcpServer/tool/call", {
+          threadId: started.thread.id,
+          server: server.name,
+          tool: "asip_status",
+          arguments: {},
+        });
+        if (!response.isError) {
+          authenticated = true;
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      assert.ok(
+        authenticated,
+        "First MCP startup must finish the ASIP account connection.",
+      );
+    }
     const disconnected = await request("mcpServer/tool/call", {
       threadId: started.thread.id,
       server: server.name,
