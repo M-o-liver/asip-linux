@@ -15,8 +15,8 @@
     "test": "npm run build:helper && node --test tests/*.test.mjs",
     "build:helper": "node scripts/build-helper.mjs",
     "build:all-helpers": "node scripts/build-helper.mjs --all",
-    "package": "npm run build:helper && electron-builder",
-    "package:dir": "npm run build:helper && electron-builder --dir"
+    "package": "npm run build:helper && electron-builder --publish never",
+    "package:dir": "npm run build:helper && electron-builder --publish never --dir"
   },
   "dependencies": {
     "jose": "6.2.12"
