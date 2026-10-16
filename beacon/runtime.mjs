@@ -127,7 +127,10 @@ export class Runtime {
       expires: Date.now() + 300000,
       accountId: this.account?.accountId || null,
     });
-    if (this.requests.size === 1) this.publishNextRequest();
+    // An approved request may outlive its MCP process before it polls. It
+    // must not block a different agent's first account connection.
+    if ([...this.requests].find(([, request]) => !request.token)?.[0] === id)
+      this.publishNextRequest();
     return { requestId: id };
   }
 

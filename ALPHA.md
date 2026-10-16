@@ -1,6 +1,6 @@
 # ASIP alpha test
 
-Download Beacon from the [alpha release](https://github.com/M-o-liver/asip-linux/releases/tag/v0.3.1-alpha.2). Windows users should choose **ASIP.Beacon.Setup.0.3.1.exe**. The ZIP is also available. These installers do not yet have publisher signatures.
+These instructions describe the 0.4 branch. Download its installers from the latest successful [native build](https://github.com/M-o-liver/asip-linux/actions/workflows/beacon.yml): open the build, then choose your operating system's artifact. Windows users should choose **ASIP Beacon Setup 0.4.0.exe** inside that artifact. The [previous alpha release](https://github.com/M-o-liver/asip-linux/releases/tag/v0.3.1-alpha.2) has the older Beacon interface. These installers do not yet have publisher signatures.
 
 ## Windows with Claude Code
 

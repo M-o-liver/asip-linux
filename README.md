@@ -4,7 +4,7 @@ ASIP keeps project history across Codex, Claude Code, and Antigravity.
 
 This branch starts with an installable Beacon and native agent plugins. It replaces the earlier daemon-based prototype. It is an alpha, not a completed release.
 
-[Download the alpha](https://github.com/M-o-liver/asip-linux/releases/tag/v0.3.1-alpha.2) · [Installation and test guide](ALPHA.md)
+The 0.4 installation flow below is available in this branch's [native build artifacts](https://github.com/M-o-liver/asip-linux/actions/workflows/beacon.yml). The [previous alpha release](https://github.com/M-o-liver/asip-linux/releases/tag/v0.3.1-alpha.2) has the older Beacon interface. [Installation and test guide](ALPHA.md).
 
 ## Install and connect
 
@@ -64,7 +64,7 @@ npm run package
 
 `npm run build:all-helpers` also compiles helpers for Windows, Linux, and macOS on x64 and arm64. Installer builds include only their own platform's helper and plugins.
 
-Launching ASIP or choosing **Open ASIP** opens the local project workspace in your browser. **Beacon settings** opens the small connection/settings window. Beacon starts in the background at login by default; an explicit opt-out is retained. An expired browser connection offers **Open ASIP** instead of displaying an empty project map.
+Launching Beacon opens its desktop interface. Choosing **Open ASIP** opens the local project workspace in your browser. Beacon starts in the background at login by default; an explicit opt-out is retained. Unsigned Mac alpha builds use a per-user LaunchAgent when native login-item registration is unavailable. An expired browser connection offers **Open ASIP** instead of displaying an empty project map.
 
 If you used the earlier ASIP workspace, choose **Import previous history** in Beacon settings and select its `memory.sqlite3` file. The import restores the project catalogue, directories, relationships, events, session metadata, and intent outcomes into the signed-in account. It preserves the original database and saves the current history as a recovery record before importing. Repeating an import does not duplicate records. Projects with no activity remain visible in the map.
 

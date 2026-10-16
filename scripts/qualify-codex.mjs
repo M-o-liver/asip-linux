@@ -95,6 +95,7 @@ export async function qualifyCodex({ connected = false, apiConnection } = {}) {
     );
     if (connected) {
       let authenticated = false;
+      let lastStatus;
       const deadline = Date.now() + 15000;
       while (Date.now() < deadline) {
         const response = await request("mcpServer/tool/call", {
@@ -103,6 +104,7 @@ export async function qualifyCodex({ connected = false, apiConnection } = {}) {
           tool: "asip_status",
           arguments: {},
         });
+        lastStatus = response;
         if (!response.isError) {
           authenticated = true;
           break;
@@ -111,7 +113,8 @@ export async function qualifyCodex({ connected = false, apiConnection } = {}) {
       }
       assert.ok(
         authenticated,
-        "First MCP startup must finish the ASIP account connection.",
+        "First MCP startup must finish the ASIP account connection: " +
+          JSON.stringify(lastStatus),
       );
     }
     const disconnected = await request("mcpServer/tool/call", {

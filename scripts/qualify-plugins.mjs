@@ -50,6 +50,19 @@ const manager = new AgentPlugins({
   },
 });
 manager.prepare();
+process.env.ASIP_PLUGIN_STATE = path.resolve(
+  "build/qualification-plugin-state",
+);
+// MCP clients filter inherited environment variables. Bind disposable state
+// explicitly in these test bundles, never in a user's provider settings.
+for (const agent of ["codex", "claude-code"]) {
+  const file = path.join(manager.directory(agent), ".mcp.json");
+  const config = JSON.parse(fs.readFileSync(file));
+  config.mcpServers.asip.env = {
+    ASIP_PLUGIN_STATE: process.env.ASIP_PLUGIN_STATE,
+  };
+  fs.writeFileSync(file, JSON.stringify(config));
+}
 for (const agent of ["codex", "claude-code", "antigravity"])
   await manager.install(agent);
 run("claude", [
@@ -74,9 +87,6 @@ assert.ok(
 assert.ok(asip.hooks?.length, "Antigravity must discover ASIP's native hooks.");
 // Exercise automatic account connection through the actual native MCP clients.
 // Only this disposable CI profile trusts the fixture identity; no model runs.
-process.env.ASIP_PLUGIN_STATE = path.resolve(
-  "build/qualification-plugin-state",
-);
 const onboarding = [];
 const identity = {
   accountId: accountId("github", "fixture"),
@@ -88,6 +98,7 @@ const runtime = new Runtime(path.resolve("build/qualification-memory"), {
   port: 12945,
   onPluginSignIn: (request) => {
     onboarding.push(request.agent);
+    console.log("Fixture sign-in requested by " + request.agent);
     runtime.signIn(identity);
     runtime.completeSignIn(request.id, identity);
   },

@@ -168,6 +168,25 @@ test("first starts from three agents queue their account connections without los
   assert.equal(runtime.requests.size, 0);
 });
 
+test("an approved request abandoned before polling does not block another agent", (t) => {
+  const { runtime } = setup(t);
+  const shown = [];
+  runtime.onPluginSignIn = (request) => shown.push(request.agent);
+  runtime.signIn(account);
+  const abandoned = runtime.requestSignIn({
+    agent: "codex",
+    challenge: hash("one"),
+  });
+  runtime.completeSignIn(abandoned.requestId, account);
+  const next = runtime.requestSignIn({
+    agent: "claude-code",
+    challenge: hash("two"),
+  });
+  assert.deepEqual(shown, ["codex", "claude-code"]);
+  runtime.completeSignIn(next.requestId, account);
+  assert.equal(runtime.pollSignIn(next.requestId, "two").agent, "claude-code");
+});
+
 test("record attribution comes from the connected plugin; logout and disconnect stop it", (t) => {
   const { runtime } = setup(t);
   runtime.signIn(account);

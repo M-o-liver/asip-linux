@@ -1,9 +1,33 @@
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
+import { createServer } from "node:http";
 
 // Exercise the CLI's native MCP startup over the Agent SDK control protocol.
 // No user message or model request is sent.
 export async function qualifyClaude({ pluginDirectory, verify } = {}) {
+  // This qualification never uses a paid account or a provider endpoint.
+  // Route the native runtime to a local rejecting gateway and fail if it
+  // attempts inference. Only SDK control messages are sent below.
+  const modelRequests = [];
+  const gateway = createServer((request, response) => {
+    if (request.url?.includes("/messages")) modelRequests.push(request.url);
+    response.writeHead(503, { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: { type: "qualification_only" } }));
+  });
+  await new Promise((resolve) => gateway.listen(0, "127.0.0.1", resolve));
+  const env = { ...process.env };
+  for (const key of Object.keys(env))
+    if (
+      key.startsWith("ANTHROPIC_") ||
+      key.startsWith("CLAUDE_CODE_USE_") ||
+      key.startsWith("CLAUDE_CODE_OAUTH_TOKEN")
+    )
+      delete env[key];
+  Object.assign(env, {
+    ANTHROPIC_BASE_URL: `http://127.0.0.1:${gateway.address().port}`,
+    ANTHROPIC_API_KEY: "asip-local-qualification-only",
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+  });
   const args = [
     "--print",
     "--input-format",
@@ -21,6 +45,7 @@ export async function qualifyClaude({ pluginDirectory, verify } = {}) {
     {
       stdio: ["pipe", "pipe", "pipe"],
       shell: process.platform === "win32",
+      env,
     },
   );
   const pending = new Map();
@@ -96,6 +121,7 @@ export async function qualifyClaude({ pluginDirectory, verify } = {}) {
       "Claude must discover ASIP API access.",
     );
     if (verify) await verify();
+    assert.deepEqual(modelRequests, [], "Qualification must not run a model.");
     return {
       server: server.name,
       nativeMcpStartup: true,
@@ -118,5 +144,6 @@ export async function qualifyClaude({ pluginDirectory, verify } = {}) {
     child.stdout.destroy();
     child.stderr.destroy();
     for (const waiting of pending.values()) clearTimeout(waiting.timer);
+    await new Promise((resolve) => gateway.close(resolve));
   }
 }

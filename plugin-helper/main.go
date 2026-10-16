@@ -428,7 +428,7 @@ func mcp() {
 			continue
 		}
 		id, present := message["id"]
-		if !present {
+		if !present || id == nil {
 			// A newly installed plugin opens ASIP's account picker without a
 			// model turn or a setup prompt. Existing/revoked tokens never trigger
 			// automatic reauthorization, so Disconnect remains effective.
@@ -519,6 +519,9 @@ func mcp() {
 			continue
 		}
 		send(map[string]any{"jsonrpc": "2.0", "id": id, "result": result})
+		if method == "initialize" && token() == "" {
+			startConnection()
+		}
 	}
 }
 

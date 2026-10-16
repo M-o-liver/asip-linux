@@ -112,6 +112,9 @@ test(
     );
     const child = helper("mcp", "codex", path.join(home, "codex"));
     const client = rpc(child);
+    let ready;
+    const requested = new Promise((resolve) => (ready = resolve));
+    runtime.onPluginSignIn = (request) => ready(request);
     let response = await client.request("initialize", {
       protocolVersion: "2025-06-18",
     });
@@ -144,14 +147,8 @@ test(
     );
     assert.deepEqual(inactiveHint, {});
     assert.equal(fs.existsSync(path.join(home, "beacon")), false);
-    let ready;
-    const requested = new Promise((resolve) => (ready = resolve));
-    runtime.onPluginSignIn = (request) => ready(request);
-    // First native MCP startup opens sign-in, without a model/setup tool call.
-    child.stdin.write(
-      JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) +
-        "\n",
-    );
+    // Native initialization opens sign-in without requiring a model/setup call
+    // or relying on a particular client's initialized-notification encoding.
     const request = await requested;
     assert.equal(request.account, null);
     // Ping remains responsive while the user signs in.
