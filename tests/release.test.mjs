@@ -11,7 +11,9 @@ test(
   "release staging keeps both Mac architectures, all installer sets, evidence, and matching hashes",
   { skip: process.platform === "win32" },
   (t) => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "asip-release-"));
+    const root = fs.realpathSync(
+      fs.mkdtempSync(path.join(os.tmpdir(), "asip-release-")),
+    );
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     fs.writeFileSync(
       path.join(root, "package.json"),
