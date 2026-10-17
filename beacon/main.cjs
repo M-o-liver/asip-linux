@@ -662,6 +662,17 @@ if (
       shell.openPath(pluginBundles.directory(agent)),
     );
     ipcMain.handle("asip:install-plugin", async (_event, agent) => {
+      if (agent === "codex" && !pluginBundles.find(agent)) {
+        const { codexDesktopURL } = await import("./agent-plugins.mjs");
+        await shell.openExternal(
+          codexDesktopURL(pluginBundles.directory(agent)),
+        );
+        return {
+          agent,
+          message:
+            "Install ASIP in ChatGPT, then open a new chat. Review ASIP in /hooks for automatic recording.",
+        };
+      }
       const operation = pluginBundles.install(agent);
       send();
       try {

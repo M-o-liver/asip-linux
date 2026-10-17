@@ -103,11 +103,13 @@ function renderAgents(state) {
     install.className = connected ? "secondary" : "primary";
     install.textContent = plugin.installing
       ? "Installing…"
-      : !plugin.available
-        ? "Use plugin folder"
-        : plugin.addedAt || connected
-          ? "Update"
-          : "Install";
+      : plugin.desktop
+        ? "Open in ChatGPT"
+        : !plugin.available
+          ? "Use plugin folder"
+          : plugin.addedAt || connected
+            ? "Update"
+            : "Install";
     install.disabled = plugin.installing;
     install.onclick = async () => {
       if (!plugin.available) {
@@ -124,6 +126,7 @@ function renderAgents(state) {
         formError = error.message;
         $("error").textContent = formError;
       } finally {
+        lastCards = "";
         render(await window.asip.status());
       }
     };

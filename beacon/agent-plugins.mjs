@@ -12,6 +12,19 @@ export const agents = {
   antigravity: { name: "Antigravity", command: "agy" },
 };
 
+export function codexDesktopURL(directory) {
+  const marketplace = path.join(
+    directory,
+    ".agents",
+    "plugins",
+    "marketplace.json",
+  );
+  return (
+    "codex://plugins/asip?" +
+    new URLSearchParams({ marketplacePath: marketplace })
+  );
+}
+
 export function findAgentCommand(
   agent,
   { platform = process.platform, env = process.env, home = os.homedir() } = {},
@@ -138,7 +151,9 @@ export class AgentPlugins {
       id,
       name: agent.name,
       directory: this.directory(id),
-      available: id === "antigravity" || Boolean(this.find(id)),
+      available:
+        id === "antigravity" || id === "codex" || Boolean(this.find(id)),
+      desktop: id === "codex" && !this.find(id),
       installing: this.busy.has(id),
       addedAt: receipts[id]?.at || null,
     }));

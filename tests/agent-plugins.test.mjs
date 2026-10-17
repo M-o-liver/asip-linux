@@ -7,6 +7,7 @@ import {
   AgentPlugins,
   findAgentCommand,
   runAgentCommand,
+  codexDesktopURL,
 } from "../beacon/agent-plugins.mjs";
 import desktop from "../beacon/desktop.cjs";
 
@@ -38,6 +39,19 @@ test("managed bundles keep stable paths, update their source, and preserve nativ
     fs.existsSync(path.join(installedPath, ".codex-plugin/plugin.json")),
   );
   assert.throws(() => manager.directory("../elsewhere"));
+});
+
+test("ChatGPT installation links keep the local marketplace path intact", () => {
+  const directory = path.join(os.tmpdir(), "A & B's ASIP", "asip-codex");
+  const url = new URL(codexDesktopURL(directory));
+  assert.equal(url.protocol, "codex:");
+  assert.equal(url.host, "plugins");
+  assert.equal(url.pathname, "/asip");
+  assert.equal(
+    url.searchParams.get("marketplacePath"),
+    path.join(directory, ".agents/plugins/marketplace.json"),
+  );
+  assert.equal([...url.searchParams].length, 1);
 });
 
 test("native install keeps paths as arguments, migrates only the legacy ASIP plugin, and records successful completion", async (t) => {
