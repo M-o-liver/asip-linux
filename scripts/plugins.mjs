@@ -43,6 +43,11 @@ export function buildPlugin({ root, target, agent, binary }) {
     );
   };
   write("skills/asip/SKILL.md", skill);
+  fs.mkdirSync(path.join(directory, "assets"), { recursive: true });
+  fs.copyFileSync(
+    path.join(root, "beacon", "icon.png"),
+    path.join(directory, "assets", "icon.png"),
+  );
   write(
     "skills/setup/SKILL.md",
     "---\nname: setup\ndescription: Connect the ASIP plugin.\n---\n\nCall asip_status first. If already connected, report it. Otherwise call asip_connect and tell the user to finish sign-in or click Connect in ASIP Beacon. Use asip_status to check the connection when they return.\n",
@@ -119,6 +124,14 @@ export function buildPlugin({ root, target, agent, binary }) {
       extensions: {
         "com.openai": { onboardingSkill: "./skills/setup/SKILL.md" },
       },
+      interface: {
+        displayName: "ASIP",
+        shortDescription: "Project history and API connections.",
+        developerName: "ASIP",
+        category: "Productivity",
+        composerIcon: "./assets/icon.png",
+        logo: "./assets/icon.png",
+      },
     });
     write(".mcp.json", {
       mcpServers: {
@@ -128,6 +141,7 @@ export function buildPlugin({ root, target, agent, binary }) {
     write("hooks/hooks.json", { hooks });
     write(".agents/plugins/marketplace.json", {
       name: "asip",
+      interface: { displayName: "ASIP" },
       plugins: [
         {
           name: "asip",
@@ -154,7 +168,7 @@ export function buildPlugin({ root, target, agent, binary }) {
   }
   write(
     "README.md",
-    `# ASIP plugin\n\nInstall this folder using your agent's plugin manager, then ask the agent to connect ASIP. Open ASIP Beacon and sign in first.\n\n${agent === "antigravity" ? "Export this bundle from the installed Beacon. Keep the exported folder in place; its native commands use that location.\n" : ""}`,
+    `# ASIP plugin\n\nInstall this folder using your agent's plugin manager. When the plugin first starts, Beacon opens the ASIP connection. Sign in with Google or GitHub, or click Connect if already signed in.\n\n${agent === "codex" ? "In ChatGPT desktop, open Plugins → Add → Add a marketplace, enter this folder, then install ASIP from Personal. Review ASIP in /hooks for automatic recording.\n" : ""}${agent === "antigravity" ? "Beacon maintains this folder; installed commands use its location.\n" : ""}`,
   );
   return directory;
 }

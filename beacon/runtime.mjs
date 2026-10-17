@@ -49,8 +49,12 @@ export class Runtime {
     }
     let records = 0;
     if (this.account && fs.existsSync(this.databasePath())) {
-      this.storage();
-      records = this.recordCount;
+      // History can also be imported by another local process. Read the
+      // committed count so Beacon does not keep displaying a stale total.
+      records = this.storage()
+        .prepare("SELECT COUNT(*) AS n FROM events")
+        .get().n;
+      this.recordCount = records;
     }
     return {
       account: this.account
@@ -101,6 +105,9 @@ export class Runtime {
     this.abortRequests(agent);
     for (const [token, client] of this.clients)
       if (client.agent === agent) this.clients.delete(token);
+    for (const [id, request] of this.requests)
+      if (request.agent === agent) this.requests.delete(id);
+    this.publishNextRequest();
   }
   expireRequests() {
     let expired = false;

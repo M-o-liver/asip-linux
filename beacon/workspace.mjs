@@ -2,6 +2,15 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { ownTools } from "./runtime.mjs";
 
+export function recentWork(runtime, limit = 4) {
+  return runtime
+    .storage()
+    .prepare(
+      "SELECT id,at,agent,kind,summary,project FROM events WHERE kind IN ('result','evidence','unresolved','failed','api_failed','api_unresolved','intent.finished','intent.failed','intent.held','StopFailure') OR (kind='Stop' AND trim(summary) NOT IN ('','Stop')) ORDER BY at DESC,rowid DESC LIMIT ?",
+    )
+    .all(limit);
+}
+
 export class Workspace {
   constructor(
     runtime,
@@ -24,7 +33,7 @@ export class Workspace {
     this.tickets.clear();
     this.sessions.clear();
   }
-  openURL() {
+  openURL(project) {
     if (!this.runtime.account) throw new Error("Sign in to ASIP Beacon first.");
     for (const map of [this.tickets, this.sessions])
       for (const [id, entry] of map)
@@ -33,6 +42,8 @@ export class Workspace {
     this.tickets.set(ticket, {
       account: this.runtime.account.accountId,
       expires: Date.now() + 30000,
+      project:
+        typeof project === "string" && project.length <= 2000 ? project : "",
     });
     return "http://" + this.runtime.host + "/workspace/open?ticket=" + ticket;
   }
@@ -77,7 +88,11 @@ export class Workspace {
         expires: Date.now() + 8 * 3600000,
       });
       send(303, "", "text/plain", {
-        Location: "/workspace/",
+        Location:
+          "/workspace/" +
+          (ticket.project
+            ? "?project=" + encodeURIComponent(ticket.project)
+            : ""),
         "Set-Cookie":
           "asip_workspace=" +
           session +
@@ -95,7 +110,14 @@ export class Workspace {
       }
       if (url.pathname === "/workspace/reopen" && this.runtime.account)
         await this.openWorkspace();
-      else this.openBeacon();
+      else {
+        const view = url.searchParams.get("view");
+        this.openBeacon(
+          ["connections", "agents", "recovery", "settings"].includes(view)
+            ? view
+            : undefined,
+        );
+      }
       send(200, { opened: true });
       return;
     }
@@ -175,13 +197,26 @@ export class Workspace {
     const scope = project === "unassigned" ? null : project;
     const filter = "(?=0 OR project IS ?)";
     const restrict = project ? 1 : 0;
-    base.sessions = db
+    const sessionOffset = Math.max(
+      0,
+      Math.min(100000, Math.floor(Number(params.get("sessionOffset")) || 0)),
+    );
+    base.sessionCount = db
+      .prepare(
+        "SELECT COUNT(*) AS n FROM (SELECT 1 FROM events WHERE " +
+          filter +
+          " GROUP BY agent,session)",
+      )
+      .get(restrict, scope).n;
+    const sessions = db
       .prepare(
         "SELECT agent,session,COUNT(*) AS events,MIN(at) AS startedAt,MAX(at) AS lastActivity FROM events WHERE " +
           filter +
-          " GROUP BY agent,session ORDER BY MAX(at) DESC LIMIT 100",
+          " GROUP BY agent,session ORDER BY MAX(at) DESC,agent,session LIMIT 21 OFFSET ?",
       )
-      .all(restrict, scope);
+      .all(restrict, scope, sessionOffset);
+    base.sessions = sessions.slice(0, 20);
+    base.moreSessions = sessions.length > 20;
     base.directories = db
       .prepare(
         "SELECT DISTINCT COALESCE(json_extract(data,'$.project_evidence.repositoryRoot'),json_extract(data,'$.cwd')) AS directory FROM events WHERE " +

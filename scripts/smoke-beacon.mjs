@@ -26,6 +26,14 @@ if (process.platform === "darwin") {
   );
 if (process.platform === "linux" && process.argv.includes("--installed"))
   executable = "/usr/bin/asip-beacon";
+if (process.platform === "linux" && process.argv.includes("--appimage"))
+  executable = path.join(
+    artifacts,
+    "ASIP Beacon-" +
+      JSON.parse(fs.readFileSync("package.json")).version +
+      (process.arch === "x64" ? "" : "-" + process.arch) +
+      ".AppImage",
+  );
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "asip-beacon-smoke-"));
 const child = spawn(
   executable,
@@ -53,6 +61,54 @@ try {
   }
   assert.ok(status, "Beacon did not start: " + errors);
   assert.deepEqual(status, { running: true, signedIn: false });
+  // A secondary invocation forwards actions and quits without initializing a
+  // Runtime. Its shutdown must not erase the primary's saved account file.
+  const savedAccount = path.join(profile, "signin.bin");
+  const marker = Buffer.from("fixture-existing-encrypted-account-state");
+  fs.writeFileSync(savedAccount, marker);
+  const secondary = spawn(
+    executable,
+    [
+      "--user-data-dir=" + profile,
+      "--import-connections",
+      path.join(profile, "fixture.json"),
+    ],
+    { stdio: "ignore" },
+  );
+  const secondaryCode = await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      secondary.kill();
+      reject(new Error("Secondary Beacon did not exit."));
+    }, 15000);
+    secondary.once("error", (error) => {
+      clearTimeout(timeout);
+      reject(error);
+    });
+    secondary.once("exit", (code) => {
+      clearTimeout(timeout);
+      resolve(code);
+    });
+  });
+  assert.equal(secondaryCode, 0);
+  assert.deepEqual(
+    fs.readFileSync(savedAccount),
+    marker,
+    "Secondary launch erased the saved ASIP account.",
+  );
+  const importDeadline = Date.now() + 10000;
+  while (
+    !errors.includes("Sign in before importing connections.") &&
+    Date.now() < importDeadline
+  )
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.ok(
+    errors.includes(
+      "ASIP connection import failed: Sign in before importing connections.",
+    ),
+    "Secondary launch must forward its import action to the primary instance: " +
+      errors,
+  );
+  fs.rmSync(savedAccount);
   const response = await fetch("http://127.0.0.1:12945/events", {
     method: "POST",
     body: JSON.stringify({
@@ -64,7 +120,9 @@ try {
   assert.equal(response.status, 401);
   assert.equal(fs.existsSync(path.join(profile, "accounts")), false);
   assert.equal(fs.existsSync(path.join(profile, "signin.bin")), false);
-  console.log("Packaged Beacon starts signed out and refuses activity.");
+  console.log(
+    "Packaged Beacon starts signed out, refuses activity, and preserves saved accounts during secondary launches.",
+  );
 } finally {
   if (process.platform === "win32") {
     // Terminating only Electron's main process can leave a renderer holding

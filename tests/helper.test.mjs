@@ -326,6 +326,57 @@ test(
     });
     assert.equal(response.result.isError, true);
 
+    // Desktop tool discovery may close its MCP transport before the user
+    // approves Beacon. Connection must survive that short-lived process.
+    const discoveryState = path.join(home, "short-lived-discovery");
+    let discovered;
+    const discoveryRequest = new Promise((resolve) => {
+      discovered = resolve;
+    });
+    runtime.onPluginSignIn = discovered;
+    const discovery = helper("mcp", "codex", discoveryState);
+    const discoveryClient = rpc(discovery);
+    await discoveryClient.request("initialize", {
+      protocolVersion: "2025-06-18",
+    });
+    const waiting = await discoveryRequest;
+    const discoveryExit = once(discovery, "exit");
+    discovery.stdin.end();
+    await discoveryExit;
+    const parallel = helper("mcp", "codex", discoveryState);
+    await rpc(parallel).request("initialize", {});
+    const parallelExit = once(parallel, "exit");
+    parallel.stdin.end();
+    await parallelExit;
+    assert.equal(
+      [...runtime.requests.values()].filter(
+        (request) => request.agent === "codex",
+      ).length,
+      1,
+      "Parallel discovery should share one account prompt.",
+    );
+    runtime.completeSignIn(waiting.id, account);
+    const credentials = path.join(discoveryState, "codex.json");
+    const deadline = Date.now() + 4000;
+    while (!fs.existsSync(credentials) && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(
+      fs.existsSync(credentials),
+      "Beacon approval must complete after the discovery MCP process exits.",
+    );
+    const resumed = helper("mcp", "codex", discoveryState);
+    const resumedClient = rpc(resumed);
+    await resumedClient.request("initialize", {});
+    assert.equal(
+      (
+        await resumedClient.request("tools/call", {
+          name: "asip_status",
+          arguments: {},
+        })
+      ).result.isError,
+      false,
+    );
+
     for (const agent of ["claude-code", "antigravity"]) {
       const state = path.join(home, agent),
         connecting = helper("connect", agent, state);

@@ -22,6 +22,12 @@ function icon(name) {
   return svg;
 }
 function navigate(page) {
+  if (
+    !["overview", "agents", "connections", "recovery", "settings"].includes(
+      page,
+    )
+  )
+    return;
   view = page;
   for (const element of document.querySelectorAll("[data-page]"))
     element.hidden = element.dataset.page !== page;
@@ -41,6 +47,7 @@ function navigate(page) {
   if (page === "recovery" && currentState?.account)
     $("recovery-details").ontoggle();
 }
+window.asip.onNavigate(navigate);
 for (const button of document.querySelectorAll("[data-nav]"))
   button.onclick = () => navigate(button.dataset.nav);
 $("view-agents").onclick = () => navigate("agents");
@@ -96,11 +103,13 @@ function renderAgents(state) {
     install.className = connected ? "secondary" : "primary";
     install.textContent = plugin.installing
       ? "Installing…"
-      : !plugin.available
-        ? "Use plugin folder"
-        : plugin.addedAt || connected
-          ? "Update"
-          : "Install";
+      : plugin.desktop
+        ? "Open in ChatGPT"
+        : !plugin.available
+          ? "Use plugin folder"
+          : plugin.addedAt || connected
+            ? "Update"
+            : "Install";
     install.disabled = plugin.installing;
     install.onclick = async () => {
       if (!plugin.available) {
@@ -117,6 +126,7 @@ function renderAgents(state) {
         formError = error.message;
         $("error").textContent = formError;
       } finally {
+        lastCards = "";
         render(await window.asip.status());
       }
     };
@@ -151,17 +161,29 @@ function renderRecent(state) {
     $("recent-work").append(empty);
   }
   for (const event of recent) {
-    const row = document.createElement("article");
+    const row = document.createElement("button");
     row.className = "recent-row";
+    row.title =
+      "Open " + (event.project?.split("/").at(-1) || "unassigned work");
+    row.onclick = () =>
+      window.asip.openWorkspace(event.project || "unassigned");
     const marker = document.createElement("div");
     marker.className = "record-marker";
-    marker.append(icon(event.kind === "unresolved" ? "recovery" : "check"));
+    marker.append(
+      icon(
+        /failed|unresolved|held|Failure/.test(event.kind)
+          ? "recovery"
+          : "check",
+      ),
+    );
     const text = document.createElement("div"),
       summary = document.createElement("p"),
       meta = document.createElement("span");
     summary.textContent = event.summary;
     meta.textContent =
       (names[event.agent] || event.agent) +
+      " · " +
+      (event.project?.split("/").at(-1) || "Unassigned") +
       " · " +
       new Date(event.at).toLocaleString(undefined, {
         dateStyle: "short",
@@ -242,6 +264,12 @@ function render(state) {
       : "Service running";
   $("account-name").textContent = state.account?.name || "ASIP account";
   $("account-handle").textContent = state.account?.handle || "Signed out";
+  $("build-version").textContent =
+    "ASIP " +
+    (state.build?.version || "") +
+    " · " +
+    (state.build?.revision || "development").slice(0, 8) +
+    (state.build?.dirty ? " (development)" : "");
   $("metric-projects").textContent = state.workspace?.projects || 0;
   $("metric-agents").textContent = state.clients.length;
   $("metric-records").textContent = state.records;
@@ -270,8 +298,34 @@ function render(state) {
       const row = document.createElement("div");
       row.className = "client";
       const text = document.createElement("span");
-      text.textContent =
-        connection.name + " · " + (connection.account || connection.provider);
+      const description = document.createElement("span");
+      description.textContent =
+        connection.name +
+        " · " +
+        (connection.label ||
+          connection.account ||
+          (connection.provider === "secret"
+            ? "Signing secret"
+            : connection.provider));
+      const status = document.createElement("small");
+      const last = connection.lastRequest;
+      status.className = "connection-status";
+      status.textContent =
+        connection.provider === "secret"
+          ? "Stored signing secret"
+          : !last
+            ? "Not checked yet"
+            : last.error
+              ? "No response · Check connection"
+              : [401, 403].includes(last.status)
+                ? "Access rejected · HTTP " + last.status
+                : "Last response · HTTP " + last.status;
+      status.classList.toggle(
+        "attention",
+        Boolean(last && (last.error || last.status >= 400)),
+      );
+      if (last) status.title = new Date(last.at).toLocaleString();
+      text.append(description, status);
       const remove = document.createElement("button");
       remove.textContent = "Remove";
       remove.onclick = async () => {
@@ -289,7 +343,7 @@ function render(state) {
         $("connection-name").value = connection.name;
         $("connection-name").readOnly = true;
         $("connection-provider").value = connection.provider;
-        $("connection-provider").disabled = true;
+        $("connection-provider").disabled = connection.provider !== "secret";
         $("connection-origin").value = connection.origin;
         $("connection-header").value = connection.header;
         $("connection-custom").hidden = connection.provider !== "custom";
@@ -303,12 +357,43 @@ function render(state) {
       };
       const actions = document.createElement("div");
       actions.className = "buttons";
+      if (connection.canCheck) {
+        const check = document.createElement("button");
+        check.textContent = "Check";
+        check.onclick = async () => {
+          check.disabled = true;
+          check.textContent = "Checking…";
+          try {
+            await window.asip.checkConnection(connection.name);
+          } catch (error) {
+            $("connection-import-result").textContent = error.message;
+          } finally {
+            render(await window.asip.status());
+            check.disabled = false;
+            check.textContent = "Check";
+          }
+        };
+        actions.append(check);
+      }
       actions.append(edit, remove);
       row.append(text, actions);
       $("connection-list").append(row);
     }
   }
 }
+$("import-connections").onclick = async () => {
+  $("import-connections").disabled = true;
+  try {
+    const result = await window.asip.importConnections();
+    if (result)
+      $("connection-import-result").textContent =
+        result.imported.length + " connections imported and verified.";
+  } catch (error) {
+    $("connection-import-result").textContent = error.message;
+  } finally {
+    $("import-connections").disabled = false;
+  }
+};
 for (const id of ["google"]) $(id).onclick = () => window.asip.signIn("google");
 for (const id of ["github"]) $(id).onclick = () => window.asip.signIn("github");
 $("launch-at-login").onchange = async () => {

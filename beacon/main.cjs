@@ -13,6 +13,12 @@ const {
 } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const buildFile = app.isPackaged
+  ? path.join(process.resourcesPath, "build.json")
+  : path.join(__dirname, "..", "build", "packaged", "build.json");
+const build = fs.existsSync(buildFile)
+  ? JSON.parse(fs.readFileSync(buildFile, "utf8"))
+  : { version: app.getVersion(), revision: "development" };
 const userDataDirectory = app.commandLine.getSwitchValue("user-data-dir");
 if (userDataDirectory) {
   fs.mkdirSync(userDataDirectory, { recursive: true });
@@ -25,6 +31,7 @@ let runtime,
   window,
   tray,
   pluginBundles,
+  recentWork,
   dialogOpen = false,
   pending = null,
   abort = null,
@@ -39,7 +46,10 @@ const agentNames = {
 const sessionPath = () => path.join(app.getPath("userData"), "signin.bin");
 
 function persist() {
-  if (!runtime?.account) {
+  // A secondary launch exits without a Runtime. It must never delete the
+  // primary instance's saved account while forwarding an action to it.
+  if (!runtime) return;
+  if (!runtime.account) {
     fs.rmSync(sessionPath(), { force: true });
     return;
   }
@@ -74,18 +84,14 @@ function snapshot() {
   return {
     ...runtime.status(),
     platform: process.platform,
+    build,
     panel: Boolean(window?.asipPanel),
     online: Boolean(runtime.server?.listening),
     plugins: pluginBundles?.list() || [],
     workspace: runtime.account
       ? {
           projects: runtime.projects().length,
-          recent: runtime
-            .storage()
-            .prepare(
-              "SELECT at,agent,kind,summary,project FROM events WHERE kind IN ('result','evidence','unresolved','intent.finished','intent.held','agent.result') ORDER BY at DESC LIMIT 4",
-            )
-            .all(),
+          recent: recentWork(runtime),
         }
       : { projects: 0, recent: [] },
     pending,
@@ -107,6 +113,31 @@ function send() {
   const state = snapshot();
   window?.webContents.send("asip:status", state);
   updateTray(state);
+}
+async function importConnectionFile(file) {
+  try {
+    const { importConnections } = await import("./import-connections.mjs");
+    const result = await importConnections(connections, file, {
+      account: () => runtime.account?.accountId,
+    });
+    lastError = "";
+    console.info("ASIP connection import completed: " + result.imported.length);
+    send();
+    return result;
+  } catch (error) {
+    lastError = error.message;
+    console.error("ASIP connection import failed: " + error.message);
+    send();
+    throw error;
+  }
+}
+function importArgument(argv, cwd = process.cwd()) {
+  const index = argv.indexOf("--import-connections");
+  const file =
+    index < 0
+      ? argv.find((arg) => arg.startsWith("--import-connections="))?.slice(21)
+      : argv[index + 1];
+  return file && !file.startsWith("--") ? path.resolve(cwd, file) : null;
 }
 function updateTray(state) {
   if (!tray) return;
@@ -171,7 +202,11 @@ function updateTray(state) {
   else tray.asipMenu = menu;
 }
 
-function show({ full = process.platform === "linux", toggle = false } = {}) {
+function show({
+  full = process.platform === "linux",
+  toggle = false,
+  page,
+} = {}) {
   let placement;
   if (!full && tray) {
     try {
@@ -192,6 +227,7 @@ function show({ full = process.platform === "linux", toggle = false } = {}) {
     window.show();
     window.focus();
     send();
+    if (page) window.webContents.send("asip:navigate", page);
     return;
   }
   window?.destroy();
@@ -232,8 +268,21 @@ function show({ full = process.platform === "linux", toggle = false } = {}) {
   }
   created.loadFile(path.join(__dirname, "window.html"));
   created.once("ready-to-show", () => {
+    // macOS can report provisional menu-bar bounds during first launch.
+    // Place the panel again once the renderer is ready and the icon is laid out.
+    if (panel && tray) {
+      try {
+        const bounds = tray.getBounds();
+        const placement = require("./desktop.cjs").panelBounds(
+          bounds,
+          screen.getDisplayMatching(bounds).workArea,
+        );
+        if (placement) created.setBounds(placement);
+      } catch {}
+    }
     created.show();
     created.focus();
+    if (page) created.webContents.send("asip:navigate", page);
   });
   created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   created.webContents.on("will-navigate", (event) => event.preventDefault());
@@ -254,7 +303,7 @@ async function nativeDialog(method, options) {
   }
 }
 
-async function openWorkspace() {
+async function openWorkspace(project) {
   if (!runtime?.server?.listening || !runtime?.workspace) {
     show();
     return;
@@ -262,7 +311,7 @@ async function openWorkspace() {
   try {
     await shell.openExternal(
       runtime.account
-        ? runtime.workspace.openURL()
+        ? runtime.workspace.openURL(project)
         : "http://" + runtime.host + "/workspace/",
     );
   } catch (error) {
@@ -271,13 +320,33 @@ async function openWorkspace() {
   }
 }
 
-if (!app.requestSingleInstanceLock()) {
+let finishStartup;
+const startupReady = new Promise((resolve) => {
+  finishStartup = resolve;
+});
+if (
+  !app.requestSingleInstanceLock({
+    importConnections: importArgument(process.argv),
+  })
+) {
   app.quit();
 } else
   app.whenReady().then(async () => {
-    app.on("second-instance", (_event, argv) => {
+    app.on("second-instance", async (_event, argv, cwd, data) => {
+      await startupReady;
+      const file =
+        typeof data?.importConnections === "string"
+          ? data.importConnections
+          : importArgument(argv, cwd);
+      if (file) {
+        importConnectionFile(file)
+          .then(() => show())
+          .catch(() => show());
+        return;
+      }
       if (argv.includes("--background")) return;
-      if (argv.includes("--beacon-settings")) show();
+      if (argv.includes("--open")) await openWorkspace();
+      else if (argv.includes("--beacon-settings")) show();
       else show();
     });
     try {
@@ -289,7 +358,9 @@ if (!app.requestSingleInstanceLock()) {
     const { Identity } = await import("./identity.mjs");
     const { Connections } = await import("./connections.mjs");
     const { Recovery } = await import("./recovery.mjs");
-    const { Workspace } = await import("./workspace.mjs");
+    const workspaceModule = await import("./workspace.mjs");
+    const { Workspace } = workspaceModule;
+    recentWork = workspaceModule.recentWork;
     const { importHistory, previousHistoryPath } =
       await import("./import-history.mjs");
     const { AgentPlugins } = await import("./agent-plugins.mjs");
@@ -333,7 +404,10 @@ if (!app.requestSingleInstanceLock()) {
       },
     });
     recovery = new Recovery(runtime);
-    new Workspace(runtime, { openBeacon: show, openWorkspace });
+    new Workspace(runtime, {
+      openBeacon: (page) => show({ page }),
+      openWorkspace,
+    });
     identity = new Identity(config, {
       openBrowser: (url) => shell.openExternal(url),
       onCode: (code) => {
@@ -389,7 +463,9 @@ if (!app.requestSingleInstanceLock()) {
       tray = null;
     }
     app.on("activate", () => show({ full: true }));
-    ipcMain.handle("asip:open-workspace", openWorkspace);
+    ipcMain.handle("asip:open-workspace", (_event, project) =>
+      openWorkspace(project),
+    );
     ipcMain.handle("asip:status", () => snapshot());
     ipcMain.handle("asip:copy-text", (_event, text) => {
       if (typeof text !== "string" || text.length > 12000)
@@ -457,6 +533,26 @@ if (!app.requestSingleInstanceLock()) {
       runtime.abortRequests(undefined, input.name);
       send();
       return snapshot();
+    });
+    ipcMain.handle("asip:check-connection", async (_event, name) => {
+      try {
+        return await connections.check(name);
+      } finally {
+        send();
+      }
+    });
+    ipcMain.handle("asip:import-connections", async () => {
+      const owner = runtime.account?.accountId;
+      if (!owner) throw new Error("Sign in before importing connections.");
+      const selection = await nativeDialog("showOpenDialog", {
+        title: "Import API connections",
+        filters: [{ name: "Connection list", extensions: ["json"] }],
+        properties: ["openFile"],
+      });
+      if (selection.canceled) return null;
+      if (runtime.account?.accountId !== owner)
+        throw new Error("The ASIP account changed.");
+      return importConnectionFile(selection.filePaths[0]);
     });
     ipcMain.handle("asip:github-connection", async (_event, input) => {
       if (!runtime.account) throw new Error("Sign in to ASIP Beacon first.");
@@ -566,6 +662,17 @@ if (!app.requestSingleInstanceLock()) {
       shell.openPath(pluginBundles.directory(agent)),
     );
     ipcMain.handle("asip:install-plugin", async (_event, agent) => {
+      if (agent === "codex" && !pluginBundles.find(agent)) {
+        const { codexDesktopURL } = await import("./agent-plugins.mjs");
+        await shell.openExternal(
+          codexDesktopURL(pluginBundles.directory(agent)),
+        );
+        return {
+          agent,
+          message:
+            "Install ASIP in ChatGPT, then open a new chat. Review ASIP in /hooks for automatic recording.",
+        };
+      }
       const operation = pluginBundles.install(agent);
       send();
       try {
@@ -583,7 +690,12 @@ if (!app.requestSingleInstanceLock()) {
       }
       send();
     }, 2000).unref();
-    if (process.argv.includes("--beacon-settings")) show();
+    finishStartup();
+    const connectionFile = importArgument(process.argv);
+    if (connectionFile)
+      await importConnectionFile(connectionFile).catch(() => {});
+    if (process.argv.includes("--open")) await openWorkspace();
+    else if (process.argv.includes("--beacon-settings")) show();
     else if (!loginStartup.background()) show();
     else if (process.platform !== "linux" && !tray) show({ full: true });
   });

@@ -79,6 +79,15 @@ const installed = JSON.parse(
   run(agy.executable, ["plugin", "list", "--json"], true),
 );
 const asip = installed.find((plugin) => plugin.name === "asip");
+const desktopPlugin = manager.registerAntigravityDesktop();
+assert.deepEqual(
+  JSON.parse(fs.readFileSync(path.join(desktopPlugin, "mcp_config.json"))),
+  JSON.parse(
+    fs.readFileSync(
+      path.join(manager.directory("antigravity"), "mcp_config.json"),
+    ),
+  ),
+);
 assert.ok(asip?.enabled, "Antigravity must enable the installed ASIP plugin.");
 assert.ok(
   asip.mcpServers?.includes("asip"),
@@ -132,11 +141,13 @@ fs.writeFileSync(
   JSON.stringify(
     {
       platform: target,
+      build: JSON.parse(fs.readFileSync("build/packaged/build.json")),
       nativeInstallation: evidence,
       codexStartup,
       claudeStartup,
       automaticAccountConnection: onboarding,
       antigravity: {
+        desktopPlugin,
         version: agy.version,
         sha512: agy.sha512,
         installed: asip,

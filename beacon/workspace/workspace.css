@@ -164,6 +164,11 @@ body.signed-out .sidebar h2 {
   width: 100%;
   height: auto;
   min-height: 140px;
+  min-width: 600px;
+}
+.map-scroll {
+  max-height: 360px;
+  overflow: auto;
 }
 .map p {
   padding: 0 20px 18px;
@@ -171,6 +176,19 @@ body.signed-out .sidebar h2 {
 .map line {
   stroke: #716faf;
   stroke-width: 2;
+  opacity: 0.18;
+  transition: opacity 120ms;
+}
+.map.focused line {
+  opacity: 0.04;
+}
+.map.focused line.related {
+  opacity: 0.85;
+}
+#sessions,
+#directories {
+  max-height: 340px;
+  overflow: auto;
 }
 .map rect {
   fill: #262c3d;
@@ -263,6 +281,12 @@ select {
 .kind.api_failed,
 .kind.unresolved,
 .kind.api_unresolved {
+  background: #4a3337;
+  color: #f4b7ba;
+}
+.kind.intentfailed,
+.kind.intentheld,
+.kind.verificationfailed {
   background: #4a3337;
   color: #f4b7ba;
 }
