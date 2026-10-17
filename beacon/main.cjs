@@ -13,6 +13,12 @@ const {
 } = require("electron");
 const fs = require("node:fs");
 const path = require("node:path");
+const buildFile = app.isPackaged
+  ? path.join(process.resourcesPath, "build.json")
+  : path.join(__dirname, "..", "build", "packaged", "build.json");
+const build = fs.existsSync(buildFile)
+  ? JSON.parse(fs.readFileSync(buildFile, "utf8"))
+  : { version: app.getVersion(), revision: "development" };
 const userDataDirectory = app.commandLine.getSwitchValue("user-data-dir");
 if (userDataDirectory) {
   fs.mkdirSync(userDataDirectory, { recursive: true });
@@ -78,6 +84,7 @@ function snapshot() {
   return {
     ...runtime.status(),
     platform: process.platform,
+    build,
     panel: Boolean(window?.asipPanel),
     online: Boolean(runtime.server?.listening),
     plugins: pluginBundles?.list() || [],

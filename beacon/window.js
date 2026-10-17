@@ -254,6 +254,12 @@ function render(state) {
       : "Service running";
   $("account-name").textContent = state.account?.name || "ASIP account";
   $("account-handle").textContent = state.account?.handle || "Signed out";
+  $("build-version").textContent =
+    "ASIP " +
+    (state.build?.version || "") +
+    " · " +
+    (state.build?.revision || "development").slice(0, 8) +
+    (state.build?.dirty ? " (development)" : "");
   $("metric-projects").textContent = state.workspace?.projects || 0;
   $("metric-agents").textContent = state.clients.length;
   $("metric-records").textContent = state.records;

@@ -37,6 +37,10 @@
     ],
     "extraResources": [
       {
+        "from": "build/packaged/build.json",
+        "to": "build.json"
+      },
+      {
         "from": "build/packaged/helper",
         "to": "helper"
       },

@@ -132,6 +132,7 @@ fs.writeFileSync(
   JSON.stringify(
     {
       platform: target,
+      build: JSON.parse(fs.readFileSync("build/packaged/build.json")),
       nativeInstallation: evidence,
       codexStartup,
       claudeStartup,

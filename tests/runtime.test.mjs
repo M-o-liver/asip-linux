@@ -131,6 +131,18 @@ test("nothing is collected before Beacon and plugin authentication", (t) => {
   runtime.record(result.token, event);
   assert.equal(runtime.status().records, 1);
 });
+test("disconnect cancels unfinished and already-approved connection requests", (t) => {
+  const { runtime } = setup(t);
+  runtime.signIn(account);
+  const { requestId } = runtime.requestSignIn({
+    agent: "codex",
+    challenge: hash("pending"),
+  });
+  runtime.completeSignIn(requestId, account);
+  runtime.disconnect("codex");
+  assert.throws(() => runtime.pollSignIn(requestId, "pending"), /expired/);
+  assert.equal(runtime.status().recording, false);
+});
 
 test("wrong account, wrong proof, replay, and cancellation cannot connect", (t) => {
   const { runtime } = setup(t);
