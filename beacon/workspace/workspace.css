@@ -284,6 +284,12 @@ select {
   background: #4a3337;
   color: #f4b7ba;
 }
+.kind.intentfailed,
+.kind.intentheld,
+.kind.verificationfailed {
+  background: #4a3337;
+  color: #f4b7ba;
+}
 .event-summary {
   line-height: 1.55;
   white-space: pre-wrap;

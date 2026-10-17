@@ -26,6 +26,14 @@ if (process.platform === "darwin") {
   );
 if (process.platform === "linux" && process.argv.includes("--installed"))
   executable = "/usr/bin/asip-beacon";
+if (process.platform === "linux" && process.argv.includes("--appimage"))
+  executable = path.join(
+    artifacts,
+    "ASIP Beacon-" +
+      JSON.parse(fs.readFileSync("package.json")).version +
+      (process.arch === "x64" ? "" : "-" + process.arch) +
+      ".AppImage",
+  );
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), "asip-beacon-smoke-"));
 const child = spawn(
   executable,

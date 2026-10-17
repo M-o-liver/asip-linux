@@ -21,6 +21,13 @@ const kinds = {
   SessionStart: "Session started",
   SessionEnd: "Session ended",
   Interrupt: "Interrupted",
+  "intent.finished": "Completed",
+  "intent.failed": "Failed",
+  "intent.held": "Unresolved",
+  "intent.released": "Resumed",
+  "intent.superseded": "Superseded",
+  "verification.passed": "Verified",
+  "verification.failed": "Verification failed",
 };
 const state = {
   project: new URLSearchParams(location.search).get("project") || "",

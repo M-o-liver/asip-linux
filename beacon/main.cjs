@@ -268,6 +268,18 @@ function show({
   }
   created.loadFile(path.join(__dirname, "window.html"));
   created.once("ready-to-show", () => {
+    // macOS can report provisional menu-bar bounds during first launch.
+    // Place the panel again once the renderer is ready and the icon is laid out.
+    if (panel && tray) {
+      try {
+        const bounds = tray.getBounds();
+        const placement = require("./desktop.cjs").panelBounds(
+          bounds,
+          screen.getDisplayMatching(bounds).workArea,
+        );
+        if (placement) created.setBounds(placement);
+      } catch {}
+    }
     created.show();
     created.focus();
     if (page) created.webContents.send("asip:navigate", page);
