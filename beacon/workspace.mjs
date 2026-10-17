@@ -2,6 +2,15 @@ import fs from "node:fs";
 import crypto from "node:crypto";
 import { ownTools } from "./runtime.mjs";
 
+export function recentWork(runtime, limit = 4) {
+  return runtime
+    .storage()
+    .prepare(
+      "SELECT id,at,agent,kind,summary,project FROM events WHERE kind IN ('result','evidence','unresolved','failed','api_failed','api_unresolved','intent.finished','intent.failed','intent.held','StopFailure') OR (kind='Stop' AND trim(summary) NOT IN ('','Stop')) ORDER BY at DESC,rowid DESC LIMIT ?",
+    )
+    .all(limit);
+}
+
 export class Workspace {
   constructor(
     runtime,
@@ -24,7 +33,7 @@ export class Workspace {
     this.tickets.clear();
     this.sessions.clear();
   }
-  openURL() {
+  openURL(project) {
     if (!this.runtime.account) throw new Error("Sign in to ASIP Beacon first.");
     for (const map of [this.tickets, this.sessions])
       for (const [id, entry] of map)
@@ -33,6 +42,8 @@ export class Workspace {
     this.tickets.set(ticket, {
       account: this.runtime.account.accountId,
       expires: Date.now() + 30000,
+      project:
+        typeof project === "string" && project.length <= 2000 ? project : "",
     });
     return "http://" + this.runtime.host + "/workspace/open?ticket=" + ticket;
   }
@@ -77,7 +88,11 @@ export class Workspace {
         expires: Date.now() + 8 * 3600000,
       });
       send(303, "", "text/plain", {
-        Location: "/workspace/",
+        Location:
+          "/workspace/" +
+          (ticket.project
+            ? "?project=" + encodeURIComponent(ticket.project)
+            : ""),
         "Set-Cookie":
           "asip_workspace=" +
           session +

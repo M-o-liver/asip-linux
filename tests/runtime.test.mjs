@@ -6,6 +6,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { Runtime } from "../beacon/runtime.mjs";
 import { accountId } from "../beacon/identity.mjs";
+import { DatabaseSync } from "node:sqlite";
 
 const account = {
   provider: "github",
@@ -40,6 +41,28 @@ const event = {
   summary: "Fix the failing build",
   data: { evidence: "build log" },
 };
+test("activity totals include history committed by another local importer", (t) => {
+  const { runtime } = setup(t);
+  runtime.signIn(account);
+  const token = connect(runtime);
+  runtime.record(token, event);
+  assert.equal(runtime.status().records, 1);
+  const importer = new DatabaseSync(runtime.databasePath());
+  importer
+    .prepare("INSERT INTO events VALUES(?,?,?,?,?,?,?,?)")
+    .run(
+      "imported-event",
+      new Date().toISOString(),
+      "legacy-asip",
+      "historical",
+      "evidence",
+      event.project,
+      "Imported result",
+      "{}",
+    );
+  importer.close();
+  assert.equal(runtime.status().records, 2);
+});
 
 test("recorded commands omit authentication values and old history is repaired without losing events", (t) => {
   const { runtime } = setup(t);

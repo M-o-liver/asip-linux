@@ -5,7 +5,7 @@ import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { Runtime } from "../beacon/runtime.mjs";
-import { Workspace } from "../beacon/workspace.mjs";
+import { Workspace, recentWork } from "../beacon/workspace.mjs";
 import { accountId } from "../beacon/identity.mjs";
 
 test("workspace opens through Beacon, shows actual projects, and invalidates browser access on sign-out", async (t) => {
@@ -83,9 +83,30 @@ test("workspace opens through Beacon, shows actual projects, and invalidates bro
     summary: "Updated dependency",
     data: { head: "fixture-revision" },
   });
-  const url = workspace.openURL();
+  const url = workspace.openURL("github.com/example/two");
   const handshake = await fetch(url, { redirect: "manual" });
   assert.equal(handshake.status, 303);
+  assert.equal(
+    handshake.headers.get("location"),
+    "/workspace/?project=github.com%2Fexample%2Ftwo",
+  );
+  runtime.record(token, {
+    session: "native-1",
+    project: "github.com/example/two",
+    kind: "Stop",
+    summary: "Verified the native desktop result",
+  });
+  runtime.record(token, { session: "native-1", kind: "Stop", summary: "Stop" });
+  runtime.record(token, {
+    session: "native-1",
+    kind: "api_failed",
+    summary: "Key expired",
+  });
+  assert.equal(recentWork(runtime)[0].summary, "Key expired");
+  assert.equal(
+    recentWork(runtime)[1].summary,
+    "Verified the native desktop result",
+  );
   const cookie = handshake.headers.get("set-cookie").split(";")[0];
   assert.match(
     handshake.headers.get("set-cookie"),
@@ -133,7 +154,7 @@ test("workspace opens through Beacon, shows actual projects, and invalidates bro
   const withoutConnections = await fetch(endpoint + "/workspace/data", {
     headers,
   }).then((r) => r.json());
-  assert.equal(withoutConnections.events.length, 3);
+  assert.equal(withoutConnections.events.length, 6);
   assert.equal(
     withoutConnections.connectionError,
     "API connections could not be opened.",
