@@ -13,8 +13,12 @@ test("workspace opens through Beacon, shows actual projects, and invalidates bro
   const runtime = new Runtime(home);
   let opened = 0;
   let reopened = 0;
+  let openedView;
   const workspace = new Workspace(runtime, {
-    openBeacon: () => opened++,
+    openBeacon: (view) => {
+      opened++;
+      openedView = view;
+    },
     openWorkspace: () => reopened++,
   });
   t.after(async () => {
@@ -146,6 +150,11 @@ test("workspace opens through Beacon, shows actual projects, and invalidates bro
     200,
   );
   assert.equal(opened, 1);
+  await fetch(endpoint + "/workspace/beacon?view=connections", {
+    method: "POST",
+    headers: { ...headers, Origin: endpoint },
+  });
+  assert.equal(openedView, "connections");
   runtime.connectionStore = {
     list() {
       throw new Error("Fixture keychain unavailable");
@@ -170,4 +179,53 @@ test("workspace opens through Beacon, shows actual projects, and invalidates bro
     (await fetch(endpoint + "/workspace/data", { headers })).status,
     401,
   );
+});
+
+test("workspace paginates older native sessions without understating the project total", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-session-pages-"));
+  const runtime = new Runtime(home);
+  t.after(async () => {
+    await runtime.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  runtime.signIn({ accountId: accountId("github", "sessions") });
+  const insert = runtime
+    .storage()
+    .prepare("INSERT INTO events VALUES(?,?,?,?,?,?,?,?)");
+  for (let i = 0; i < 27; i++)
+    insert.run(
+      "fixture-" + i,
+      new Date(Date.UTC(2026, 9, 17, 0, i)).toISOString(),
+      "codex",
+      "native-" + i,
+      "result",
+      "github.com/example/one",
+      "Verified " + i,
+      "{}",
+    );
+  insert.run(
+    "elsewhere",
+    new Date().toISOString(),
+    "codex",
+    "different-project",
+    "result",
+    "github.com/example/two",
+    "Other work",
+    "{}",
+  );
+  const workspace = new Workspace(runtime);
+  const params = new URLSearchParams({ project: "github.com/example/one" });
+  const first = workspace.data(params);
+  assert.equal(first.sessionCount, 27);
+  assert.equal(first.sessions.length, 20);
+  assert.equal(first.moreSessions, true);
+  params.set("sessionOffset", "20");
+  const older = workspace.data(params);
+  assert.equal(older.sessions.length, 7);
+  assert.equal(older.moreSessions, false);
+  assert.equal(
+    new Set([...first.sessions, ...older.sessions].map((s) => s.session)).size,
+    27,
+  );
+  assert.ok(!older.sessions.some((s) => s.session === "different-project"));
 });

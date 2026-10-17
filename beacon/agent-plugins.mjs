@@ -144,8 +144,8 @@ export class AgentPlugins {
     }));
   }
   registerAntigravityDesktop() {
-    // The desktop app/IDE reads this native global directory. `agy plugin
-    // install` stages a separate CLI copy and does not establish desktop use.
+    // The desktop app/IDE reads this native global directory. Native CLI
+    // versions may install here too; a desktop-only install needs no CLI.
     const directory = this.directory("antigravity");
     const destination = path.join(
       this.nativeHome,
@@ -161,7 +161,18 @@ export class AgentPlugins {
       if (error.code !== "ENOENT") throw error;
     }
     if (existing) {
-      if (fs.realpathSync(destination) !== fs.realpathSync(directory))
+      let matches = fs.realpathSync(destination) === fs.realpathSync(directory);
+      if (!matches && existing.isDirectory()) {
+        try {
+          matches = ["plugin.json", "mcp_config.json", "hooks.json"].every(
+            (file) =>
+              fs
+                .readFileSync(path.join(destination, file))
+                .equals(fs.readFileSync(path.join(directory, file))),
+          );
+        } catch {}
+      }
+      if (!matches)
         throw new Error(
           "Antigravity already has an ASIP folder at " +
             destination +

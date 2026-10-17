@@ -80,9 +80,13 @@ const installed = JSON.parse(
 );
 const asip = installed.find((plugin) => plugin.name === "asip");
 const desktopPlugin = manager.registerAntigravityDesktop();
-assert.equal(
-  fs.realpathSync(desktopPlugin),
-  fs.realpathSync(manager.directory("antigravity")),
+assert.deepEqual(
+  JSON.parse(fs.readFileSync(path.join(desktopPlugin, "mcp_config.json"))),
+  JSON.parse(
+    fs.readFileSync(
+      path.join(manager.directory("antigravity"), "mcp_config.json"),
+    ),
+  ),
 );
 assert.ok(asip?.enabled, "Antigravity must enable the installed ASIP plugin.");
 assert.ok(

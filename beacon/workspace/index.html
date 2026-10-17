@@ -33,12 +33,14 @@
           <h2>Project map</h2>
           <span id="map-count"></span>
         </div>
-        <svg
-          id="map"
-          viewBox="0 0 900 220"
-          role="img"
-          aria-label="Projects connected by shared agent sessions"
-        ></svg>
+        <div class="map-scroll">
+          <svg
+            id="map"
+            viewBox="0 0 900 220"
+            role="group"
+            aria-label="Projects connected by shared agent sessions"
+          ></svg>
+        </div>
         <p id="map-empty" hidden>
           No project activity yet. Install and connect an agent plugin in
           Beacon.
@@ -96,6 +98,11 @@
               <span id="session-count"></span>
             </div>
             <div id="sessions"></div>
+            <div class="pages" id="session-pages" hidden>
+              <button id="sessions-previous">Newer</button>
+              <span id="sessions-page"></span>
+              <button id="sessions-next">Older</button>
+            </div>
           </section>
           <section class="card">
             <div class="section-heading"><h2>API connections</h2></div>

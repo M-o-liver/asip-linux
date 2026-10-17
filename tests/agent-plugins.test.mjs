@@ -130,6 +130,14 @@ test("Antigravity desktop uses the managed bundle without requiring its CLI or r
     fs.readFileSync(path.join(native, "user-file"), "utf8"),
     "preserve",
   );
+  fs.rmSync(native, { recursive: true });
+  // The pinned CLI copies the matching bundle into the desktop directory.
+  manager.find = () => "fixture-agy";
+  manager.run = async () => {
+    fs.cpSync(manager.directory("antigravity"), native, { recursive: true });
+  };
+  await manager.install("antigravity");
+  assert.ok(fs.existsSync(path.join(native, "hooks.json")));
 });
 
 test(

@@ -202,7 +202,11 @@ function updateTray(state) {
   else tray.asipMenu = menu;
 }
 
-function show({ full = process.platform === "linux", toggle = false } = {}) {
+function show({
+  full = process.platform === "linux",
+  toggle = false,
+  page,
+} = {}) {
   let placement;
   if (!full && tray) {
     try {
@@ -223,6 +227,7 @@ function show({ full = process.platform === "linux", toggle = false } = {}) {
     window.show();
     window.focus();
     send();
+    if (page) window.webContents.send("asip:navigate", page);
     return;
   }
   window?.destroy();
@@ -265,6 +270,7 @@ function show({ full = process.platform === "linux", toggle = false } = {}) {
   created.once("ready-to-show", () => {
     created.show();
     created.focus();
+    if (page) created.webContents.send("asip:navigate", page);
   });
   created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   created.webContents.on("will-navigate", (event) => event.preventDefault());
@@ -327,7 +333,8 @@ if (
         return;
       }
       if (argv.includes("--background")) return;
-      if (argv.includes("--beacon-settings")) show();
+      if (argv.includes("--open")) await openWorkspace();
+      else if (argv.includes("--beacon-settings")) show();
       else show();
     });
     try {
@@ -385,7 +392,10 @@ if (
       },
     });
     recovery = new Recovery(runtime);
-    new Workspace(runtime, { openBeacon: show, openWorkspace });
+    new Workspace(runtime, {
+      openBeacon: (page) => show({ page }),
+      openWorkspace,
+    });
     identity = new Identity(config, {
       openBrowser: (url) => shell.openExternal(url),
       onCode: (code) => {
@@ -661,7 +671,8 @@ if (
     const connectionFile = importArgument(process.argv);
     if (connectionFile)
       await importConnectionFile(connectionFile).catch(() => {});
-    if (process.argv.includes("--beacon-settings")) show();
+    if (process.argv.includes("--open")) await openWorkspace();
+    else if (process.argv.includes("--beacon-settings")) show();
     else if (!loginStartup.background()) show();
     else if (process.platform !== "linux" && !tray) show({ full: true });
   });

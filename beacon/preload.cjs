@@ -29,4 +29,6 @@ contextBridge.exposeInMainWorld("asip", {
   copyText: (text) => ipcRenderer.invoke("asip:copy-text", text),
   onStatus: (callback) =>
     ipcRenderer.on("asip:status", (_event, status) => callback(status)),
+  onNavigate: (callback) =>
+    ipcRenderer.on("asip:navigate", (_event, page) => callback(page)),
 });

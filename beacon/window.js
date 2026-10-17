@@ -22,6 +22,12 @@ function icon(name) {
   return svg;
 }
 function navigate(page) {
+  if (
+    !["overview", "agents", "connections", "recovery", "settings"].includes(
+      page,
+    )
+  )
+    return;
   view = page;
   for (const element of document.querySelectorAll("[data-page]"))
     element.hidden = element.dataset.page !== page;
@@ -41,6 +47,7 @@ function navigate(page) {
   if (page === "recovery" && currentState?.account)
     $("recovery-details").ontoggle();
 }
+window.asip.onNavigate(navigate);
 for (const button of document.querySelectorAll("[data-nav]"))
   button.onclick = () => navigate(button.dataset.nav);
 $("view-agents").onclick = () => navigate("agents");
