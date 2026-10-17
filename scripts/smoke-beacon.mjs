@@ -60,7 +60,11 @@ try {
   fs.writeFileSync(savedAccount, marker);
   const secondary = spawn(
     executable,
-    ["--user-data-dir=" + profile, "--background"],
+    [
+      "--user-data-dir=" + profile,
+      "--import-connections",
+      path.join(profile, "fixture.json"),
+    ],
     { stdio: "ignore" },
   );
   const secondaryCode = await new Promise((resolve, reject) => {
@@ -82,6 +86,19 @@ try {
     fs.readFileSync(savedAccount),
     marker,
     "Secondary launch erased the saved ASIP account.",
+  );
+  const importDeadline = Date.now() + 10000;
+  while (
+    !errors.includes("Sign in before importing connections.") &&
+    Date.now() < importDeadline
+  )
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.ok(
+    errors.includes(
+      "ASIP connection import failed: Sign in before importing connections.",
+    ),
+    "Secondary launch must forward its import action to the primary instance: " +
+      errors,
   );
   fs.rmSync(savedAccount);
   const response = await fetch("http://127.0.0.1:12945/events", {
