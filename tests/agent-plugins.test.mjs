@@ -96,6 +96,42 @@ test("agent detection finds per-user installs outside the desktop PATH", (t) => 
   );
 });
 
+test("Antigravity desktop uses the managed bundle without requiring its CLI or replacing another installation", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asip-agy-desktop-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new AgentPlugins({
+    home: path.join(root, "beacon"),
+    nativeHome: path.join(root, "native home"),
+    source: path.resolve("build/plugins"),
+    find: () => null,
+  });
+  manager.prepare();
+  await manager.install("antigravity");
+  const native = path.join(manager.nativeHome, ".gemini/config/plugins/asip");
+  const command = JSON.parse(
+    fs.readFileSync(path.join(native, "mcp_config.json")),
+  ).mcpServers.asip.command;
+  assert.equal(
+    path.dirname(path.dirname(command)),
+    manager.directory("antigravity"),
+  );
+  // Replacing the managed source on upgrade keeps the desktop registration valid.
+  manager.prepare();
+  await manager.install("antigravity");
+  assert.ok(fs.existsSync(path.join(native, "hooks.json")));
+  fs.unlinkSync(native);
+  fs.mkdirSync(native);
+  fs.writeFileSync(path.join(native, "user-file"), "preserve");
+  await assert.rejects(
+    manager.install("antigravity"),
+    /already has an ASIP folder/,
+  );
+  assert.equal(
+    fs.readFileSync(path.join(native, "user-file"), "utf8"),
+    "preserve",
+  );
+});
+
 test(
   "Windows npm wrappers preserve spaces, apostrophes, and shell punctuation in plugin paths",
   { skip: process.platform !== "win32" },

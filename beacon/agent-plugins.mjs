@@ -90,8 +90,9 @@ export class AgentPlugins {
     target = process.platform + "-" + process.arch,
     find = findAgentCommand,
     run = runAgentCommand,
+    nativeHome = os.homedir(),
   }) {
-    Object.assign(this, { home, source, target, find, run });
+    Object.assign(this, { home, source, target, find, run, nativeHome });
     this.busy = new Set();
     this.receipts = path.join(home, "plugin-installs.json");
   }
@@ -137,17 +138,51 @@ export class AgentPlugins {
       id,
       name: agent.name,
       directory: this.directory(id),
-      available: Boolean(this.find(id)),
+      available: id === "antigravity" || Boolean(this.find(id)),
       installing: this.busy.has(id),
       addedAt: receipts[id]?.at || null,
     }));
+  }
+  registerAntigravityDesktop() {
+    // The desktop app/IDE reads this native global directory. `agy plugin
+    // install` stages a separate CLI copy and does not establish desktop use.
+    const directory = this.directory("antigravity");
+    const destination = path.join(
+      this.nativeHome,
+      ".gemini",
+      "config",
+      "plugins",
+      "asip",
+    );
+    let existing;
+    try {
+      existing = fs.lstatSync(destination);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (existing) {
+      if (fs.realpathSync(destination) !== fs.realpathSync(directory))
+        throw new Error(
+          "Antigravity already has an ASIP folder at " +
+            destination +
+            ". Remove that installation in Antigravity before adding this one.",
+        );
+    } else {
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.symlinkSync(
+        directory,
+        destination,
+        process.platform === "win32" ? "junction" : "dir",
+      );
+    }
+    return destination;
   }
   async install(agent) {
     const directory = this.directory(agent);
     if (this.busy.has(agent))
       throw new Error("Installation is already running.");
     const file = this.find(agent);
-    if (!file)
+    if (!file && agent !== "antigravity")
       throw new Error(
         "ASIP could not find " +
           agents[agent].name +
@@ -162,7 +197,8 @@ export class AgentPlugins {
               ["plugin", "marketplace", "add", directory],
               ["plugin", agent === "codex" ? "add" : "install", "asip@asip"],
             ];
-      for (const args of commands) await this.run(file, args);
+      if (file) for (const args of commands) await this.run(file, args);
+      if (agent === "antigravity") this.registerAntigravityDesktop();
       if (agent !== "antigravity") {
         const { stdout } = await this.run(file, ["plugin", "list", "--json"]);
         const listing = JSON.parse(stdout);
