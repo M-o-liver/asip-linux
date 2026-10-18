@@ -355,6 +355,9 @@ func hook(event string) (context map[string]any) {
 		if args, ok := call["args"].(map[string]any); ok && stringValue(args["Cwd"]) != "" {
 			cwd = stringValue(args["Cwd"])
 		}
+		if args, ok := call["args"].(map[string]any); ok && tool == "call_mcp_tool" && asipTool(stringValue(args["ToolName"])) {
+			tool = stringValue(args["ServerName"]) + "/" + stringValue(args["ToolName"])
+		}
 	}
 	data := map[string]any{"tool": tool, "trace_sha256": digest(input), "cwd": cwd}
 	if asipTool(tool) {

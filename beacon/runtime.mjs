@@ -433,7 +433,7 @@ export class Runtime {
     this.storage();
     const rows = this.db
       .prepare(
-        "SELECT * FROM events WHERE (? IS NULL OR project=?) AND NOT EXISTS (SELECT 1 FROM json_each(?) WHERE substr(COALESCE(json_extract(events.data,'$.tool'),''),-length(value))=value) AND (instr(lower(summary),lower(?)) > 0 OR instr(lower(data),lower(?)) > 0) ORDER BY at DESC,rowid DESC LIMIT ?",
+        "SELECT * FROM events WHERE (? IS NULL OR project=?) AND NOT EXISTS (SELECT 1 FROM json_each(?) WHERE substr(COALESCE(CASE WHEN json_extract(events.data,'$.tool')='call_mcp_tool' THEN json_extract(events.data,'$.toolCall.args.ToolName') ELSE json_extract(events.data,'$.tool') END,''),-length(value))=value) AND (instr(lower(summary),lower(?)) > 0 OR instr(lower(data),lower(?)) > 0) ORDER BY at DESC,rowid DESC LIMIT ?",
       )
       .all(
         project || null,

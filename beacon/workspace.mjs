@@ -259,7 +259,7 @@ export class Workspace {
       .prepare(
         "SELECT * FROM events WHERE " +
           filter +
-          " AND (? IS NULL OR session=?) AND (? IS NULL OR agent=?) AND (?=1 OR NOT EXISTS (SELECT 1 FROM json_each(?) WHERE substr(COALESCE(json_extract(events.data,'$.tool'),''),-length(value))=value)) AND (instr(lower(summary),lower(?))>0 OR instr(lower(data),lower(?))>0)" +
+          " AND (? IS NULL OR session=?) AND (? IS NULL OR agent=?) AND (?=1 OR NOT EXISTS (SELECT 1 FROM json_each(?) WHERE substr(COALESCE(CASE WHEN json_extract(events.data,'$.tool')='call_mcp_tool' THEN json_extract(events.data,'$.toolCall.args.ToolName') ELSE json_extract(events.data,'$.tool') END,''),-length(value))=value)) AND (instr(lower(summary),lower(?))>0 OR instr(lower(data),lower(?))>0)" +
           category +
           " ORDER BY at DESC,rowid DESC LIMIT 51 OFFSET ?",
       )

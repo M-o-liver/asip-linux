@@ -418,6 +418,27 @@ test(
       assert.equal(row.project, "github.com/example/project");
       assert.equal(JSON.parse(row.data).error, "exit status 1");
       if (agent === "antigravity") {
+        await runHook(agent, state, "PostToolUse", {
+          conversationId: "a1",
+          workspacePaths: [repository],
+          toolCall: {
+            name: "call_mcp_tool",
+            args: {
+              ServerName: "asip_asip",
+              ToolName: "asip_recall",
+              Arguments: {},
+            },
+          },
+          toolResult: { text: "recursive memory response" },
+        });
+        const wrapped = JSON.parse(
+          runtime.db
+            .prepare("SELECT data FROM events ORDER BY rowid DESC LIMIT 1")
+            .get().data,
+        );
+        assert.equal(wrapped.tool, "asip_asip/asip_recall");
+        assert.equal(wrapped.asip_tool, true);
+        assert.equal(wrapped.toolResult, undefined);
         await runHook(agent, state, "Stop", {
           conversationId: "a1",
           workspacePaths: [repository],

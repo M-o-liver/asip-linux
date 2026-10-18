@@ -383,6 +383,16 @@ test("recall excludes self-recorded ASIP calls while keeping original work and a
       result: "Verified work",
     },
   });
+  runtime.record(token, {
+    ...event,
+    kind: "PostToolUse",
+    summary: "Antigravity MCP dispatcher",
+    data: {
+      tool: "call_mcp_tool",
+      toolCall: { args: { ServerName: "asip_asip", ToolName: "asip_recall" } },
+      toolResult: { text: "Verified work" },
+    },
+  });
   const records = runtime.recall(token, { query: "Verified work" }).events;
   assert.equal(records.length, 2);
   assert.ok(records.some((record) => record.kind === "result"));
@@ -391,7 +401,7 @@ test("recall excludes self-recorded ASIP calls while keeping original work and a
   );
   assert.equal(
     runtime.db.prepare("SELECT count(*) AS n FROM events").get().n,
-    3,
+    4,
   );
 });
 test("interleaved sessions never inherit another session's project or identity", (t) => {

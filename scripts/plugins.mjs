@@ -12,11 +12,12 @@ description: Connect ASIP, recall earlier project work, and save intentions, res
 
 ASIP opens its account connection when this plugin first starts. Use asip_status to check it. If the user asks to reconnect, call asip_connect and tell them to finish the connection in Beacon.
 If Beacon is missing or the plugin is disconnected, explain the reported status and continue the user's work. Do not configure agent hooks or MCP servers yourself.
+Tools may be namespaced or loaded on demand. Use the client's native MCP discovery to load ASIP's tool schemas before reporting that its tools are unavailable.
 
-In Codex, automatic recording also requires reviewing ASIP's hooks in /hooks. Use Codex's native hook manager; do not edit hook trust files or bypass hook review.
+In Codex CLI, automatic recording also requires reviewing ASIP's hooks in /hooks. Use Codex's native hook manager; do not edit hook trust files or bypass hook review.
 
 Once connected, call asip_recall when continuing work on a project. Use the repository identity returned by asip_status or provide the project's repository identity.
-Use asip_record for meaningful intent, result, evidence, and unresolved records. Codex supplies its calling thread automatically. Other clients should use the native ASIP context injected by their hooks, or the current session returned by asip_status. Never borrow lastSession from another conversation. Describe what happened and include verification or paths that support the result. Do not claim success without evidence. Hooks collect tool activity; avoid repeating each tool call as a manual record.
+Before meaningful project work, use asip_record to save the intended task. Afterward save the result, supporting evidence, and anything unresolved. Codex supplies its calling thread automatically. Other clients should use the native ASIP context injected by their hooks, or the current session returned by asip_status. Never borrow lastSession from another conversation. Describe what happened and include verification or paths that support the result. Do not claim success without evidence. Hooks collect tool activity; avoid repeating each tool call as a manual record.
 
 Use asip_projects to find recorded projects and asip_connections to find their named API access. Use asip_api_request with the connection name and an API path. Include the current project and session when the client does not supply them. If a connection is missing, direct the user to API connections in Beacon. Credentials are entered there, never in chat.
 `;
@@ -168,7 +169,7 @@ export function buildPlugin({ root, target, agent, binary }) {
   }
   write(
     "README.md",
-    `# ASIP plugin\n\nInstall this folder using your agent's plugin manager. When the plugin first starts, Beacon opens the ASIP connection. Sign in with Google or GitHub, or click Connect if already signed in.\n\n${agent === "codex" ? "In ChatGPT desktop, open Plugins → Add → Add a marketplace, enter this folder, then install ASIP from Personal. Review ASIP in /hooks for automatic recording.\n" : ""}${agent === "antigravity" ? "Beacon maintains this folder; installed commands use its location.\n" : ""}`,
+    `# ASIP plugin\n\nInstall this folder using your agent's plugin manager. When the plugin first starts, Beacon opens the ASIP connection. Sign in with Google or GitHub, or click Connect if already signed in.\n\n${agent === "codex" ? "In ChatGPT desktop, open Plugins → Add → Add a marketplace, enter this folder, then install ASIP from Personal. For Codex CLI, review ASIP in /hooks for automatic recording.\n" : ""}${agent === "antigravity" ? "Beacon maintains this folder; installed commands use its location.\n" : ""}`,
   );
   return directory;
 }

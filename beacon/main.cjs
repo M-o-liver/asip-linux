@@ -669,8 +669,7 @@ if (
         );
         return {
           agent,
-          message:
-            "Install ASIP in ChatGPT, then open a new chat. Review ASIP in /hooks for automatic recording.",
+          message: "Install ASIP in ChatGPT, then open a new chat.",
         };
       }
       const operation = pluginBundles.install(agent);

@@ -8,7 +8,7 @@ const kinds = {
   intent: "Intent",
   result: "Result",
   evidence: "Evidence",
-  Stop: "Agent result",
+  Stop: "Turn ended",
   failed: "Failed",
   tool_succeeded: "Tool completed",
   api_request: "API request",
