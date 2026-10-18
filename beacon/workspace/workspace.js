@@ -44,7 +44,7 @@ let request;
 const label = (project) =>
   project === "unassigned"
     ? "Unassigned"
-    : project?.split("/").filter(Boolean).at(-1) || "Unassigned";
+    : project?.split(/[\\/]/).filter(Boolean).at(-1) || "Unassigned";
 function element(tag, text, className) {
   const el = document.createElement(tag);
   if (text !== undefined) el.textContent = text;

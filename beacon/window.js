@@ -93,7 +93,9 @@ function renderAgents(state) {
     status.textContent = connected
       ? "Connected"
       : plugin.addedAt
-        ? "Added · Open a new session"
+        ? plugin.id === "antigravity"
+          ? "Added · Restart Antigravity"
+          : "Added · Open a new session"
         : "Not connected";
     status.className = connected ? "connected" : "";
     text.append(title, status);
@@ -164,7 +166,9 @@ function renderRecent(state) {
     const row = document.createElement("button");
     row.className = "recent-row";
     row.title =
-      "Open " + (event.project?.split("/").at(-1) || "unassigned work");
+      "Open " +
+      (event.project?.split(/[\\/]/).filter(Boolean).at(-1) ||
+        "unassigned work");
     row.onclick = () =>
       window.asip.openWorkspace(event.project || "unassigned");
     const marker = document.createElement("div");
@@ -183,7 +187,7 @@ function renderRecent(state) {
     meta.textContent =
       (names[event.agent] || event.agent) +
       " · " +
-      (event.project?.split("/").at(-1) || "Unassigned") +
+      (event.project?.split(/[\\/]/).filter(Boolean).at(-1) || "Unassigned") +
       " · " +
       new Date(event.at).toLocaleString(undefined, {
         dateStyle: "short",
@@ -453,7 +457,7 @@ async function loadProjects(selected = []) {
       option.value = project.id;
       option.selected = selected.includes(project.id);
       option.textContent =
-        project.name + " · " + project.id.split("/").slice(0, -1).join("/");
+        project.name + " · " + project.id.split(/[\\/]/).slice(0, -1).join("/");
       $("connection-projects").append(option);
     }
   } catch (error) {

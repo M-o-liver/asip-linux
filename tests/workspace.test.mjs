@@ -8,6 +8,47 @@ import { Runtime } from "../beacon/runtime.mjs";
 import { Workspace, recentWork } from "../beacon/workspace.mjs";
 import { accountId } from "../beacon/identity.mjs";
 
+test("project names recognize Windows folders while preserving their identities", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-project-names-"));
+  const runtime = new Runtime(home);
+  t.after(async () => {
+    await runtime.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  runtime.signIn({
+    accountId: accountId("github", "42"),
+    provider: "github",
+    subject: "42",
+  });
+  const identities = [
+    String.raw`C:\Users\testpc\Documents\asip-qualification`,
+    "/projects/asip-qualification",
+    "github.com/example/asip-qualification",
+  ];
+  const insert = runtime
+    .storage()
+    .prepare("INSERT INTO events VALUES(?,?,?,?,?,?,?,?)");
+  for (const [index, project] of identities.entries()) {
+    insert.run(
+      String(index),
+      new Date().toISOString(),
+      "codex",
+      String(index),
+      "result",
+      project,
+      "Verified",
+      "{}",
+    );
+  }
+  const projects = runtime.projects();
+  assert.equal(projects.length, 3);
+  assert.deepEqual(
+    new Set(projects.map((project) => project.id)),
+    new Set(identities),
+  );
+  assert.ok(projects.every((project) => project.name === "asip-qualification"));
+});
+
 test("workspace opens through Beacon, shows actual projects, and invalidates browser access on sign-out", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-workspace-"));
   const runtime = new Runtime(home);

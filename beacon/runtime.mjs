@@ -328,7 +328,7 @@ export class Runtime {
       .all()
       .map((row) => ({
         ...row,
-        name: row.name || row.id.split("/").filter(Boolean).at(-1),
+        name: row.name || row.id.split(/[\\/]/).filter(Boolean).at(-1),
         roots: JSON.parse(row.roots || "[]"),
         agents: row.agents ? row.agents.split(",") : [],
       }));

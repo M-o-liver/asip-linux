@@ -253,9 +253,11 @@ export class AgentPlugins {
         message:
           agent === "codex"
             ? "Added to Codex. Review ASIP in /hooks for automatic recording, then open a new session."
-            : "Added to " +
-              agents[agent].name +
-              ". Open a new session; ASIP sign-in will appear automatically.",
+            : agent === "antigravity"
+              ? "Added to Antigravity. Restart the app, then open a new conversation. ASIP sign-in will appear automatically."
+              : "Added to " +
+                agents[agent].name +
+                ". Open a new session; ASIP sign-in will appear automatically.",
       };
     } catch (error) {
       throw new Error(
