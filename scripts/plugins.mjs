@@ -5,6 +5,28 @@ const version = JSON.parse(
 ).version;
 
 const description = "Recall project work and record what your agent does.";
+export function antigravityHookCommand(
+  binary,
+  event,
+  platform = process.platform,
+) {
+  if (platform !== "win32")
+    return '"' + binary + '" hook --agent antigravity --event ' + event;
+  // The Windows desktop launches hooks through cmd.exe. Embedded executable
+  // quotes are escaped by that launcher and become literal backslashes. Keep
+  // the outer command quote-free and forward UTF-8 JSON stdin explicitly.
+  const script =
+    "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); " +
+    "$payload = [Console]::In.ReadToEnd(); $payload | & '" +
+    binary.replaceAll("'", "''") +
+    "' hook --agent antigravity --event '" +
+    event.replaceAll("'", "''") +
+    "'; exit $LASTEXITCODE";
+  return (
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand " +
+    Buffer.from(script, "utf16le").toString("base64")
+  );
+}
 const skill = `---
 name: asip
 description: Connect ASIP, recall earlier project work, and save intentions, results, evidence, and unfinished work.
@@ -162,8 +184,11 @@ export function buildPlugin({ root, target, agent, binary }) {
     for (const event of events) {
       for (const group of hooks[event])
         for (const handler of group.hooks || [group])
-          handler.command =
-            '"' + executable + '" hook --agent ' + agent + " --event " + event;
+          handler.command = antigravityHookCommand(
+            executable,
+            event,
+            target.split("-")[0],
+          );
     }
     write("hooks.json", { asip: hooks });
   }
@@ -192,8 +217,7 @@ export function rebindAntigravity(directory, destination = directory) {
   for (const [event, groups] of Object.entries(hooks.asip))
     for (const group of groups)
       for (const handler of group.hooks || [group])
-        handler.command =
-          '"' + binary + '" hook --agent antigravity --event ' + event;
+        handler.command = antigravityHookCommand(binary, event);
   fs.writeFileSync(
     path.join(directory, "hooks.json"),
     JSON.stringify(hooks, null, 2) + "\n",

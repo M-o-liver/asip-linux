@@ -10,6 +10,7 @@ import { accountId } from "../beacon/identity.mjs";
 import { Connections } from "../beacon/connections.mjs";
 import { encryptionFixture } from "./encryption-fixture.mjs";
 import http from "node:http";
+import { antigravityHookCommand } from "../scripts/plugins.mjs";
 
 let binary;
 const children = new Set();
@@ -68,12 +69,25 @@ function rpc(child) {
   };
 }
 async function runHook(agent, home, event, payload) {
-  const child = helper("hook", agent, home, ["--event", event]);
+  const child =
+    agent === "antigravity"
+      ? spawn(antigravityHookCommand(binary, event), {
+          shell: true,
+          env: { ...process.env, ASIP_PLUGIN_STATE: home },
+          stdio: ["pipe", "pipe", "pipe"],
+        })
+      : helper("hook", agent, home, ["--event", event]);
+  if (agent === "antigravity") {
+    children.add(child);
+    child.once("exit", () => children.delete(child));
+  }
   let output = "";
+  let errors = "";
   child.stdout.on("data", (chunk) => (output += chunk));
+  child.stderr.on("data", (chunk) => (errors += chunk));
   child.stdin.end(JSON.stringify(payload));
   const [code] = await once(child, "exit");
-  assert.equal(code, 0);
+  assert.equal(code, 0, errors);
   return JSON.parse(output);
 }
 
@@ -81,7 +95,7 @@ test(
   "standalone helper connects, exposes memory after authentication, captures native hooks, and stops on disconnect",
   { timeout: 90000 },
   async (t) => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-helper-")),
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip A & B's helper-")),
       runtime = new Runtime(path.join(home, "beacon"));
     t.after(async () => {
       await Promise.all(
@@ -393,7 +407,10 @@ test(
               workspacePaths: [repository],
               toolCall: {
                 name: "run_command",
-                args: { CommandLine: "npm test", Cwd: repository },
+                args: {
+                  CommandLine: "npm test — café 日本語",
+                  Cwd: repository,
+                },
               },
               stepIdx: 5,
               error: "exit status 1",
@@ -418,6 +435,10 @@ test(
       assert.equal(row.project, "github.com/example/project");
       assert.equal(JSON.parse(row.data).error, "exit status 1");
       if (agent === "antigravity") {
+        assert.equal(
+          JSON.parse(row.data).toolCall.args.CommandLine,
+          "npm test — café 日本語",
+        );
         await runHook(agent, state, "PostToolUse", {
           conversationId: "a1",
           workspacePaths: [repository],
