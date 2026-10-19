@@ -133,7 +133,8 @@ test("Antigravity desktop uses the managed bundle without requiring its CLI or r
   manager.prepare();
   await manager.install("antigravity");
   assert.ok(fs.existsSync(path.join(native, "hooks.json")));
-  fs.unlinkSync(native);
+  if (fs.lstatSync(native).isSymbolicLink()) fs.unlinkSync(native);
+  else fs.rmSync(native, { recursive: true });
   fs.mkdirSync(native);
   fs.writeFileSync(path.join(native, "user-file"), "preserve");
   await assert.rejects(
@@ -152,6 +153,55 @@ test("Antigravity desktop uses the managed bundle without requiring its CLI or r
   };
   await manager.install("antigravity");
   assert.ok(fs.existsSync(path.join(native, "hooks.json")));
+});
+
+test("Windows Antigravity registration migrates junctions to discoverable directories and refreshes them on upgrade", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asip-agy-windows-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new AgentPlugins({
+    home: path.join(root, "beacon"),
+    nativeHome: path.join(root, "native home"),
+    source: path.resolve("build/plugins"),
+    find: () => null,
+    platform: "win32",
+  });
+  manager.prepare();
+  const native = path.join(manager.nativeHome, ".gemini/config/plugins/asip");
+  fs.mkdirSync(path.dirname(native), { recursive: true });
+  fs.symlinkSync(
+    manager.directory("antigravity"),
+    native,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await manager.install("antigravity");
+  // Directory enumeration used by the desktop must see a directory, not a link.
+  assert.ok(
+    fs
+      .readdirSync(path.dirname(native), { withFileTypes: true })
+      .find((entry) => entry.name === "asip")
+      .isDirectory(),
+  );
+  assert.equal(fs.lstatSync(native).isSymbolicLink(), false);
+  const stale = path.join(native, "old-bundle-marker");
+  fs.writeFileSync(stale, "old");
+  fs.writeFileSync(path.join(native, "plugin.json"), '{"version":"old"}');
+  manager.prepare();
+  assert.equal(fs.existsSync(stale), false);
+  assert.deepEqual(
+    fs.readFileSync(path.join(native, "plugin.json")),
+    fs.readFileSync(path.join(manager.directory("antigravity"), "plugin.json")),
+  );
+  assert.ok(fs.existsSync(path.join(manager.directory("antigravity"), "bin")));
+  fs.rmSync(path.join(native, ".asip-beacon.json"));
+  fs.writeFileSync(path.join(native, "plugin.json"), '{"name":"someone-else"}');
+  await assert.rejects(
+    manager.install("antigravity"),
+    /already has an ASIP folder/,
+  );
+  assert.equal(
+    fs.readFileSync(path.join(native, "plugin.json"), "utf8"),
+    '{"name":"someone-else"}',
+  );
 });
 
 test(
