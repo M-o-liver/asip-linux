@@ -46,6 +46,7 @@ function navigate(page) {
   }[page];
   if (page === "recovery" && currentState?.account)
     $("recovery-details").ontoggle();
+  window.scrollTo(0, 0);
 }
 window.asip.onNavigate(navigate);
 for (const button of document.querySelectorAll("[data-nav]"))
