@@ -280,9 +280,9 @@ function render(state) {
   $("metric-records").textContent = state.records;
   $("project-count").textContent =
     (state.workspace?.projects || 0) +
-    " projects · " +
+    (state.workspace?.projects === 1 ? " project · " : " projects · ") +
     state.records +
-    " records";
+    (state.records === 1 ? " record" : " records");
   if (state.pending) {
     $("request-title").textContent =
       (state.account ? "Connect " : "Sign in to connect ") +

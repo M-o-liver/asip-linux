@@ -359,6 +359,10 @@ p {
 .recent-row:last-child {
   border: 0;
 }
+.recent-row > div:last-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .connection-status {
   display: block;
   color: var(--muted);

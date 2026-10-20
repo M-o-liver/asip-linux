@@ -30,6 +30,34 @@ function cleanRetired(destination, platform) {
     if (entry === prefix || entry.startsWith(prefix + "-"))
       removeRetired(path.join(parent, entry), platform);
 }
+
+function refreshOwnedDirectory(source, destination, platform) {
+  fs.mkdirSync(destination, { recursive: true });
+  const entries = fs.readdirSync(source, { withFileTypes: true });
+  for (const entry of entries) {
+    const from = path.join(source, entry.name);
+    const to = path.join(destination, entry.name);
+    if (entry.isDirectory()) {
+      refreshOwnedDirectory(from, to, platform);
+    } else {
+      if (
+        fs.existsSync(to) &&
+        fs.readFileSync(to).equals(fs.readFileSync(from))
+      )
+        continue;
+      const temporary = to + ".new-" + randomUUID();
+      try {
+        fs.copyFileSync(from, temporary);
+        fs.renameSync(temporary, to);
+      } finally {
+        fs.rmSync(temporary, { force: true });
+      }
+    }
+  }
+  const names = new Set(entries.map((entry) => entry.name));
+  for (const name of fs.readdirSync(destination))
+    if (!names.has(name)) removeRetired(path.join(destination, name), platform);
+}
 export const agents = {
   codex: { name: "Codex", command: "codex" },
   "claude-code": { name: "Claude Code", command: "claude" },
@@ -250,20 +278,32 @@ export class AgentPlugins {
       );
       const previous = destination + ".previous-" + randomUUID();
       try {
-        fs.cpSync(directory, staging, { recursive: true });
+        // The commands point at the durable managed helper. A second executable
+        // copy here is unnecessary and can itself become locked by old clients.
+        fs.cpSync(directory, staging, {
+          recursive: true,
+          filter: (file) =>
+            path.relative(directory, file).split(path.sep)[0] !== "bin",
+        });
         fs.writeFileSync(
           path.join(staging, ".asip-beacon.json"),
           JSON.stringify({ schema: 1, source: directory }),
         );
-        if (existing) fs.renameSync(destination, previous);
-        try {
-          fs.renameSync(staging, destination);
-        } catch (error) {
-          if (existing) fs.renameSync(previous, destination);
-          throw error;
+        if (existing?.isDirectory() && !existing.isSymbolicLink()) {
+          // Antigravity's directory watcher (or an agent's current directory)
+          // can lock this root even when no executable in it is running.
+          refreshOwnedDirectory(staging, destination, this.platform);
+        } else {
+          if (existing) fs.renameSync(destination, previous);
+          try {
+            fs.renameSync(staging, destination);
+          } catch (error) {
+            if (existing) fs.renameSync(previous, destination);
+            throw error;
+          }
+          if (existing?.isSymbolicLink()) fs.unlinkSync(previous);
+          else if (existing) removeRetired(previous, this.platform);
         }
-        if (existing?.isSymbolicLink()) fs.unlinkSync(previous);
-        else if (existing) removeRetired(previous, this.platform);
       } finally {
         fs.rmSync(staging, { recursive: true, force: true });
       }

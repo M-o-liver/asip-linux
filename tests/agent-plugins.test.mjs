@@ -79,6 +79,12 @@ test("Windows bundle refresh continues past locked retired directories and clean
     return original(directory, options);
   });
   fs.writeFileSync(path.join(native, "old-version"), "");
+  const rename = fs.renameSync;
+  const rootLock = t.mock.method(fs, "renameSync", (from, to) => {
+    if (from === native)
+      throw Object.assign(new Error("Directory is watched"), { code: "EBUSY" });
+    return rename(from, to);
+  });
   manager.prepare();
   manager.prepare();
   assert.equal(fs.existsSync(path.join(native, "old-version")), false);
@@ -90,6 +96,7 @@ test("Windows bundle refresh continues past locked retired directories and clean
     ),
   );
   removal.mock.restore();
+  rootLock.mock.restore();
   manager.prepare();
   assert.equal(fs.existsSync(old), false);
   for (const directory of [
@@ -124,6 +131,7 @@ test(
     manager.prepare();
     await manager.install("antigravity");
     const directory = manager.directory("antigravity");
+    const native = path.join(manager.nativeHome, ".gemini/config/plugins/asip");
     const executable = path.join(directory, "bin/asip-plugin.exe");
     // A real executable image supplies Windows' file lock without signing in
     // or launching a browser from a test MCP process.
@@ -132,6 +140,7 @@ test(
       executable,
       ["-e", "console.log('ready');setInterval(()=>{},1000)"],
       {
+        cwd: native,
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
       },
@@ -149,7 +158,6 @@ test(
       directory + ".previous",
     );
     manager.prepare();
-    const native = path.join(manager.nativeHome, ".gemini/config/plugins/asip");
     assert.deepEqual(
       fs.readFileSync(path.join(native, "mcp_config.json")),
       fs.readFileSync(path.join(directory, "mcp_config.json")),
