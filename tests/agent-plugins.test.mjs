@@ -76,6 +76,10 @@ test("Windows bundle refresh continues past locked retired directories and clean
   const removal = t.mock.method(fs, "rmSync", (directory, options) => {
     if (String(directory).includes(".previous"))
       throw Object.assign(new Error("Executable is in use"), { code: "EPERM" });
+    if (path.basename(String(directory)).startsWith(".asip-stage-"))
+      throw Object.assign(new Error("Directory watcher is still closing"), {
+        code: "ENOTEMPTY",
+      });
     return original(directory, options);
   });
   fs.writeFileSync(path.join(native, "old-version"), "");
@@ -87,6 +91,19 @@ test("Windows bundle refresh continues past locked retired directories and clean
   });
   manager.prepare();
   manager.prepare();
+  const stagingParent = path.dirname(path.dirname(native));
+  assert.ok(
+    fs
+      .readdirSync(stagingParent)
+      .some((name) => name.startsWith(".asip-stage-")),
+    "temporary cleanup failures must not abort a successful registration",
+  );
+  assert.ok(
+    !fs
+      .readdirSync(path.dirname(native))
+      .some((name) => name.startsWith(".asip-stage-")),
+    "temporary plugins must stay outside Antigravity's discovery directory",
+  );
   assert.equal(fs.existsSync(path.join(native, "old-version")), false);
   assert.ok(fs.existsSync(path.join(old, "locked")));
   assert.deepEqual(
@@ -102,9 +119,15 @@ test("Windows bundle refresh continues past locked retired directories and clean
   for (const directory of [
     path.join(manager.home, "plugins"),
     path.dirname(native),
+    stagingParent,
   ])
     assert.ok(
-      !fs.readdirSync(directory).some((name) => name.includes(".previous")),
+      !fs
+        .readdirSync(directory)
+        .some(
+          (name) =>
+            name.includes(".previous") || name.startsWith(".asip-stage-"),
+        ),
     );
 });
 

@@ -1,0 +1,29 @@
+name: Alpha feedback
+description: Report a problem or improvement from using ASIP.
+title: "[Alpha] "
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Operating system, agent and version, ASIP version from Settings.
+      placeholder: Windows 11, Antigravity, ASIP 0.4.1
+    validations:
+      required: true
+  - type: textarea
+    id: experience
+    attributes:
+      label: What happened?
+      description: What did you try, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Error or screenshot
+      description: Include relevant error text or record IDs. Remove credentials and private project content before posting.
+  - type: textarea
+    id: restart
+    attributes:
+      label: Does it happen again?
+      description: Did restarting Beacon or starting a fresh agent conversation change the result?

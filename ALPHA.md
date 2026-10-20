@@ -30,3 +30,14 @@ For APIs, open **API connections**, add a named connection, select the projects 
 The [qualification report](QUALIFICATION.md) identifies which workflows were observed in the desktop applications and which have automated coverage only. A working MCP connection does not by itself verify automatic hook capture. ChatGPT desktop and Codex CLI require native hook review. After enabling hooks, start a fresh chat and check that its tool activity appears in ASIP.
 
 Activity is stored on the computer running Beacon. Account linking and cross-device history synchronization are not implemented. Recovery retains up to ten ASIP history checkpoints; it does not back up repository files.
+
+## Send feedback
+
+[Report a problem](https://github.com/M-o-liver/asip-linux/issues/new?template=alpha-feedback.yml), or send the same details to the person who shared ASIP with you:
+
+- Your operating system, agent, and the ASIP version shown in **Settings**.
+- What you tried, what you expected, and what happened.
+- Any error message and a screenshot of the affected screen.
+- Whether restarting Beacon or starting a fresh agent conversation changed the result.
+
+Before posting a screenshot publicly, check it for credentials or private project content. Include a session or record ID when relevant; the full conversation is usually unnecessary.

@@ -12,14 +12,26 @@ const execute = promisify(execFile);
 // Retiring that directory must not prevent the new bundle from being used.
 function removeRetired(directory, platform) {
   try {
-    fs.rmSync(directory, { recursive: true, force: true });
+    fs.rmSync(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: platform === "win32" ? 3 : 0,
+      retryDelay: 50,
+    });
   } catch (error) {
     if (
       platform !== "win32" ||
-      !["EPERM", "EBUSY", "EACCES"].includes(error.code)
+      !["EPERM", "EBUSY", "EACCES", "ENOTEMPTY"].includes(error.code)
     )
       throw error;
   }
+}
+
+function cleanStaging(parent, platform) {
+  if (!fs.existsSync(parent)) return;
+  for (const entry of fs.readdirSync(parent))
+    if (entry.startsWith(".asip-stage-"))
+      removeRetired(path.join(parent, entry), platform);
 }
 
 function cleanRetired(destination, platform) {
@@ -273,9 +285,12 @@ export class AgentPlugins {
       // Keep a real native directory and refresh only our own installation.
       fs.mkdirSync(path.dirname(destination), { recursive: true });
       cleanRetired(destination, this.platform);
-      const staging = fs.mkdtempSync(
-        path.join(path.dirname(destination), ".asip-stage-"),
-      );
+      // A temporary bundle inside plugins is itself discovered and watched by
+      // Antigravity. Stage beside that directory, on the same volume, instead.
+      const stagingParent = path.dirname(path.dirname(destination));
+      cleanStaging(stagingParent, this.platform);
+      cleanStaging(path.dirname(destination), this.platform);
+      const staging = fs.mkdtempSync(path.join(stagingParent, ".asip-stage-"));
       const previous = destination + ".previous-" + randomUUID();
       try {
         // The commands point at the durable managed helper. A second executable
@@ -305,7 +320,7 @@ export class AgentPlugins {
           else if (existing) removeRetired(previous, this.platform);
         }
       } finally {
-        fs.rmSync(staging, { recursive: true, force: true });
+        removeRetired(staging, this.platform);
       }
     } else if (!existing) {
       fs.mkdirSync(path.dirname(destination), { recursive: true });
