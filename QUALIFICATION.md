@@ -23,7 +23,7 @@ The Linux AppImage built from `000a57c` also passed the packaged secondary-launc
 
 ## Desktop observations
 
-The VMs initially received source `2a50c4a` from [build 39035520339](https://github.com/M-o-liver/asip-linux/actions/runs/39035520339). Both VMs were subsequently updated to `66fc80d` and then `000a57c` from build 39309438012. Their sign-in, connected agent identities, and saved records survived the installer updates. The final Windows-path correction is source `218fcf7`; its native qualification is [build 39428897890](https://github.com/M-o-liver/asip-linux/actions/runs/39428897890).
+The VMs initially received source `2a50c4a` from [build 39035520339](https://github.com/M-o-liver/asip-linux/actions/runs/39035520339). Both VMs were subsequently updated to `66fc80d`, `000a57c`, and `218fcf7`. Their sign-in, connected agent identities, and saved records survived the installer updates. The final Windows-path correction is source `218fcf7`; the installed EXE and Intel DMG came from [build 39428897890](https://github.com/M-o-liver/asip-linux/actions/runs/39428897890).
 
 | Experience                              | Linux                                  | Windows VM                                             | Intel Mac VM                                              |
 | --------------------------------------- | -------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------- |
@@ -41,7 +41,9 @@ Installed ASIP through the native plugin page, connected it in Beacon, and ran `
 
 Result record: `94487dbc-bf26-4516-bda7-23b7b3a85479`. Native session: `01a1509e-29a2-7e60-9849-82e7f3b45f76`.
 
-This establishes native memory and persistence. The workspace initially contained the explicit result only because hooks had not been reviewed. ChatGPT desktop exposes hook review on **Plugins → ASIP → Hooks → Review**; `/hooks` is the CLI interface. The subsequent Mac test used that native review panel. Windows automatic capture still needs its own observed check.
+The workspace initially contained the explicit result only because hooks had not been reviewed. ChatGPT desktop exposes hook review on **Plugins → ASIP → Hooks → Review**; `/hooks` is the CLI interface. Enabled the nine ASIP hooks through that native Windows panel and started a fresh conversation after the `218fcf7` Beacon update.
+
+That conversation recalled Antigravity's saved text and SHA-256 without reading project files, then ran `Write-Output ASIP-hook-check` successfully. The workspace automatically gained 13 events, including the original prompt and final response, reaching 50 events across three sessions in one project. No explicit `asip_record` request was part of this test. Native session: `01a15a84-a7f8-7e42-8594-3a44b7085398`. Automatic final result: `34dd16d1-19ca-4ade-a19f-bf61219bc4bf`. The evidence inspector showed the normalized project identity and matching native session.
 
 ### Linux Antigravity
 
@@ -61,7 +63,7 @@ The first desktop attempt exposed a gap in native installation checks: the globa
 
 After restarting, Antigravity requested its Beacon connection and connected successfully. Its first tool call then exposed quoted-executable corruption in the Windows hook launcher. Windows hooks now invoke a quote-free PowerShell command with the actual helper invocation encoded as UTF-16; JSON input is explicitly forwarded as UTF-8. Native Windows tests execute the generated command against the connected helper, preserve Unicode payloads and paths with spaces/apostrophes, and verify that activity reaches Beacon. The updated installer completed a native desktop turn: ASIP status and project discovery, recall, explicit intent, creation/read-back of `win-agy.txt`, SHA-256 verification, and a saved result containing that evidence. Native session: `d480c109-d276-4d10-ae2c-d76519399fb5`. Result: `1069f266-25bb-42f7-befa-034ee335005d`.
 
-That turn also exposed a project-identity defect: Antigravity supplied `c:/Users/...` while the earlier Codex record used `C:\Users\...`. Exact-string lookup missed the earlier work until the agent discovered the catalogue identity. Windows directory identities now normalize case and separators at recording, recall, workspace filtering, historical import, and API-grant comparison. An account migration reconciles earlier variants while preserving event IDs, raw evidence, catalogue notes, roots, and links. Tests cover migration, both agents sharing a project, and retained encrypted credentials. The installed migration check remains pending on the updated build.
+That turn also exposed a project-identity defect: Antigravity supplied `c:/Users/...` while the earlier Codex record used `C:\Users\...`. Exact-string lookup missed the earlier work until the agent discovered the catalogue identity. Windows directory identities now normalize case and separators at recording, recall, workspace filtering, historical import, and API-grant comparison. An account migration reconciles earlier variants while preserving event IDs, raw evidence, catalogue notes, roots, and links. Tests cover migration, both agents sharing a project, and retained encrypted credentials. Installing the `218fcf7` NSIS update merged the two displayed projects into one and retained all 37 events, both sessions, and both connected agents. Edge showed the Antigravity and Codex sessions together under the same project.
 
 ### Intel Mac Antigravity
 
@@ -75,9 +77,11 @@ The Mac is an experimental Intel Sequoia 15.8.1 guest on an AMD host, without ac
 
 After the `000a57c` Mac update, Beacon retained both agents and all 54 events. Safari showed one project and both native sessions. A restarted Antigravity conversation retrieved ChatGPT’s saved file verification, read-back text, exit code, and SHA-256 evidence through native ASIP MCP. The client wrote the long MCP response to its own output artifact; the agent summarized that artifact after clarification without reading project files.
 
+The subsequent `218fcf7` DMG update retained Google sign-in, both agents, and all 62 events. **Open ASIP** opened Safari with one project and three sessions. The workspace's **Open Beacon** control returned to the native menu-bar panel.
+
 ## Existing records and API connections
 
-The October 20 Linux upgrade to the `000a57c` AppImage passed the packaged secondary-launch check, preserved the encrypted credential file byte-for-byte, and passed SQLite integrity checking. The running native Codex plugin listed all 14 connections afterward.
+The October 20 Linux upgrade to the `000a57c` AppImage passed the packaged secondary-launch check, preserved the encrypted credential file byte-for-byte, and passed SQLite integrity checking. The running native Codex plugin listed all 14 connections afterward. The subsequent clean `2341594` AppImage restored the saved sign-in and retained the encrypted credential files unchanged.
 
 The Linux upgrade retained 14 named connections, including 13 migrated credentials and signing secrets, and 24 projects. The workspace displayed the full total of 505 sessions and navigated to older sessions. The final archived administration journal contains 3,895 operations; reconciliation added three missing operations, updated the final entry, and corrected 810 lifecycle/verification classifications using the archive's actual action and result fields. Original archives remain unchanged. A checkpoint preceded each reconciliation; five recovery records remained afterward.
 
@@ -93,10 +97,8 @@ Real read-only calls through the installed Codex plugin returned:
 
 The rejected credentials need replacement or renewed authorization. Their names and stored values were retained; a successful import is not a claim that a provider still accepts a credential. Other provider presets have fixture coverage unless a real check is explicitly recorded above.
 
-## Remaining release qualification
+## Qualification limits
 
-- Verify the Windows project-identity reconciliation in the installed update, then retrieve the saved Antigravity result in a fresh native conversation.
-- Enable Windows ChatGPT hooks through its native review panel and observe automatic capture; explicit native record/recall is already verified.
 - Verify launch-at-login across an actual guest login cycle.
 - Complete a Claude turn when an authenticated paid account is available.
 - Verify real GitHub identity sign-in in an isolated account/profile. Google sign-in and GitHub API authorization have been exercised; these are separate flows.
