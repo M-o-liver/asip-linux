@@ -108,7 +108,7 @@ test(
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "asip-live-upgrade-"));
     let child;
     t.after(async () => {
-      if (child && child.exitCode === null) {
+      if (child && child.exitCode === null && child.signalCode === null) {
         const ended = once(child, "exit");
         child.kill();
         await ended;
