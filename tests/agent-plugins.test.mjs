@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import {
   AgentPlugins,
   findAgentCommand,
@@ -53,6 +55,119 @@ test("ChatGPT installation links keep the local marketplace path intact", () => 
   );
   assert.equal([...url.searchParams].length, 1);
 });
+
+test("Windows bundle refresh continues past locked retired directories and cleans them after release", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asip-retired-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new AgentPlugins({
+    home: path.join(root, "beacon"),
+    nativeHome: path.join(root, "native"),
+    source: path.resolve("build/plugins"),
+    find: () => null,
+    platform: "win32",
+  });
+  manager.prepare();
+  await manager.install("antigravity");
+  const native = path.join(manager.nativeHome, ".gemini/config/plugins/asip");
+  const old = manager.directory("antigravity") + ".previous";
+  fs.mkdirSync(old);
+  fs.writeFileSync(path.join(old, "locked"), "still running");
+  const original = fs.rmSync;
+  const removal = t.mock.method(fs, "rmSync", (directory, options) => {
+    if (String(directory).includes(".previous"))
+      throw Object.assign(new Error("Executable is in use"), { code: "EPERM" });
+    return original(directory, options);
+  });
+  fs.writeFileSync(path.join(native, "old-version"), "");
+  manager.prepare();
+  manager.prepare();
+  assert.equal(fs.existsSync(path.join(native, "old-version")), false);
+  assert.ok(fs.existsSync(path.join(old, "locked")));
+  assert.deepEqual(
+    fs.readFileSync(path.join(native, "mcp_config.json")),
+    fs.readFileSync(
+      path.join(manager.directory("antigravity"), "mcp_config.json"),
+    ),
+  );
+  removal.mock.restore();
+  manager.prepare();
+  assert.equal(fs.existsSync(old), false);
+  for (const directory of [
+    path.join(manager.home, "plugins"),
+    path.dirname(native),
+  ])
+    assert.ok(
+      !fs.readdirSync(directory).some((name) => name.includes(".previous")),
+    );
+});
+
+test(
+  "native Windows upgrade retains a running executable and refreshes all plugin registrations",
+  { skip: process.platform !== "win32", timeout: 30000 },
+  async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "asip-live-upgrade-"));
+    let child;
+    t.after(async () => {
+      if (child && child.exitCode === null) {
+        const ended = once(child, "exit");
+        child.kill();
+        await ended;
+      }
+      fs.rmSync(root, { recursive: true, force: true });
+    });
+    const manager = new AgentPlugins({
+      home: path.join(root, "beacon"),
+      nativeHome: path.join(root, "native"),
+      source: path.resolve("build/plugins"),
+      find: () => null,
+    });
+    manager.prepare();
+    await manager.install("antigravity");
+    const directory = manager.directory("antigravity");
+    const executable = path.join(directory, "bin/asip-plugin.exe");
+    // A real executable image supplies Windows' file lock without signing in
+    // or launching a browser from a test MCP process.
+    fs.copyFileSync(process.execPath, executable);
+    child = spawn(
+      executable,
+      ["-e", "console.log('ready');setInterval(()=>{},1000)"],
+      {
+        windowsHide: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
+    assert.match(String((await once(child.stdout, "data"))[0]), /ready/);
+    manager.prepare();
+    assert.equal(child.exitCode, null);
+    const retired = fs
+      .readdirSync(path.dirname(directory))
+      .find((name) => name.startsWith("asip-antigravity.previous-"));
+    assert.ok(retired, "the running image must remain until its process exits");
+    // Recover the fixed-name leftover created by older Beacon builds too.
+    fs.renameSync(
+      path.join(path.dirname(directory), retired),
+      directory + ".previous",
+    );
+    manager.prepare();
+    const native = path.join(manager.nativeHome, ".gemini/config/plugins/asip");
+    assert.deepEqual(
+      fs.readFileSync(path.join(native, "mcp_config.json")),
+      fs.readFileSync(path.join(directory, "mcp_config.json")),
+    );
+    assert.ok(
+      !fs.readFileSync(executable).equals(fs.readFileSync(process.execPath)),
+    );
+    const ended = once(child, "exit");
+    child.kill();
+    await ended;
+    manager.prepare();
+    assert.ok(
+      !fs
+        .readdirSync(path.dirname(directory))
+        .some((name) => name.includes(".previous")),
+    );
+  },
+);
 
 test("native install keeps paths as arguments, migrates only the legacy ASIP plugin, and records successful completion", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-native-"));

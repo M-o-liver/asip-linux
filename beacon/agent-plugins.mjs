@@ -3,9 +3,33 @@ import path from "node:path";
 import os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
 import { rebindAntigravity } from "../scripts/plugins.mjs";
 
 const execute = promisify(execFile);
+
+// Windows keeps a running executable mapped after its directory is renamed.
+// Retiring that directory must not prevent the new bundle from being used.
+function removeRetired(directory, platform) {
+  try {
+    fs.rmSync(directory, { recursive: true, force: true });
+  } catch (error) {
+    if (
+      platform !== "win32" ||
+      !["EPERM", "EBUSY", "EACCES"].includes(error.code)
+    )
+      throw error;
+  }
+}
+
+function cleanRetired(destination, platform) {
+  const parent = path.dirname(destination);
+  if (!fs.existsSync(parent)) return;
+  const prefix = path.basename(destination) + ".previous";
+  for (const entry of fs.readdirSync(parent))
+    if (entry === prefix || entry.startsWith(prefix + "-"))
+      removeRetired(path.join(parent, entry), platform);
+}
 export const agents = {
   codex: { name: "Codex", command: "codex" },
   "claude-code": { name: "Claude Code", command: "claude" },
@@ -125,6 +149,7 @@ export class AgentPlugins {
   prepare() {
     for (const agent of Object.keys(agents)) {
       const destination = this.directory(agent);
+      cleanRetired(destination, this.platform);
       const staging = destination + ".new";
       fs.rmSync(staging, { recursive: true, force: true });
       fs.mkdirSync(path.dirname(staging), { recursive: true });
@@ -135,8 +160,7 @@ export class AgentPlugins {
       if (agent === "antigravity") rebindAntigravity(staging, destination);
       // Provider caches are independent. Keep the managed source path stable
       // across Beacon upgrades so existing marketplace registrations still work.
-      const previous = destination + ".previous";
-      fs.rmSync(previous, { recursive: true, force: true });
+      const previous = destination + ".previous-" + randomUUID();
       if (fs.existsSync(destination)) fs.renameSync(destination, previous);
       try {
         fs.renameSync(staging, destination);
@@ -144,7 +168,7 @@ export class AgentPlugins {
         if (fs.existsSync(previous)) fs.renameSync(previous, destination);
         throw error;
       }
-      fs.rmSync(previous, { recursive: true, force: true });
+      removeRetired(previous, this.platform);
     }
     if (this.platform === "win32" && this.saved().antigravity)
       this.registerAntigravityDesktop();
@@ -220,10 +244,11 @@ export class AgentPlugins {
       // Antigravity's Windows desktop discovery skips directory junctions.
       // Keep a real native directory and refresh only our own installation.
       fs.mkdirSync(path.dirname(destination), { recursive: true });
+      cleanRetired(destination, this.platform);
       const staging = fs.mkdtempSync(
         path.join(path.dirname(destination), ".asip-stage-"),
       );
-      const previous = staging + ".previous";
+      const previous = destination + ".previous-" + randomUUID();
       try {
         fs.cpSync(directory, staging, { recursive: true });
         fs.writeFileSync(
@@ -238,7 +263,7 @@ export class AgentPlugins {
           throw error;
         }
         if (existing?.isSymbolicLink()) fs.unlinkSync(previous);
-        else if (existing) fs.rmSync(previous, { recursive: true });
+        else if (existing) removeRetired(previous, this.platform);
       } finally {
         fs.rmSync(staging, { recursive: true, force: true });
       }
