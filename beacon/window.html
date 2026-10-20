@@ -205,6 +205,10 @@
             <p>Choose which APIs your agents can use.</p>
           </div>
           <div id="connection-list"></div>
+          <button id="import-connections" class="text-button">
+            Import connections
+          </button>
+          <p id="connection-import-result" role="status"></p>
           <details id="connection-details">
             <summary>Add connection</summary>
             <form id="connection-form">
@@ -222,6 +226,15 @@
                   <option value="anthropic">Anthropic</option>
                   <option value="gemini">Google Gemini</option>
                   <option value="github">GitHub</option>
+                  <option value="cloudflare">Cloudflare</option>
+                  <option value="brave">Brave Search</option>
+                  <option value="exa">Exa</option>
+                  <option value="fal">fal.ai</option>
+                  <option value="marginalia">Marginalia</option>
+                  <option value="stripe">Stripe</option>
+                  <option value="x">X</option>
+                  <option value="google-maps">Google Maps</option>
+                  <option value="secret">Signing secret</option>
                   <option value="custom">Other API</option>
                 </select></label
               >
@@ -314,6 +327,7 @@
             </div>
           </div>
           <button id="quit" class="text-button">Quit Beacon</button>
+          <p id="build-version" class="muted"></p>
         </section>
         <section id="device" class="surface" hidden>
           <p>Enter this code on GitHub:</p>

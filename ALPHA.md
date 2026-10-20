@@ -1,24 +1,32 @@
 # ASIP alpha test
 
-Download Beacon from the [0.4 alpha release](https://github.com/M-o-liver/asip-linux/releases/tag/v0.4.0-alpha.4). Windows users should choose **ASIP.Beacon.Setup.0.4.0.exe**. Mac users should choose the **arm64** DMG for Apple Silicon or the **x64** DMG for Intel. These installers do not yet have publisher signatures.
+Download an installer from [Releases](https://github.com/M-o-liver/asip-linux/releases). Choose the Windows Setup EXE, the arm64 DMG for Apple Silicon, the x64 DMG for Intel Mac, or the Linux AppImage/DEB/RPM. The application version is 0.4.1. Installers are unsigned; macOS builds are not notarized.
 
-## Windows with Claude Code
+## Connect an agent
 
-1. Install and open Beacon. Sign in with Google or GitHub. Use your own account; no access to the developer's computer is needed.
-2. Open **Agents** in Beacon and click **Install** for **Claude Code**. If its installer is not detected, use **Show plugin folder** to add the managed folder through Claude Code’s plugin manager.
-3. Start a new Claude Code session. ASIP’s sign-in window should open automatically. Choose Google or GitHub, or click **Connect** if Beacon is already signed in.
-4. Ask Claude Code to recall ASIP work, inspect a small test repository, and record its result. Check that the project, session, and evidence appear in ASIP.
+Install Beacon and sign in with Google or GitHub. Open **Agents** in Beacon, then use the matching flow:
 
-The same flow applies to Codex and Antigravity. Codex additionally requires reviewing ASIP in **/hooks**. Beacon keeps all plugin sources in its application-data folder; users do not choose an export location.
+| Agent           | Installation                                                                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT desktop | Click **Open in ChatGPT**, then install ASIP on the native plugin page. Open **ASIP → Hooks → Review** and enable its hooks.                                  |
+| Codex CLI       | Click **Install**. Review ASIP in the CLI's **/hooks**, then start a new session.                                                                             |
+| Claude Code     | Click **Install**. If the CLI is unavailable to Beacon, choose **Use plugin folder** and add that managed folder through Claude Code's native plugin manager. |
+| Antigravity     | Click **Install**, restart Antigravity, then open a new conversation.                                                                                         |
 
-## What has been verified
+Beacon stores all three managed bundles in its application-data folder. The folder button opens the appropriate bundle when a native manager needs its path. ASIP does not ask you to choose an export directory.
 
-- A real Google sign-in and installed Codex plugin connection.
-- Automatic capture of a real Codex CLI session: prompts, tool calls and results, Git revision, worktree state, final result, and session end.
-- GitHub repository authorization and a real API request through the installed Codex plugin.
-- The browser workspace against those records.
-- Automated tests, native plugin installation, Codex/Claude MCP startup, packaging, and packaged application startup on Windows, macOS, and Linux. The release links to those build checks.
+When the plugin starts, Beacon presents its connection request. Click **Connect** if already signed in. Start a fresh conversation after installing or updating a plugin; an existing conversation may retain its previous tool list.
 
-Claude Code still needs a complete interactive session check. A real Antigravity session recorded tool events, Git evidence, Stop events, and an explicit result, but the agent used the local API to work around missing native MCP tools. Its normal MCP workflow still needs verification. Installing a plugin or starting its MCP server does not establish that its hooks capture a complete session. The new native panels and complete Claude/Antigravity workflows still need interactive checks in addition to CI.
+## Check the complete workflow
 
-Activity stays on the computer where Beacon runs. Account linking and cross-device history synchronization are not implemented. Recovery keeps up to ten ASIP history checkpoints; it does not back up repository files.
+Use an empty test folder or a small repository. Ask your agent:
+
+> Use ASIP to recall this project. Record what you intend to do, create a small test file, read it back, and record the result with evidence.
+
+Approve the agent's normal tool prompts. Open **ASIP** from Beacon and check the project, session, result, and evidence. Start a different conversation in the same project and ask what ASIP remembers. Restart Beacon and check that the history remains.
+
+For APIs, open **API connections**, add a named connection, select the projects that may use it, and use **Check** where available. Ask your connected agent to list the project's connections and make a read-only request by name. HTTP failures should remain visible in the connection and activity records.
+
+The [qualification report](QUALIFICATION.md) identifies which workflows were observed in the desktop applications and which have automated coverage only. A working MCP connection does not by itself verify automatic hook capture. ChatGPT desktop and Codex CLI require native hook review. After enabling hooks, start a fresh chat and check that its tool activity appears in ASIP.
+
+Activity is stored on the computer running Beacon. Account linking and cross-device history synchronization are not implemented. Recovery retains up to ten ASIP history checkpoints; it does not back up repository files.

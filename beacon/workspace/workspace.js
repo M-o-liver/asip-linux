@@ -8,7 +8,7 @@ const kinds = {
   intent: "Intent",
   result: "Result",
   evidence: "Evidence",
-  Stop: "Agent result",
+  Stop: "Turn ended",
   failed: "Failed",
   tool_succeeded: "Tool completed",
   api_request: "API request",
@@ -21,6 +21,13 @@ const kinds = {
   SessionStart: "Session started",
   SessionEnd: "Session ended",
   Interrupt: "Interrupted",
+  "intent.finished": "Completed",
+  "intent.failed": "Failed",
+  "intent.held": "Unresolved",
+  "intent.released": "Resumed",
+  "intent.superseded": "Superseded",
+  "verification.passed": "Verified",
+  "verification.failed": "Verification failed",
 };
 const state = {
   project: new URLSearchParams(location.search).get("project") || "",
@@ -30,13 +37,14 @@ const state = {
   kind: "work",
   query: "",
   offset: 0,
+  sessionOffset: 0,
   selected: null,
 };
 let request;
 const label = (project) =>
   project === "unassigned"
     ? "Unassigned"
-    : project?.split("/").filter(Boolean).at(-1) || "Unassigned";
+    : project?.split(/[\\/]/).filter(Boolean).at(-1) || "Unassigned";
 function element(tag, text, className) {
   const el = document.createElement(tag);
   if (text !== undefined) el.textContent = text;
@@ -48,6 +56,7 @@ function selectProject(project) {
   state.session = "";
   state.agent = "";
   state.offset = 0;
+  state.sessionOffset = 0;
   state.selected = null;
   history.replaceState(
     {},
@@ -84,6 +93,14 @@ function map(data) {
   const svg = $("map"),
     ns = "http://www.w3.org/2000/svg";
   svg.replaceChildren();
+  const focus = (id) => {
+    svg.classList.toggle("focused", Boolean(id));
+    for (const line of svg.querySelectorAll("line"))
+      line.classList.toggle(
+        "related",
+        line.dataset.source === id || line.dataset.target === id,
+      );
+  };
   const projects = data.projects;
   $("map-empty").hidden = Boolean(projects.length);
   svg.hidden = !projects.length;
@@ -105,6 +122,8 @@ function map(data) {
       b = positions.get(relation.target);
     if (!a || !b) continue;
     const line = document.createElementNS(ns, "line");
+    line.dataset.source = relation.source;
+    line.dataset.target = relation.target;
     for (const [key, value] of Object.entries({
       x1: a.x,
       y1: a.y,
@@ -125,6 +144,8 @@ function map(data) {
     group.setAttribute("tabindex", "0");
     group.setAttribute("role", "button");
     group.setAttribute("aria-label", project.id);
+    const title = document.createElementNS(ns, "title");
+    title.textContent = project.id;
     if (state.project === project.id) group.classList.add("selected");
     const rect = document.createElementNS(ns, "rect");
     for (const [key, value] of Object.entries({
@@ -146,8 +167,13 @@ function map(data) {
     count.setAttribute("text-anchor", "middle");
     count.classList.add("graph-count");
     count.textContent =
-      project.sessions + " sessions · " + project.events + " events";
-    group.append(rect, text, count);
+      project.sessions +
+      (project.sessions === 1 ? " session · " : " sessions · ") +
+      project.events +
+      " events";
+    group.append(title, rect, text, count);
+    group.onmouseenter = group.onfocus = () => focus(project.id);
+    group.onmouseleave = group.onblur = () => focus(state.project);
     group.onclick = () => selectProject(project.id);
     group.onkeydown = (event) => {
       if (event.key === "Enter" || event.key === " ") {
@@ -157,13 +183,17 @@ function map(data) {
     };
     svg.append(group);
   }
+  focus(state.project);
 }
 function render(data) {
   $("account").textContent = data.account?.handle || "";
   $("title").textContent = state.project ? label(state.project) : "Projects";
   $("repository").textContent =
     state.project ||
-    data.projects.length + " projects · " + data.sessions.length + " sessions";
+    data.projects.length +
+      " projects · " +
+      (data.sessionCount || 0) +
+      " sessions";
   $("projects").replaceChildren();
   const entries = [
     {
@@ -237,7 +267,12 @@ function render(data) {
   $("session-filter").hidden = !state.session;
   $("session-label").textContent = state.session;
   $("sessions").replaceChildren();
-  $("session-count").textContent = data.sessions.length;
+  $("session-count").textContent = data.sessionCount || 0;
+  $("session-pages").hidden = !state.sessionOffset && !data.moreSessions;
+  $("sessions-previous").disabled = !state.sessionOffset;
+  $("sessions-next").disabled = !data.moreSessions;
+  $("sessions-page").textContent =
+    "Page " + (Math.floor(state.sessionOffset / 20) + 1);
   for (const session of data.sessions) {
     const button = element(
       "button",
@@ -266,6 +301,17 @@ function render(data) {
   for (const connection of data.connections) {
     const row = element("div", connection.name, "connection");
     row.append(element("small", connection.account || connection.provider));
+    if (connection.lastRequest)
+      row.append(
+        element(
+          "small",
+          (connection.lastRequest.status
+            ? "HTTP " + connection.lastRequest.status
+            : "No response") +
+            " · " +
+            new Date(connection.lastRequest.at).toLocaleString(),
+        ),
+      );
     $("connections").append(row);
   }
   if (!data.connections.length)
@@ -295,6 +341,7 @@ async function load() {
     "kind",
     "query",
     "offset",
+    "sessionOffset",
   ])
     if (state[key]) params.set(key, state[key]);
   try {
@@ -329,9 +376,12 @@ async function load() {
     $("error").hidden = false;
   }
 }
-async function beacon() {
+async function beacon(view) {
   try {
-    const response = await fetch("beacon", { method: "POST" });
+    const response = await fetch(
+      "beacon" + (typeof view === "string" ? "?view=" + view : ""),
+      { method: "POST" },
+    );
     if (!response.ok) throw new Error("Reopen ASIP from Beacon.");
   } catch (error) {
     $("error").textContent = error.message;
@@ -348,7 +398,15 @@ $("reopen-workspace").onclick = async () => {
     $("error").hidden = false;
   }
 };
-$("manage-connections").onclick = beacon;
+$("manage-connections").onclick = () => beacon("connections");
+$("sessions-previous").onclick = () => {
+  state.sessionOffset = Math.max(0, state.sessionOffset - 20);
+  load();
+};
+$("sessions-next").onclick = () => {
+  state.sessionOffset += 20;
+  load();
+};
 $("refresh").onclick = load;
 $("kind").onchange = () => {
   state.kind = $("kind").value;

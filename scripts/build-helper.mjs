@@ -8,6 +8,16 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const version = JSON.parse(
   fs.readFileSync(path.join(root, "package.json"), "utf8"),
 ).version;
+let revision = "development",
+  tree = "",
+  dirty = false;
+try {
+  const git = (...args) =>
+    execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim();
+  revision = git("rev-parse", "HEAD");
+  tree = git("rev-parse", "HEAD^{tree}");
+  dirty = Boolean(git("status", "--porcelain", "--untracked-files=no"));
+} catch {}
 const targets = process.argv.includes("--all")
   ? [
       ["linux", "x64"],
@@ -28,7 +38,10 @@ for (const [platform, architecture] of targets) {
     [
       "build",
       "-trimpath",
-      "-ldflags=-s -w -X main.version=" + version,
+      "-ldflags=-s -w -X main.version=" +
+        version +
+        " -X main.revision=" +
+        revision,
       "-o",
       path.join(directory, binary),
       ".",
@@ -51,6 +64,19 @@ for (const [platform, architecture] of targets) {
 const nativeTarget = process.platform + "-" + process.arch;
 const packaged = path.join(root, "build", "packaged");
 fs.rmSync(packaged, { recursive: true, force: true });
+fs.mkdirSync(packaged, { recursive: true });
+const identity = {
+  version,
+  revision,
+  tree,
+  dirty,
+  platform: nativeTarget,
+  builtAt: new Date().toISOString(),
+};
+fs.writeFileSync(
+  path.join(packaged, "build.json"),
+  JSON.stringify(identity, null, 2) + "\n",
+);
 for (const component of ["helper", "plugins"]) {
   fs.cpSync(
     path.join(root, "build", component, nativeTarget),

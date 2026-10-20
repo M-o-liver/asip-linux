@@ -10,6 +10,7 @@ import { accountId } from "../beacon/identity.mjs";
 import { Connections } from "../beacon/connections.mjs";
 import { encryptionFixture } from "./encryption-fixture.mjs";
 import http from "node:http";
+import { antigravityHookCommand } from "../scripts/plugins.mjs";
 
 let binary;
 const children = new Set();
@@ -68,12 +69,25 @@ function rpc(child) {
   };
 }
 async function runHook(agent, home, event, payload) {
-  const child = helper("hook", agent, home, ["--event", event]);
+  const child =
+    agent === "antigravity"
+      ? spawn(antigravityHookCommand(binary, event), {
+          shell: true,
+          env: { ...process.env, ASIP_PLUGIN_STATE: home },
+          stdio: ["pipe", "pipe", "pipe"],
+        })
+      : helper("hook", agent, home, ["--event", event]);
+  if (agent === "antigravity") {
+    children.add(child);
+    child.once("exit", () => children.delete(child));
+  }
   let output = "";
+  let errors = "";
   child.stdout.on("data", (chunk) => (output += chunk));
+  child.stderr.on("data", (chunk) => (errors += chunk));
   child.stdin.end(JSON.stringify(payload));
   const [code] = await once(child, "exit");
-  assert.equal(code, 0);
+  assert.equal(code, 0, errors);
   return JSON.parse(output);
 }
 
@@ -81,7 +95,7 @@ test(
   "standalone helper connects, exposes memory after authentication, captures native hooks, and stops on disconnect",
   { timeout: 90000 },
   async (t) => {
-    const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-helper-")),
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip A & B's helper-")),
       runtime = new Runtime(path.join(home, "beacon"));
     t.after(async () => {
       await Promise.all(
@@ -326,6 +340,57 @@ test(
     });
     assert.equal(response.result.isError, true);
 
+    // Desktop tool discovery may close its MCP transport before the user
+    // approves Beacon. Connection must survive that short-lived process.
+    const discoveryState = path.join(home, "short-lived-discovery");
+    let discovered;
+    const discoveryRequest = new Promise((resolve) => {
+      discovered = resolve;
+    });
+    runtime.onPluginSignIn = discovered;
+    const discovery = helper("mcp", "codex", discoveryState);
+    const discoveryClient = rpc(discovery);
+    await discoveryClient.request("initialize", {
+      protocolVersion: "2025-06-18",
+    });
+    const waiting = await discoveryRequest;
+    const discoveryExit = once(discovery, "exit");
+    discovery.stdin.end();
+    await discoveryExit;
+    const parallel = helper("mcp", "codex", discoveryState);
+    await rpc(parallel).request("initialize", {});
+    const parallelExit = once(parallel, "exit");
+    parallel.stdin.end();
+    await parallelExit;
+    assert.equal(
+      [...runtime.requests.values()].filter(
+        (request) => request.agent === "codex",
+      ).length,
+      1,
+      "Parallel discovery should share one account prompt.",
+    );
+    runtime.completeSignIn(waiting.id, account);
+    const credentials = path.join(discoveryState, "codex.json");
+    const deadline = Date.now() + 4000;
+    while (!fs.existsSync(credentials) && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.ok(
+      fs.existsSync(credentials),
+      "Beacon approval must complete after the discovery MCP process exits.",
+    );
+    const resumed = helper("mcp", "codex", discoveryState);
+    const resumedClient = rpc(resumed);
+    await resumedClient.request("initialize", {});
+    assert.equal(
+      (
+        await resumedClient.request("tools/call", {
+          name: "asip_status",
+          arguments: {},
+        })
+      ).result.isError,
+      false,
+    );
+
     for (const agent of ["claude-code", "antigravity"]) {
       const state = path.join(home, agent),
         connecting = helper("connect", agent, state);
@@ -342,7 +407,10 @@ test(
               workspacePaths: [repository],
               toolCall: {
                 name: "run_command",
-                args: { CommandLine: "npm test", Cwd: repository },
+                args: {
+                  CommandLine: "npm test — café 日本語",
+                  Cwd: repository,
+                },
               },
               stepIdx: 5,
               error: "exit status 1",
@@ -367,6 +435,31 @@ test(
       assert.equal(row.project, "github.com/example/project");
       assert.equal(JSON.parse(row.data).error, "exit status 1");
       if (agent === "antigravity") {
+        assert.equal(
+          JSON.parse(row.data).toolCall.args.CommandLine,
+          "npm test — café 日本語",
+        );
+        await runHook(agent, state, "PostToolUse", {
+          conversationId: "a1",
+          workspacePaths: [repository],
+          toolCall: {
+            name: "call_mcp_tool",
+            args: {
+              ServerName: "asip_asip",
+              ToolName: "asip_recall",
+              Arguments: {},
+            },
+          },
+          toolResult: { text: "recursive memory response" },
+        });
+        const wrapped = JSON.parse(
+          runtime.db
+            .prepare("SELECT data FROM events ORDER BY rowid DESC LIMIT 1")
+            .get().data,
+        );
+        assert.equal(wrapped.tool, "asip_asip/asip_recall");
+        assert.equal(wrapped.asip_tool, true);
+        assert.equal(wrapped.toolResult, undefined);
         await runHook(agent, state, "Stop", {
           conversationId: "a1",
           workspacePaths: [repository],

@@ -1,7 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("asip", {
   status: () => ipcRenderer.invoke("asip:status"),
-  openWorkspace: () => ipcRenderer.invoke("asip:open-workspace"),
+  openWorkspace: (project) =>
+    ipcRenderer.invoke("asip:open-workspace", project),
   startup: (enabled) => ipcRenderer.invoke("asip:startup", enabled),
   projects: () => ipcRenderer.invoke("asip:projects"),
   importHistory: () => ipcRenderer.invoke("asip:import-history"),
@@ -11,6 +12,8 @@ contextBridge.exposeInMainWorld("asip", {
   signIn: (provider) => ipcRenderer.invoke("asip:signin", provider),
   connect: () => ipcRenderer.invoke("asip:connect"),
   saveConnection: (input) => ipcRenderer.invoke("asip:save-connection", input),
+  checkConnection: (name) => ipcRenderer.invoke("asip:check-connection", name),
+  importConnections: () => ipcRenderer.invoke("asip:import-connections"),
   githubConnection: (input) =>
     ipcRenderer.invoke("asip:github-connection", input),
   removeConnection: (name) =>
@@ -26,4 +29,6 @@ contextBridge.exposeInMainWorld("asip", {
   copyText: (text) => ipcRenderer.invoke("asip:copy-text", text),
   onStatus: (callback) =>
     ipcRenderer.on("asip:status", (_event, status) => callback(status)),
+  onNavigate: (callback) =>
+    ipcRenderer.on("asip:navigate", (_event, page) => callback(page)),
 });

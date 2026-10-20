@@ -12,6 +12,19 @@ export const agents = {
   antigravity: { name: "Antigravity", command: "agy" },
 };
 
+export function codexDesktopURL(directory) {
+  const marketplace = path.join(
+    directory,
+    ".agents",
+    "plugins",
+    "marketplace.json",
+  );
+  return (
+    "codex://plugins/asip?" +
+    new URLSearchParams({ marketplacePath: marketplace })
+  );
+}
+
 export function findAgentCommand(
   agent,
   { platform = process.platform, env = process.env, home = os.homedir() } = {},
@@ -90,8 +103,18 @@ export class AgentPlugins {
     target = process.platform + "-" + process.arch,
     find = findAgentCommand,
     run = runAgentCommand,
+    nativeHome = os.homedir(),
+    platform = process.platform,
   }) {
-    Object.assign(this, { home, source, target, find, run });
+    Object.assign(this, {
+      home,
+      source,
+      target,
+      find,
+      run,
+      nativeHome,
+      platform,
+    });
     this.busy = new Set();
     this.receipts = path.join(home, "plugin-installs.json");
   }
@@ -123,6 +146,8 @@ export class AgentPlugins {
       }
       fs.rmSync(previous, { recursive: true, force: true });
     }
+    if (this.platform === "win32" && this.saved().antigravity)
+      this.registerAntigravityDesktop();
   }
   saved() {
     try {
@@ -137,17 +162,98 @@ export class AgentPlugins {
       id,
       name: agent.name,
       directory: this.directory(id),
-      available: Boolean(this.find(id)),
+      available:
+        id === "antigravity" || id === "codex" || Boolean(this.find(id)),
+      desktop: id === "codex" && !this.find(id),
       installing: this.busy.has(id),
       addedAt: receipts[id]?.at || null,
     }));
+  }
+  registerAntigravityDesktop() {
+    // The desktop app/IDE reads this native global directory. Native CLI
+    // versions may install here too; a desktop-only install needs no CLI.
+    const directory = this.directory("antigravity");
+    const destination = path.join(
+      this.nativeHome,
+      ".gemini",
+      "config",
+      "plugins",
+      "asip",
+    );
+    let existing;
+    try {
+      existing = fs.lstatSync(destination);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (existing) {
+      let matches = fs.realpathSync(destination) === fs.realpathSync(directory);
+      if (!matches && this.platform === "win32" && existing.isDirectory()) {
+        try {
+          const owner = JSON.parse(
+            fs.readFileSync(
+              path.join(destination, ".asip-beacon.json"),
+              "utf8",
+            ),
+          );
+          matches = owner.schema === 1 && owner.source === directory;
+        } catch {}
+      }
+      if (!matches && existing.isDirectory()) {
+        try {
+          matches = ["plugin.json", "mcp_config.json", "hooks.json"].every(
+            (file) =>
+              fs
+                .readFileSync(path.join(destination, file))
+                .equals(fs.readFileSync(path.join(directory, file))),
+          );
+        } catch {}
+      }
+      if (!matches)
+        throw new Error(
+          "Antigravity already has an ASIP folder at " +
+            destination +
+            ". Remove that installation in Antigravity before adding this one.",
+        );
+    }
+    if (this.platform === "win32") {
+      // Antigravity's Windows desktop discovery skips directory junctions.
+      // Keep a real native directory and refresh only our own installation.
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      const staging = fs.mkdtempSync(
+        path.join(path.dirname(destination), ".asip-stage-"),
+      );
+      const previous = staging + ".previous";
+      try {
+        fs.cpSync(directory, staging, { recursive: true });
+        fs.writeFileSync(
+          path.join(staging, ".asip-beacon.json"),
+          JSON.stringify({ schema: 1, source: directory }),
+        );
+        if (existing) fs.renameSync(destination, previous);
+        try {
+          fs.renameSync(staging, destination);
+        } catch (error) {
+          if (existing) fs.renameSync(previous, destination);
+          throw error;
+        }
+        if (existing?.isSymbolicLink()) fs.unlinkSync(previous);
+        else if (existing) fs.rmSync(previous, { recursive: true });
+      } finally {
+        fs.rmSync(staging, { recursive: true, force: true });
+      }
+    } else if (!existing) {
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.symlinkSync(directory, destination, "dir");
+    }
+    return destination;
   }
   async install(agent) {
     const directory = this.directory(agent);
     if (this.busy.has(agent))
       throw new Error("Installation is already running.");
     const file = this.find(agent);
-    if (!file)
+    if (!file && agent !== "antigravity")
       throw new Error(
         "ASIP could not find " +
           agents[agent].name +
@@ -162,7 +268,8 @@ export class AgentPlugins {
               ["plugin", "marketplace", "add", directory],
               ["plugin", agent === "codex" ? "add" : "install", "asip@asip"],
             ];
-      for (const args of commands) await this.run(file, args);
+      if (file) for (const args of commands) await this.run(file, args);
+      if (agent === "antigravity") this.registerAntigravityDesktop();
       if (agent !== "antigravity") {
         const { stdout } = await this.run(file, ["plugin", "list", "--json"]);
         const listing = JSON.parse(stdout);
@@ -191,9 +298,11 @@ export class AgentPlugins {
         message:
           agent === "codex"
             ? "Added to Codex. Review ASIP in /hooks for automatic recording, then open a new session."
-            : "Added to " +
-              agents[agent].name +
-              ". Open a new session; ASIP sign-in will appear automatically.",
+            : agent === "antigravity"
+              ? "Added to Antigravity. Restart the app, then open a new conversation. ASIP sign-in will appear automatically."
+              : "Added to " +
+                agents[agent].name +
+                ". Open a new session; ASIP sign-in will appear automatically.",
       };
     } catch (error) {
       throw new Error(

@@ -339,12 +339,33 @@ p {
 }
 .recent-row {
   display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
   gap: 14px;
   padding: 18px 0;
   border-bottom: 1px solid var(--line);
 }
+.recent-row:hover {
+  background: #ffffff05;
+}
+.recent-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
 .recent-row:last-child {
   border: 0;
+}
+.connection-status {
+  display: block;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.connection-status.attention {
+  color: #e4b694;
 }
 .record-marker {
   width: 26px;

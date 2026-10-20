@@ -7,6 +7,7 @@ import {
   AgentPlugins,
   findAgentCommand,
   runAgentCommand,
+  codexDesktopURL,
 } from "../beacon/agent-plugins.mjs";
 import desktop from "../beacon/desktop.cjs";
 
@@ -38,6 +39,19 @@ test("managed bundles keep stable paths, update their source, and preserve nativ
     fs.existsSync(path.join(installedPath, ".codex-plugin/plugin.json")),
   );
   assert.throws(() => manager.directory("../elsewhere"));
+});
+
+test("ChatGPT installation links keep the local marketplace path intact", () => {
+  const directory = path.join(os.tmpdir(), "A & B's ASIP", "asip-codex");
+  const url = new URL(codexDesktopURL(directory));
+  assert.equal(url.protocol, "codex:");
+  assert.equal(url.host, "plugins");
+  assert.equal(url.pathname, "/asip");
+  assert.equal(
+    url.searchParams.get("marketplacePath"),
+    path.join(directory, ".agents/plugins/marketplace.json"),
+  );
+  assert.equal([...url.searchParams].length, 1);
 });
 
 test("native install keeps paths as arguments, migrates only the legacy ASIP plugin, and records successful completion", async (t) => {
@@ -93,6 +107,100 @@ test("agent detection finds per-user installs outside the desktop PATH", (t) => 
   assert.equal(
     findAgentCommand("claude-code", { home, env: { PATH: "" } }),
     file,
+  );
+});
+
+test("Antigravity desktop uses the managed bundle without requiring its CLI or replacing another installation", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asip-agy-desktop-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new AgentPlugins({
+    home: path.join(root, "beacon"),
+    nativeHome: path.join(root, "native home"),
+    source: path.resolve("build/plugins"),
+    find: () => null,
+  });
+  manager.prepare();
+  await manager.install("antigravity");
+  const native = path.join(manager.nativeHome, ".gemini/config/plugins/asip");
+  const command = JSON.parse(
+    fs.readFileSync(path.join(native, "mcp_config.json")),
+  ).mcpServers.asip.command;
+  assert.equal(
+    path.dirname(path.dirname(command)),
+    manager.directory("antigravity"),
+  );
+  // Replacing the managed source on upgrade keeps the desktop registration valid.
+  manager.prepare();
+  await manager.install("antigravity");
+  assert.ok(fs.existsSync(path.join(native, "hooks.json")));
+  if (fs.lstatSync(native).isSymbolicLink()) fs.unlinkSync(native);
+  else fs.rmSync(native, { recursive: true });
+  fs.mkdirSync(native);
+  fs.writeFileSync(path.join(native, "user-file"), "preserve");
+  await assert.rejects(
+    manager.install("antigravity"),
+    /already has an ASIP folder/,
+  );
+  assert.equal(
+    fs.readFileSync(path.join(native, "user-file"), "utf8"),
+    "preserve",
+  );
+  fs.rmSync(native, { recursive: true });
+  // The pinned CLI copies the matching bundle into the desktop directory.
+  manager.find = () => "fixture-agy";
+  manager.run = async () => {
+    fs.cpSync(manager.directory("antigravity"), native, { recursive: true });
+  };
+  await manager.install("antigravity");
+  assert.ok(fs.existsSync(path.join(native, "hooks.json")));
+});
+
+test("Windows Antigravity registration migrates junctions to discoverable directories and refreshes them on upgrade", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asip-agy-windows-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const manager = new AgentPlugins({
+    home: path.join(root, "beacon"),
+    nativeHome: path.join(root, "native home"),
+    source: path.resolve("build/plugins"),
+    find: () => null,
+    platform: "win32",
+  });
+  manager.prepare();
+  const native = path.join(manager.nativeHome, ".gemini/config/plugins/asip");
+  fs.mkdirSync(path.dirname(native), { recursive: true });
+  fs.symlinkSync(
+    manager.directory("antigravity"),
+    native,
+    process.platform === "win32" ? "junction" : "dir",
+  );
+  await manager.install("antigravity");
+  // Directory enumeration used by the desktop must see a directory, not a link.
+  assert.ok(
+    fs
+      .readdirSync(path.dirname(native), { withFileTypes: true })
+      .find((entry) => entry.name === "asip")
+      .isDirectory(),
+  );
+  assert.equal(fs.lstatSync(native).isSymbolicLink(), false);
+  const stale = path.join(native, "old-bundle-marker");
+  fs.writeFileSync(stale, "old");
+  fs.writeFileSync(path.join(native, "plugin.json"), '{"version":"old"}');
+  manager.prepare();
+  assert.equal(fs.existsSync(stale), false);
+  assert.deepEqual(
+    fs.readFileSync(path.join(native, "plugin.json")),
+    fs.readFileSync(path.join(manager.directory("antigravity"), "plugin.json")),
+  );
+  assert.ok(fs.existsSync(path.join(manager.directory("antigravity"), "bin")));
+  fs.rmSync(path.join(native, ".asip-beacon.json"));
+  fs.writeFileSync(path.join(native, "plugin.json"), '{"name":"someone-else"}');
+  await assert.rejects(
+    manager.install("antigravity"),
+    /already has an ASIP folder/,
+  );
+  assert.equal(
+    fs.readFileSync(path.join(native, "plugin.json"), "utf8"),
+    '{"name":"someone-else"}',
   );
 });
 

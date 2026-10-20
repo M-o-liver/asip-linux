@@ -25,6 +25,7 @@ import (
 
 var endpoint = "http://127.0.0.1:12945"
 var version = "dev"
+var revision = "development"
 
 var agent string
 var client = &http.Client{Timeout: 10 * time.Second}
@@ -146,6 +147,34 @@ func signin() (map[string]any, error) {
 		}
 	}
 	return nil, errors.New("Sign-in expired. Try again.")
+}
+
+// Discovery transports can disappear before the user clicks Connect. The
+// short-lived MCP process starts a bounded worker that owns that handshake.
+// A per-agent lease prevents parallel discovery calls opening duplicate requests.
+func backgroundSignIn() error {
+	if err := os.MkdirAll(home(), 0700); err != nil {
+		return err
+	}
+	lease := filepath.Join(home(), agent+".connecting")
+	if err := os.Mkdir(lease, 0700); err != nil {
+		if !os.IsExist(err) {
+			return err
+		}
+		info, failure := os.Stat(lease)
+		if failure != nil || time.Since(info.ModTime()) < 6*time.Minute {
+			return nil
+		}
+		if failure = os.RemoveAll(lease); failure != nil {
+			return failure
+		}
+		if failure = os.Mkdir(lease, 0700); failure != nil {
+			return nil
+		}
+	}
+	defer os.RemoveAll(lease)
+	_, err := signin()
+	return err
 }
 
 func digest(value any) string {
@@ -326,6 +355,9 @@ func hook(event string) (context map[string]any) {
 		if args, ok := call["args"].(map[string]any); ok && stringValue(args["Cwd"]) != "" {
 			cwd = stringValue(args["Cwd"])
 		}
+		if args, ok := call["args"].(map[string]any); ok && tool == "call_mcp_tool" && asipTool(stringValue(args["ToolName"])) {
+			tool = stringValue(args["ServerName"]) + "/" + stringValue(args["ToolName"])
+		}
 	}
 	data := map[string]any{"tool": tool, "trace_sha256": digest(input), "cwd": cwd}
 	if asipTool(tool) {
@@ -411,9 +443,23 @@ func mcp() {
 		if !connecting.CompareAndSwap(false, true) {
 			return
 		}
+		executable, failure := os.Executable()
+		if failure != nil {
+			connecting.Store(false)
+			return
+		}
+		command := exec.Command(executable, "connect-background", "--agent", agent)
+		detachConnection(command)
+		// Start before reading EOF; otherwise a discovery-only transport can
+		// terminate this process before its goroutine ever spawns the worker.
+		if failure = command.Start(); failure != nil {
+			connecting.Store(false)
+			send(map[string]any{"jsonrpc": "2.0", "method": "notifications/message", "params": map[string]any{"level": "error", "logger": "asip", "data": "Could not start the ASIP connection helper."}})
+			return
+		}
 		go func() {
 			defer connecting.Store(false)
-			_, failure := signin()
+			failure := command.Wait()
 			if failure != nil {
 				send(map[string]any{"jsonrpc": "2.0", "method": "notifications/message", "params": map[string]any{"level": "error", "logger": "asip", "data": failure.Error()}})
 			} else {
@@ -491,6 +537,10 @@ func mcp() {
 				data = map[string]any{"state": "connecting", "message": "Finish connecting in ASIP Beacon."}
 			case "asip_status":
 				data, err = call("/plugin/status", map[string]any{"session": contextSession}, token())
+				if err == nil {
+					data["pluginVersion"] = version
+					data["pluginRevision"] = revision
+				}
 			case "asip_recall":
 				data, err = call("/recall", args, token())
 			case "asip_connections":
@@ -573,6 +623,10 @@ func main() {
 			os.Exit(1)
 		}
 		fmt.Println("ASIP connected.")
+	case "connect-background":
+		if err := backgroundSignIn(); err != nil {
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintln(os.Stderr, "ASIP plugin: mcp, hook, or connect")
 		os.Exit(1)

@@ -5,6 +5,28 @@ const version = JSON.parse(
 ).version;
 
 const description = "Recall project work and record what your agent does.";
+export function antigravityHookCommand(
+  binary,
+  event,
+  platform = process.platform,
+) {
+  if (platform !== "win32")
+    return '"' + binary + '" hook --agent antigravity --event ' + event;
+  // The Windows desktop launches hooks through cmd.exe. Embedded executable
+  // quotes are escaped by that launcher and become literal backslashes. Keep
+  // the outer command quote-free and forward UTF-8 JSON stdin explicitly.
+  const script =
+    "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false); " +
+    "$payload = [Console]::In.ReadToEnd(); $payload | & '" +
+    binary.replaceAll("'", "''") +
+    "' hook --agent antigravity --event '" +
+    event.replaceAll("'", "''") +
+    "'; exit $LASTEXITCODE";
+  return (
+    "powershell.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand " +
+    Buffer.from(script, "utf16le").toString("base64")
+  );
+}
 const skill = `---
 name: asip
 description: Connect ASIP, recall earlier project work, and save intentions, results, evidence, and unfinished work.
@@ -12,11 +34,12 @@ description: Connect ASIP, recall earlier project work, and save intentions, res
 
 ASIP opens its account connection when this plugin first starts. Use asip_status to check it. If the user asks to reconnect, call asip_connect and tell them to finish the connection in Beacon.
 If Beacon is missing or the plugin is disconnected, explain the reported status and continue the user's work. Do not configure agent hooks or MCP servers yourself.
+Tools may be namespaced or loaded on demand. Use the client's native MCP discovery to load ASIP's tool schemas before reporting that its tools are unavailable.
 
-In Codex, automatic recording also requires reviewing ASIP's hooks in /hooks. Use Codex's native hook manager; do not edit hook trust files or bypass hook review.
+For automatic recording in ChatGPT desktop, open Plugins → ASIP → Hooks → Review and enable ASIP's hooks. In Codex CLI, review ASIP in /hooks. Use the native hook manager; do not edit hook trust files or bypass hook review.
 
 Once connected, call asip_recall when continuing work on a project. Use the repository identity returned by asip_status or provide the project's repository identity.
-Use asip_record for meaningful intent, result, evidence, and unresolved records. Codex supplies its calling thread automatically. Other clients should use the native ASIP context injected by their hooks, or the current session returned by asip_status. Never borrow lastSession from another conversation. Describe what happened and include verification or paths that support the result. Do not claim success without evidence. Hooks collect tool activity; avoid repeating each tool call as a manual record.
+Before meaningful project work, use asip_record to save the intended task. Afterward save the result, supporting evidence, and anything unresolved. Codex supplies its calling thread automatically. Other clients should use the native ASIP context injected by their hooks, or the current session returned by asip_status. Never borrow lastSession from another conversation. Describe what happened and include verification or paths that support the result. Do not claim success without evidence. Hooks collect tool activity; avoid repeating each tool call as a manual record.
 
 Use asip_projects to find recorded projects and asip_connections to find their named API access. Use asip_api_request with the connection name and an API path. Include the current project and session when the client does not supply them. If a connection is missing, direct the user to API connections in Beacon. Credentials are entered there, never in chat.
 `;
@@ -43,6 +66,11 @@ export function buildPlugin({ root, target, agent, binary }) {
     );
   };
   write("skills/asip/SKILL.md", skill);
+  fs.mkdirSync(path.join(directory, "assets"), { recursive: true });
+  fs.copyFileSync(
+    path.join(root, "beacon", "icon.png"),
+    path.join(directory, "assets", "icon.png"),
+  );
   write(
     "skills/setup/SKILL.md",
     "---\nname: setup\ndescription: Connect the ASIP plugin.\n---\n\nCall asip_status first. If already connected, report it. Otherwise call asip_connect and tell the user to finish sign-in or click Connect in ASIP Beacon. Use asip_status to check the connection when they return.\n",
@@ -119,6 +147,14 @@ export function buildPlugin({ root, target, agent, binary }) {
       extensions: {
         "com.openai": { onboardingSkill: "./skills/setup/SKILL.md" },
       },
+      interface: {
+        displayName: "ASIP",
+        shortDescription: "Project history and API connections.",
+        developerName: "ASIP",
+        category: "Productivity",
+        composerIcon: "./assets/icon.png",
+        logo: "./assets/icon.png",
+      },
     });
     write(".mcp.json", {
       mcpServers: {
@@ -128,6 +164,7 @@ export function buildPlugin({ root, target, agent, binary }) {
     write("hooks/hooks.json", { hooks });
     write(".agents/plugins/marketplace.json", {
       name: "asip",
+      interface: { displayName: "ASIP" },
       plugins: [
         {
           name: "asip",
@@ -147,14 +184,17 @@ export function buildPlugin({ root, target, agent, binary }) {
     for (const event of events) {
       for (const group of hooks[event])
         for (const handler of group.hooks || [group])
-          handler.command =
-            '"' + executable + '" hook --agent ' + agent + " --event " + event;
+          handler.command = antigravityHookCommand(
+            executable,
+            event,
+            target.split("-")[0],
+          );
     }
     write("hooks.json", { asip: hooks });
   }
   write(
     "README.md",
-    `# ASIP plugin\n\nInstall this folder using your agent's plugin manager, then ask the agent to connect ASIP. Open ASIP Beacon and sign in first.\n\n${agent === "antigravity" ? "Export this bundle from the installed Beacon. Keep the exported folder in place; its native commands use that location.\n" : ""}`,
+    `# ASIP plugin\n\nInstall this folder using your agent's plugin manager. When the plugin first starts, Beacon opens the ASIP connection. Sign in with Google or GitHub, or click Connect if already signed in.\n\n${agent === "codex" ? "In ChatGPT desktop, open Plugins → Add → Add a marketplace, enter this folder, then install ASIP from Personal. Open ASIP's Hooks → Review to enable automatic recording. For Codex CLI, review ASIP in /hooks.\n" : ""}${agent === "antigravity" ? "Beacon maintains this folder; installed commands use its location.\n" : ""}`,
   );
   return directory;
 }
@@ -177,8 +217,7 @@ export function rebindAntigravity(directory, destination = directory) {
   for (const [event, groups] of Object.entries(hooks.asip))
     for (const group of groups)
       for (const handler of group.hooks || [group])
-        handler.command =
-          '"' + binary + '" hook --agent antigravity --event ' + event;
+        handler.command = antigravityHookCommand(binary, event);
   fs.writeFileSync(
     path.join(directory, "hooks.json"),
     JSON.stringify(hooks, null, 2) + "\n",

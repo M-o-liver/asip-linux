@@ -5,10 +5,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import http from "node:http";
+import { execFileSync } from "node:child_process";
 import { Connections } from "../beacon/connections.mjs";
 import { Runtime } from "../beacon/runtime.mjs";
 import { accountId } from "../beacon/identity.mjs";
 import { encryptionFixture } from "./encryption-fixture.mjs";
+import { importConnections } from "../beacon/import-connections.mjs";
 
 const account = {
   accountId: accountId("github", "42"),
@@ -39,6 +41,235 @@ function connect(runtime) {
   runtime.completeSignIn(request.requestId, account);
   return runtime.pollSignIn(request.requestId, verifier).token;
 }
+test("Windows project grants match provider path variants without changing credentials", (t) => {
+  const { runtime, store } = setup(t);
+  runtime.signIn(account);
+  store.save({
+    name: "github.windows",
+    provider: "github",
+    credential: "fixture-token",
+    projects: ["C:\\Users\\TestPC\\Work"],
+  });
+  // Simulate a credential saved before path canonicalization existed.
+  store.entries.get("github.windows").projects = ["C:\\Users\\TestPC\\Work"];
+  store.persist();
+  const encrypted = fs.readFileSync(store.file);
+  store.clear();
+  assert.equal(store.list("c:/users/TESTPC/work/").length, 1);
+  assert.doesNotThrow(() =>
+    store.prepare({
+      name: "github.windows",
+      project: "C:/Users/testpc/Work",
+      path: "/user",
+    }),
+  );
+  assert.throws(
+    () =>
+      store.prepare({
+        name: "github.windows",
+        project: "C:/Users/testpc/Other",
+        path: "/user",
+      }),
+    /not assigned/,
+  );
+  assert.deepEqual(fs.readFileSync(store.file), encrypted);
+});
+test(
+  "local pipe imports time out without a writer and then accept a later transfer",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const { home, runtime, store } = setup(t);
+    runtime.signIn(account);
+    const pipe = path.join(home, "connections.pipe");
+    execFileSync("mkfifo", [pipe]);
+    await assert.rejects(
+      importConnections(store, pipe, {
+        account: () => runtime.account?.accountId,
+        timeout: 50,
+      }),
+      /timed out/,
+    );
+    const pending = importConnections(store, pipe, {
+      account: () => runtime.account?.accountId,
+    });
+    await fs.promises.writeFile(
+      pipe,
+      JSON.stringify([
+        {
+          name: "pipe.key",
+          provider: "openai",
+          credential: "fixture-pipe-value",
+        },
+      ]),
+    );
+    assert.deepEqual((await pending).imported, ["pipe.key"]);
+  },
+);
+test("API checks retain real outcomes, clear them on key replacement, and never expose network errors containing credentials", async (t) => {
+  let fail = false;
+  const { runtime, store } = setup(t, async () => {
+    if (fail) throw new Error("https://example.test/?key=fixture-secret");
+    return new Response("Rejected", { status: 401 });
+  });
+  runtime.signIn(account);
+  store.save({
+    name: "github.test",
+    provider: "github",
+    credential: "fixture-secret",
+  });
+  assert.equal((await store.check("github.test")).status, 401);
+  assert.equal(store.list()[0].lastRequest.status, 401);
+  store.save({
+    name: "github.test",
+    provider: "github",
+    credential: "replacement-fixture",
+  });
+  assert.equal(store.list()[0].lastRequest, undefined);
+  fail = true;
+  await assert.rejects(
+    store.check("github.test"),
+    (error) =>
+      !error.message.includes("fixture-secret") &&
+      /did not return/.test(error.message),
+  );
+  assert.equal(store.list()[0].lastRequest.error, "No response");
+});
+test("batch imports preserve names and signing secrets, reject conflicts atomically, and survive reload", async (t) => {
+  const { home, runtime, store, cipher } = setup(t);
+  runtime.signIn(account);
+  const file = path.join(home, "import.json");
+  fs.writeFileSync(
+    file,
+    JSON.stringify([
+      {
+        name: "stripe.secret_key_test",
+        provider: "stripe",
+        credential: "fixture-api-key",
+        label: "Test API",
+        envVar: "STRIPE_SECRET_KEY_TEST",
+      },
+      {
+        name: "stripe.webhook_secret_test",
+        provider: "secret",
+        credential: "fixture-signing-secret",
+        projects: ["one"],
+      },
+    ]),
+  );
+  const result = await importConnections(store, file, {
+    account: () => runtime.account?.accountId,
+  });
+  assert.equal(result.verified, true);
+  assert.equal(result.imported.length, 2);
+  const restored = new Connections(home, {
+    account: () => runtime.account,
+    ...cipher,
+  });
+  assert.equal(restored.list()[0].envVar, "STRIPE_SECRET_KEY_TEST");
+  assert.equal(
+    restored.prepare({ name: "stripe.secret_key_test", path: "/v1/account" })
+      .entry.credential,
+    "fixture-api-key",
+  );
+  assert.throws(
+    () => restored.prepare({ name: "stripe.webhook_secret_test", path: "/" }),
+    /signing secret/,
+  );
+  assert.equal(
+    JSON.stringify(restored.list()).includes("fixture-signing-secret"),
+    false,
+  );
+  assert.throws(
+    () =>
+      restored.import([
+        { name: "new.key", provider: "openai", credential: "fixture-new" },
+        {
+          name: "stripe.secret_key_test",
+          provider: "stripe",
+          credential: "fixture-conflict",
+        },
+      ]),
+    /already exists/,
+  );
+  assert.equal(restored.list().length, 2);
+  assert.throws(
+    () =>
+      restored.import([
+        { name: "bad.key", provider: "unknown", credential: "fixture" },
+      ]),
+    /provider/,
+  );
+  const broken = new Connections(home, {
+    account: () => runtime.account,
+    ...cipher,
+  });
+  broken.load();
+  broken.unseal = () => "[]";
+  assert.throws(
+    () =>
+      broken.import([
+        { name: "new.key", provider: "openai", credential: "fixture" },
+      ]),
+    /verified/,
+  );
+  assert.equal(broken.list().length, 2);
+  assert.equal(
+    new Connections(home, { account: () => runtime.account, ...cipher }).list()
+      .length,
+    2,
+  );
+});
+test("provider authentication supports Basic, named headers, query keys, and converting a stored secret", async (t) => {
+  const calls = [];
+  const { runtime, store } = setup(t, async (url, options) => {
+    calls.push({ url, ...options });
+    return new Response("ok");
+  });
+  runtime.signIn(account);
+  store.save({
+    name: "stripe.test",
+    provider: "stripe",
+    credential: "fixture",
+  });
+  await store.request({ name: "stripe.test", path: "/v1/account" });
+  assert.equal(
+    calls[0].headers.Authorization,
+    "Basic " + Buffer.from("fixture:").toString("base64"),
+  );
+  store.save({
+    name: "maps.test",
+    provider: "google-maps",
+    credential: "fixture",
+  });
+  await store.request({
+    name: "maps.test",
+    path: "/maps/api/geocode/json?key=other&address=Toronto",
+  });
+  assert.equal(calls[1].url.searchParams.get("key"), "fixture");
+  store.save({
+    name: "generic.test",
+    provider: "secret",
+    credential: "fixture",
+  });
+  store.save({ name: "generic.test", provider: "brave" });
+  await store.request({
+    name: "generic.test",
+    path: "/res/v1/web/search?q=test",
+  });
+  assert.equal(calls[2].headers["X-Subscription-Token"], "fixture");
+});
+test("import errors never echo credential-bearing JSON", async (t) => {
+  const { home, runtime, store } = setup(t);
+  runtime.signIn(account);
+  const file = path.join(home, "bad.json");
+  fs.writeFileSync(file, '{"fixture-secret":');
+  await assert.rejects(
+    importConnections(store, file, {
+      account: () => runtime.account?.accountId,
+    }),
+    (error) => error.message === "The connection file is not valid JSON.",
+  );
+});
 test("connections persist encrypted, never expose their credential in metadata, and belong to one account", (t) => {
   const { home, runtime, store, cipher } = setup(t);
   assert.throws(() => store.list(), /Sign in/);
@@ -283,7 +514,7 @@ test("disconnecting during a request aborts it and preserves an unresolved audit
     session: "s1",
     project: "one",
   });
-  const rejected = assert.rejects(pending, /aborted/);
+  const rejected = assert.rejects(pending, /did not return a response/);
   await started;
   runtime.disconnect("codex");
   await rejected;
