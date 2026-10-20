@@ -19,11 +19,15 @@ When the plugin starts, Beacon presents its connection request. Click **Connect*
 
 ## Check the complete workflow
 
-Use an empty test folder or a small repository. Ask your agent:
+Use an empty test folder or a small repository. After enabling the plugin's hooks, ask your agent to do an ordinary task:
 
-> Use ASIP to recall this project. Record what you intend to do, create a small test file, read it back, and record the result with evidence.
+> Create hello-asip.txt containing "ASIP is connected". Read it back and report whether it matches.
 
-Approve the agent's normal tool prompts. Open **ASIP** from Beacon and check the project, session, result, and evidence. Start a different conversation in the same project and ask what ASIP remembers. Restart Beacon and check that the history remains.
+Approve the agent's normal tool prompts. Open **ASIP** from Beacon and check that the project, session, tool activity, and final response appeared. Start a different conversation in the same project and ask:
+
+> Use ASIP to recall the work in this project. What happened with hello-asip.txt?
+
+The answer should come from the saved history. Restart Beacon and check that the history remains. To try explicit intent and evidence records as well, ask the agent to record its next intended change and save the result after verification.
 
 For APIs, open **API connections**, add a named connection, select the projects that may use it, and use **Check** where available. Ask your connected agent to list the project's connections and make a read-only request by name. HTTP failures should remain visible in the connection and activity records.
 
