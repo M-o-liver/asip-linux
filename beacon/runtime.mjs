@@ -4,6 +4,7 @@ import path from "node:path";
 import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { redactTrace } from "./trace.mjs";
+import { projectKey, reconcileWindowsProjects } from "./project.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const agents = new Set(["codex", "claude-code", "antigravity"]);
@@ -250,6 +251,18 @@ export class Runtime {
           throw error;
         }
       }
+      if (this.db.prepare("PRAGMA user_version").get().user_version < 2) {
+        this.db.exec("BEGIN IMMEDIATE");
+        try {
+          reconcileWindowsProjects(this.db);
+          this.db.exec("PRAGMA user_version=2; COMMIT");
+        } catch (error) {
+          this.db.exec("ROLLBACK");
+          this.db.close();
+          this.db = null;
+          throw error;
+        }
+      }
       this.recordCount = this.db
         .prepare("SELECT count(*) AS n FROM events")
         .get().n;
@@ -262,9 +275,11 @@ export class Runtime {
     if (!event || typeof event !== "object")
       throw new Error("An event is required.");
     const session = event.session,
-      project = Object.hasOwn(event, "project")
-        ? event.project || null
-        : this.projectForSession(client.agent, session);
+      project = projectKey(
+        Object.hasOwn(event, "project")
+          ? event.project || null
+          : this.projectForSession(client.agent, session),
+      );
     if (
       typeof session !== "string" ||
       !session ||
@@ -362,8 +377,9 @@ export class Runtime {
     const client = this.client(token);
     if (!this.connectionStore)
       throw new Error("API connections are unavailable.");
-    const project =
-      input.project || this.projectForSession(client.agent, input.session);
+    const project = projectKey(
+      input.project || this.projectForSession(client.agent, input.session),
+    );
     const prepared = this.connectionStore.prepare({ ...input, project });
     const event = {
       session: input.session,
@@ -428,6 +444,7 @@ export class Runtime {
 
   recall(token, { project, query = "", limit = 20 } = {}) {
     this.client(token);
+    project = projectKey(project);
     if (!this.db && !fs.existsSync(this.databasePath())) return { events: [] };
     if (typeof query !== "string") throw new Error("Enter a search term.");
     this.storage();

@@ -2,6 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { redactTrace } from "./trace.mjs";
+import { projectKey } from "./project.mjs";
 
 export function previousHistoryPath() {
   const home =
@@ -68,7 +69,7 @@ export function importHistory(runtime, file, { checkpoint = () => {} } = {}) {
   const projects = new Map(
     incoming.projects.map((row) => [
       row.id,
-      row.repository || roots.get(row.id)?.[0] || "asip3:" + row.id,
+      projectKey(row.repository || roots.get(row.id)?.[0] || "asip3:" + row.id),
     ]),
   );
   const sessions = new Map(incoming.sessions.map((row) => [row.id, row]));

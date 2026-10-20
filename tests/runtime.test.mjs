@@ -7,6 +7,8 @@ import crypto from "node:crypto";
 import { Runtime } from "../beacon/runtime.mjs";
 import { accountId } from "../beacon/identity.mjs";
 import { DatabaseSync } from "node:sqlite";
+import { projectKey } from "../beacon/project.mjs";
+import { Workspace } from "../beacon/workspace.mjs";
 
 const account = {
   provider: "github",
@@ -41,6 +43,71 @@ const event = {
   summary: "Fix the failing build",
   data: { evidence: "build log" },
 };
+test("Windows folder variants share history, catalogue, links, and workspace filters", (t) => {
+  const { runtime } = setup(t);
+  runtime.signIn(account);
+  const token = connect(runtime);
+  const original = "C:\\Users\\TestPC\\Documents\\ASIP-Qualification";
+  const canonical = "c:/users/testpc/documents/asip-qualification";
+  const db = runtime.storage();
+  const old = runtime.record(token, { ...event, project: original });
+  // Reproduce an older account containing independent provider spellings.
+  db.prepare("UPDATE events SET project=? WHERE id=?").run(original, old.id);
+  db.prepare("INSERT INTO projects VALUES(?,?,?,?,?,?)").run(
+    original,
+    "Qualification",
+    "Earlier notes",
+    "",
+    "2026-01-01",
+    JSON.stringify([original]),
+  );
+  db.prepare("INSERT INTO projects VALUES(?,?,?,?,?,?)").run(
+    canonical,
+    "Qualification",
+    "Later notes",
+    "",
+    "2026-01-02",
+    JSON.stringify([canonical]),
+  );
+  db.prepare("INSERT INTO project_links VALUES(?,?,?)").run(
+    original,
+    event.project,
+    "related",
+  );
+  db.exec("PRAGMA user_version=1");
+  db.close();
+  runtime.db = null;
+  runtime.record(token, {
+    ...event,
+    session: "antigravity-session",
+    project: "c:/Users/TestPC/Documents/ASIP-Qualification/",
+  });
+  const recalled = runtime.recall(token, { project: original }).events;
+  assert.equal(recalled.length, 2);
+  assert.ok(recalled.some((row) => row.id === old.id));
+  assert.ok(recalled.every((row) => row.project === canonical));
+  assert.deepEqual(recalled.find((row) => row.id === old.id).data, event.data);
+  const projects = runtime.projects();
+  assert.equal(projects.length, 1);
+  assert.equal(projects[0].sessions, 2);
+  assert.match(projects[0].description, /Earlier notes/);
+  assert.match(projects[0].description, /Later notes/);
+  assert.deepEqual(new Set(projects[0].roots), new Set([original, canonical]));
+  assert.equal(
+    runtime.db.prepare("SELECT source FROM project_links").get().source,
+    canonical,
+  );
+  const workspace = new Workspace(runtime);
+  assert.equal(
+    workspace.data(new URLSearchParams({ project: original })).events.length,
+    2,
+  );
+  assert.equal(projectKey("C:/"), "c:/");
+  assert.equal(projectKey("\\\\Server\\Share\\Work\\"), "//server/share/work");
+  assert.equal(projectKey("//SERVER/Share/Work"), "//server/share/work");
+  assert.equal(projectKey("/Projects/MixedCase"), "/Projects/MixedCase");
+  assert.equal(projectKey(event.project), event.project);
+});
 test("activity totals include history committed by another local importer", (t) => {
   const { runtime } = setup(t);
   runtime.signIn(account);
@@ -103,7 +170,7 @@ test("recorded commands omit authentication values and old history is repaired w
     false,
   );
   assert.equal(JSON.stringify(repaired).includes("old-password"), false);
-  assert.equal(runtime.db.prepare("PRAGMA user_version").get().user_version, 1);
+  assert.equal(runtime.db.prepare("PRAGMA user_version").get().user_version, 2);
 });
 
 test("nothing is collected before Beacon and plugin authentication", (t) => {

@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import crypto from "node:crypto";
 import { ownTools } from "./runtime.mjs";
+import { projectKey } from "./project.mjs";
 
 export function recentWork(runtime, limit = 4) {
   return runtime
@@ -43,7 +44,9 @@ export class Workspace {
       account: this.runtime.account.accountId,
       expires: Date.now() + 30000,
       project:
-        typeof project === "string" && project.length <= 2000 ? project : "",
+        typeof project === "string" && project.length <= 2000
+          ? projectKey(project)
+          : "",
     });
     return "http://" + this.runtime.host + "/workspace/open?ticket=" + ticket;
   }
@@ -160,7 +163,7 @@ export class Workspace {
   }
   data(params) {
     const runtime = this.runtime;
-    const project = params.get("project"),
+    const project = projectKey(params.get("project")),
       query = params.get("query") || "",
       session = params.get("session"),
       agent = params.get("agent"),

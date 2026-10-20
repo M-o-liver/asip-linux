@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { projectKey } from "./project.mjs";
 
 export const providers = {
   openai: {
@@ -107,7 +108,12 @@ export class Connections {
     const entries = fs.existsSync(this.file)
       ? JSON.parse(this.unseal(fs.readFileSync(this.file)))
       : [];
-    this.entries = new Map(entries.map((entry) => [entry.name, entry]));
+    this.entries = new Map(
+      entries.map((entry) => [
+        entry.name,
+        { ...entry, projects: [...new Set(entry.projects.map(projectKey))] },
+      ]),
+    );
     this.loadedAccount = account.accountId;
   }
   persist(encrypted = this.seal(JSON.stringify([...this.entries.values()]))) {
@@ -124,6 +130,7 @@ export class Connections {
   }
   list(project) {
     this.load();
+    project = projectKey(project);
     return [...this.entries.values()]
       .filter(
         (entry) =>
@@ -216,7 +223,7 @@ export class Connections {
       header,
       prefix,
       credential,
-      projects,
+      projects: [...new Set(projects.map(projectKey))],
       updatedAt: new Date().toISOString(),
       account:
         typeof input.account === "string" ? input.account.slice(0, 200) : "",
@@ -296,6 +303,7 @@ export class Connections {
   }
   prepare({ name, method = "GET", path: route, body, project }) {
     this.load();
+    project = projectKey(project);
     const entry = this.entries.get(name);
     if (!entry) throw new Error("Add this API connection in Beacon first.");
     if (entry.provider === "secret")

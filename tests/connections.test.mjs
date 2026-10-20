@@ -41,6 +41,39 @@ function connect(runtime) {
   runtime.completeSignIn(request.requestId, account);
   return runtime.pollSignIn(request.requestId, verifier).token;
 }
+test("Windows project grants match provider path variants without changing credentials", (t) => {
+  const { runtime, store } = setup(t);
+  runtime.signIn(account);
+  store.save({
+    name: "github.windows",
+    provider: "github",
+    credential: "fixture-token",
+    projects: ["C:\\Users\\TestPC\\Work"],
+  });
+  // Simulate a credential saved before path canonicalization existed.
+  store.entries.get("github.windows").projects = ["C:\\Users\\TestPC\\Work"];
+  store.persist();
+  const encrypted = fs.readFileSync(store.file);
+  store.clear();
+  assert.equal(store.list("c:/users/TESTPC/work/").length, 1);
+  assert.doesNotThrow(() =>
+    store.prepare({
+      name: "github.windows",
+      project: "C:/Users/testpc/Work",
+      path: "/user",
+    }),
+  );
+  assert.throws(
+    () =>
+      store.prepare({
+        name: "github.windows",
+        project: "C:/Users/testpc/Other",
+        path: "/user",
+      }),
+    /not assigned/,
+  );
+  assert.deepEqual(fs.readFileSync(store.file), encrypted);
+});
 test(
   "local pipe imports time out without a writer and then accept a later transfer",
   { skip: process.platform === "win32" },
