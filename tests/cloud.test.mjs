@@ -701,6 +701,37 @@ test("revoked credentials stop access; append tokens cannot impersonate another 
     .run();
   assert.equal((await request("/api/v1/events", c.token)).status, 401);
 });
+test("project-scoped agents see global and assigned connection names without unrelated metadata", async () => {
+  const device = await credential();
+  const project = "github.com/example/connection-scope";
+  const scoped = await credential({
+    kind: "api",
+    agent: "codex",
+    scopes: ["memory:read"],
+    projects: [project],
+  });
+  await catalogue(
+    { DB: db },
+    { accountId, credential: { id: device.id, kind: "device" } },
+    {
+      connections: [
+        { name: "scope.global", provider: "github", projects: [] },
+        { name: "scope.assigned", provider: "github", projects: [project] },
+        {
+          name: "scope.unrelated",
+          provider: "github",
+          projects: ["github.com/example/unrelated"],
+        },
+      ],
+    },
+  );
+  const response = await request("/api/v1/connections", scoped.token);
+  assert.equal(response.status, 200);
+  const names = (await response.json()).connections.map((c) => c.name);
+  assert.ok(names.includes("scope.global"));
+  assert.ok(names.includes("scope.assigned"));
+  assert.equal(names.includes("scope.unrelated"), false);
+});
 test("browser mutation requires same origin; pairing uses PKCE and atomically consumes its code", async () => {
   const session = crypto.randomBytes(32).toString("hex");
   await db

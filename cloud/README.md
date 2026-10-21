@@ -139,8 +139,9 @@ during private preview, a valid Access cookie.
   resumable 30-entry chunks and a conservative local merge. A partial metadata
   refresh is repaired on the next successful pass.
 - Named connection metadata synchronizes. Provider credentials, local plugin
-  grants, full transcript files, repository contents, OS files, and arbitrary
-  referenced attachments are not uploaded.
+  grants, full transcript files, repository working trees, OS files, and arbitrary
+  referenced attachments are not copied. Captured tool input, output and source
+  excerpts already present in a record synchronize as part of its evidence.
 - A local recovery operation does not delete cloud history. Restoring a local
   checkpoint pauses synchronization and then rescans cloud records. Cloud
   records cannot silently rewrite different local evidence.

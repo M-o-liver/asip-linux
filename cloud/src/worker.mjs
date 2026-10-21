@@ -296,6 +296,7 @@ async function api(request, env, url) {
       .filter(
         (c) =>
           !auth.projects.length ||
+          !c.projects.length ||
           c.projects.some((p) => auth.projects.includes(p)),
       );
     return json({
