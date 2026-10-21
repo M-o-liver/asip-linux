@@ -3,9 +3,73 @@ import path from "node:path";
 import os from "node:os";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import { randomUUID } from "node:crypto";
 import { rebindAntigravity } from "../scripts/plugins.mjs";
 
 const execute = promisify(execFile);
+
+// Windows keeps a running executable mapped after its directory is renamed.
+// Retiring that directory must not prevent the new bundle from being used.
+function removeRetired(directory, platform) {
+  try {
+    fs.rmSync(directory, {
+      recursive: true,
+      force: true,
+      maxRetries: platform === "win32" ? 3 : 0,
+      retryDelay: 50,
+    });
+  } catch (error) {
+    if (
+      platform !== "win32" ||
+      !["EPERM", "EBUSY", "EACCES", "ENOTEMPTY"].includes(error.code)
+    )
+      throw error;
+  }
+}
+
+function cleanStaging(parent, platform) {
+  if (!fs.existsSync(parent)) return;
+  for (const entry of fs.readdirSync(parent))
+    if (entry.startsWith(".asip-stage-"))
+      removeRetired(path.join(parent, entry), platform);
+}
+
+function cleanRetired(destination, platform) {
+  const parent = path.dirname(destination);
+  if (!fs.existsSync(parent)) return;
+  const prefix = path.basename(destination) + ".previous";
+  for (const entry of fs.readdirSync(parent))
+    if (entry === prefix || entry.startsWith(prefix + "-"))
+      removeRetired(path.join(parent, entry), platform);
+}
+
+function refreshOwnedDirectory(source, destination, platform) {
+  fs.mkdirSync(destination, { recursive: true });
+  const entries = fs.readdirSync(source, { withFileTypes: true });
+  for (const entry of entries) {
+    const from = path.join(source, entry.name);
+    const to = path.join(destination, entry.name);
+    if (entry.isDirectory()) {
+      refreshOwnedDirectory(from, to, platform);
+    } else {
+      if (
+        fs.existsSync(to) &&
+        fs.readFileSync(to).equals(fs.readFileSync(from))
+      )
+        continue;
+      const temporary = to + ".new-" + randomUUID();
+      try {
+        fs.copyFileSync(from, temporary);
+        fs.renameSync(temporary, to);
+      } finally {
+        fs.rmSync(temporary, { force: true });
+      }
+    }
+  }
+  const names = new Set(entries.map((entry) => entry.name));
+  for (const name of fs.readdirSync(destination))
+    if (!names.has(name)) removeRetired(path.join(destination, name), platform);
+}
 export const agents = {
   codex: { name: "Codex", command: "codex" },
   "claude-code": { name: "Claude Code", command: "claude" },
@@ -125,6 +189,7 @@ export class AgentPlugins {
   prepare() {
     for (const agent of Object.keys(agents)) {
       const destination = this.directory(agent);
+      cleanRetired(destination, this.platform);
       const staging = destination + ".new";
       fs.rmSync(staging, { recursive: true, force: true });
       fs.mkdirSync(path.dirname(staging), { recursive: true });
@@ -135,8 +200,7 @@ export class AgentPlugins {
       if (agent === "antigravity") rebindAntigravity(staging, destination);
       // Provider caches are independent. Keep the managed source path stable
       // across Beacon upgrades so existing marketplace registrations still work.
-      const previous = destination + ".previous";
-      fs.rmSync(previous, { recursive: true, force: true });
+      const previous = destination + ".previous-" + randomUUID();
       if (fs.existsSync(destination)) fs.renameSync(destination, previous);
       try {
         fs.renameSync(staging, destination);
@@ -144,7 +208,7 @@ export class AgentPlugins {
         if (fs.existsSync(previous)) fs.renameSync(previous, destination);
         throw error;
       }
-      fs.rmSync(previous, { recursive: true, force: true });
+      removeRetired(previous, this.platform);
     }
     if (this.platform === "win32" && this.saved().antigravity)
       this.registerAntigravityDesktop();
@@ -220,27 +284,43 @@ export class AgentPlugins {
       // Antigravity's Windows desktop discovery skips directory junctions.
       // Keep a real native directory and refresh only our own installation.
       fs.mkdirSync(path.dirname(destination), { recursive: true });
-      const staging = fs.mkdtempSync(
-        path.join(path.dirname(destination), ".asip-stage-"),
-      );
-      const previous = staging + ".previous";
+      cleanRetired(destination, this.platform);
+      // A temporary bundle inside plugins is itself discovered and watched by
+      // Antigravity. Stage beside that directory, on the same volume, instead.
+      const stagingParent = path.dirname(path.dirname(destination));
+      cleanStaging(stagingParent, this.platform);
+      cleanStaging(path.dirname(destination), this.platform);
+      const staging = fs.mkdtempSync(path.join(stagingParent, ".asip-stage-"));
+      const previous = destination + ".previous-" + randomUUID();
       try {
-        fs.cpSync(directory, staging, { recursive: true });
+        // The commands point at the durable managed helper. A second executable
+        // copy here is unnecessary and can itself become locked by old clients.
+        fs.cpSync(directory, staging, {
+          recursive: true,
+          filter: (file) =>
+            path.relative(directory, file).split(path.sep)[0] !== "bin",
+        });
         fs.writeFileSync(
           path.join(staging, ".asip-beacon.json"),
           JSON.stringify({ schema: 1, source: directory }),
         );
-        if (existing) fs.renameSync(destination, previous);
-        try {
-          fs.renameSync(staging, destination);
-        } catch (error) {
-          if (existing) fs.renameSync(previous, destination);
-          throw error;
+        if (existing?.isDirectory() && !existing.isSymbolicLink()) {
+          // Antigravity's directory watcher (or an agent's current directory)
+          // can lock this root even when no executable in it is running.
+          refreshOwnedDirectory(staging, destination, this.platform);
+        } else {
+          if (existing) fs.renameSync(destination, previous);
+          try {
+            fs.renameSync(staging, destination);
+          } catch (error) {
+            if (existing) fs.renameSync(previous, destination);
+            throw error;
+          }
+          if (existing?.isSymbolicLink()) fs.unlinkSync(previous);
+          else if (existing) removeRetired(previous, this.platform);
         }
-        if (existing?.isSymbolicLink()) fs.unlinkSync(previous);
-        else if (existing) fs.rmSync(previous, { recursive: true });
       } finally {
-        fs.rmSync(staging, { recursive: true, force: true });
+        removeRetired(staging, this.platform);
       }
     } else if (!existing) {
       fs.mkdirSync(path.dirname(destination), { recursive: true });

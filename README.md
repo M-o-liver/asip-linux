@@ -76,7 +76,7 @@ If you used the earlier ASIP workspace, choose **Import previous history** in Be
 
 The CI workflow runs connection and OAuth fixture tests, installs the Codex and Claude plugins into disposable runner profiles, and builds native installers on Windows, Linux, and both Apple Silicon and Intel Macs. These checks do not verify a real provider login.
 
-Alpha tags matching the application version, such as `v0.4.1-alpha.1`, also publish the installers, native qualification records, and SHA-256 checksums after all four native jobs pass. Release publishing uses the build's repository token; it does not require a personal API credential.
+Alpha tags matching the application version, such as `v0.4.1-alpha.2`, also publish the installers, native qualification records, and SHA-256 checksums after all four native jobs pass. Release publishing uses the build's repository token; it does not require a personal API credential.
 
 ## Qualification and current limits
 

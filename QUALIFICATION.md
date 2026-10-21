@@ -4,9 +4,9 @@ This page separates native build checks from observed desktop behavior. Installa
 
 ## Native builds
 
-[Build 39428897890](https://github.com/M-o-liver/asip-linux/actions/runs/39428897890) passed for source `218fcf7` on Windows, Linux, Apple Silicon macOS, and Intel macOS. Each job runs the application tests, Go race checks, native plugin-manager installation, Codex/Claude MCP connection, installer packaging, and packaged application startup.
+[Build 39515877528](https://github.com/M-o-liver/asip-linux/actions/runs/39515877528) passed for source `1767ef0` on Windows, Linux, Apple Silicon macOS, and Intel macOS. Each job runs the application tests, Go race checks, native plugin-manager installation, Codex/Claude MCP connection, installer packaging, and packaged application startup.
 
-The local application suite has 54 cases: 53 passed and one platform-specific skip. Native qualification uses Codex 0.162.1, Claude Code 2.1.299, and the pinned Antigravity CLI releases and hashes in `scripts/antigravity-releases.json`. It uses disposable identities and profiles; no model subscription or live provider login is implied by a CI pass.
+The local application suite has 56 cases: 54 passed and two Windows-specific skips. Windows CI also runs the upgrade regression with a real executable image mapped and the native plugin directory held as a process working directory. Native qualification uses Codex 0.162.1, Claude Code 2.1.299, and the pinned Antigravity CLI releases and hashes in `scripts/antigravity-releases.json`. It uses disposable identities and profiles; no model subscription or live provider login is implied by a CI pass.
 
 The regression checks cover:
 
@@ -18,6 +18,7 @@ The regression checks cover:
 - Older-session pagination, project scoping, history import, and the ten-checkpoint recovery limit.
 - Windows path aliases across agents, migration of existing project history/catalogue/relationships, workspace filters, and retained API project grants.
 - ChatGPT local-marketplace URLs containing paths with spaces and punctuation.
+- Replacing Windows plugin bundles while an executable is still running and the native directory is a process working directory, repeated upgrades with the old image retained, recovery of earlier `.previous` leftovers, and cleanup after process exit.
 
 The Linux AppImage built from `000a57c` also passed the packaged secondary-launch check locally. Its test selects the application version explicitly; earlier artifacts in the same build directory are excluded.
 
@@ -65,6 +66,18 @@ After restarting, Antigravity requested its Beacon connection and connected succ
 
 That turn also exposed a project-identity defect: Antigravity supplied `c:/Users/...` while the earlier Codex record used `C:\Users\...`. Exact-string lookup missed the earlier work until the agent discovered the catalogue identity. Windows directory identities now normalize case and separators at recording, recall, workspace filtering, historical import, and API-grant comparison. An account migration reconciles earlier variants while preserving event IDs, raw evidence, catalogue notes, roots, and links. Tests cover migration, both agents sharing a project, and retained encrypted credentials. Installing the `218fcf7` NSIS update merged the two displayed projects into one and retained all 37 events, both sessions, and both connected agents. Edge showed the Antigravity and Codex sessions together under the same project.
 
+### Windows upgrades with an active agent
+
+Final tray inspection exposed an upgrade cleanup error: Windows refused deletion of `asip-antigravity.previous` while an agent still had its executable image mapped. The new managed bundle was already in place and recording continued, but preparation stopped before refreshing the native registration and Beacon showed **Needs attention**. Replaced bundles now retire under unique names; Windows file-lock errors defer their deletion until a later launch. Preparation also retries the fixed-name leftovers from older builds. The native Windows regression holds a real executable open through repeated replacements, checks the native registration, then verifies cleanup after exit.
+
+The next installed build exposed a second independent Windows lock: Antigravity held its native plugin directory open, preventing the directory itself from being renamed. Updates now refresh ASIP-owned native directories in place using atomic file replacements, preserve the directory identity, and keep the executable in the separate managed bundle. The native Windows regression holds both locks during repeated upgrades.
+
+The installed `efbd4b7` build then exposed temporary-plugin discovery: Antigravity watched `.asip-stage-*` inside its plugin root and Windows returned `ENOTEMPTY` during cleanup. Source `1767ef0` stages outside that discovery directory on the same volume, retries transient removal errors, and defers locked leftovers. The local regression verifies that a cleanup failure cannot abort refreshed registration and that a subsequent preparation removes the leftovers. The installed update retained Google sign-in, two agents, and all 70 Windows records before this final cleanup correction.
+
+After fully restarting Antigravity against the refreshed `efbd4b7` native registration, a fresh conversation recalled ChatGPT's saved `ASIP-hook-check` result, including the verified text, SHA-256, and successful command output, without reading project files. This exercised the managed helper after removal of the redundant native executable copy.
+
+The Windows workspace's **Open Beacon** opens a normal taskbar window. Tray clicks retain the compact panel. Windows may keep the browser in the foreground; selecting Beacon on the taskbar brings up the full window.
+
 ### Intel Mac Antigravity
 
 Beacon registered the managed plugin without requiring a CLI. Antigravity showed ASIP in Customizations with its skills, MCP server, and hooks. A new conversation in the already running app did not expose the MCP tools. Fully restarting Antigravity did: Beacon presented its connection request and the next conversation used the native `asip_asip` server. Setup text now tells users to restart the app.
@@ -81,7 +94,7 @@ The subsequent `218fcf7` DMG update retained Google sign-in, both agents, and al
 
 ## Existing records and API connections
 
-The October 20 Linux upgrade to the `000a57c` AppImage passed the packaged secondary-launch check, preserved the encrypted credential file byte-for-byte, and passed SQLite integrity checking. The running native Codex plugin listed all 14 connections afterward. The subsequent clean `2341594` AppImage restored the saved sign-in and retained the encrypted credential files unchanged.
+The October 20 Linux upgrade to the `000a57c` AppImage passed the packaged secondary-launch check, preserved the encrypted credential file byte-for-byte, and passed SQLite integrity checking. The running native Codex plugin listed all 14 connections afterward. The subsequent clean `2341594` and `d8840b8` AppImages restored the saved sign-in and retained the encrypted credential files unchanged. The final integrity check returned `ok` with 9,096 recorded events; activity continues to grow during this work.
 
 The Linux upgrade retained 14 named connections, including 13 migrated credentials and signing secrets, and 24 projects. The workspace displayed the full total of 505 sessions and navigated to older sessions. The final archived administration journal contains 3,895 operations; reconciliation added three missing operations, updated the final entry, and corrected 810 lifecycle/verification classifications using the archive's actual action and result fields. Original archives remain unchanged. A checkpoint preceded each reconciliation; five recovery records remained afterward.
 

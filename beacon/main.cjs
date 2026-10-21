@@ -202,6 +202,11 @@ function updateTray(state) {
   else tray.asipMenu = menu;
 }
 
+function present(created) {
+  created.show();
+  if (process.platform === "win32") created.moveTop();
+  created.focus();
+}
 function show({
   full = process.platform === "linux",
   toggle = false,
@@ -224,8 +229,7 @@ function show({
       return;
     }
     if (panel) window.setBounds(placement);
-    window.show();
-    window.focus();
+    present(window);
     send();
     if (page) window.webContents.send("asip:navigate", page);
     return;
@@ -280,8 +284,7 @@ function show({
         if (placement) created.setBounds(placement);
       } catch {}
     }
-    created.show();
-    created.focus();
+    present(created);
     if (page) created.webContents.send("asip:navigate", page);
   });
   created.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -405,7 +408,9 @@ if (
     });
     recovery = new Recovery(runtime);
     new Workspace(runtime, {
-      openBeacon: (page) => show({ page }),
+      // A browser request cannot reliably focus a transient Windows panel.
+      // Keep the requested view open as a normal taskbar window instead.
+      openBeacon: (page) => show({ page, full: process.platform !== "darwin" }),
       openWorkspace,
     });
     identity = new Identity(config, {

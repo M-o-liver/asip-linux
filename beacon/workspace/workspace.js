@@ -104,7 +104,9 @@ function map(data) {
   const projects = data.projects;
   $("map-empty").hidden = Boolean(projects.length);
   svg.hidden = !projects.length;
-  $("map-count").textContent = data.projects.length + " projects";
+  $("map-count").textContent =
+    data.projects.length +
+    (data.projects.length === 1 ? " project" : " projects");
   const columns = Math.min(4, Math.max(1, projects.length));
   const height = Math.max(140, Math.ceil(projects.length / columns) * 85 + 30);
   svg.setAttribute("viewBox", "0 0 900 " + height);
@@ -191,9 +193,9 @@ function render(data) {
   $("repository").textContent =
     state.project ||
     data.projects.length +
-      " projects · " +
+      (data.projects.length === 1 ? " project · " : " projects · ") +
       (data.sessionCount || 0) +
-      " sessions";
+      (data.sessionCount === 1 ? " session" : " sessions");
   $("projects").replaceChildren();
   const entries = [
     {
