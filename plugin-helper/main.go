@@ -386,7 +386,16 @@ func hook(event string) (context map[string]any) {
 		kind = "intent"
 		summary = prompt
 	}
-	if message := stringValue(input["last_assistant_message"]); message != "" {
+	message := stringValue(input["last_assistant_message"])
+	if strings.TrimSpace(message) == "" && agent == "antigravity" && event == "Stop" {
+		var source map[string]any
+		message, source = antigravityFinalMessage(input, session)
+		if source != nil {
+			data["last_assistant_message"] = trace(message, 0)
+			data["assistant_message_source"] = source
+		}
+	}
+	if strings.TrimSpace(message) != "" {
 		summary = message
 	}
 	if observed, message := outcome(input); observed != "" {

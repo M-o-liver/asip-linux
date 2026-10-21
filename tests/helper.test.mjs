@@ -5,12 +5,14 @@ import path from "node:path";
 import os from "node:os";
 import { spawn, execFileSync } from "node:child_process";
 import { once } from "node:events";
+import { createHash } from "node:crypto";
 import { Runtime } from "../beacon/runtime.mjs";
 import { accountId } from "../beacon/identity.mjs";
 import { Connections } from "../beacon/connections.mjs";
 import { encryptionFixture } from "./encryption-fixture.mjs";
 import http from "node:http";
 import { antigravityHookCommand } from "../scripts/plugins.mjs";
+import { recentWork } from "../beacon/workspace.mjs";
 
 let binary;
 const children = new Set();
@@ -481,6 +483,67 @@ test(
             fullyIdle: false,
             executionNum: 2,
           },
+        );
+        const transcript = path.join(
+          home,
+          "native brain's logs café",
+          "brain/a1/.system_generated/logs/transcript_full.jsonl",
+        );
+        fs.mkdirSync(path.dirname(transcript), { recursive: true });
+        const finalResponse = JSON.stringify({
+          step_index: 38,
+          source: "MODEL",
+          type: "PLANNER_RESPONSE",
+          status: "DONE",
+          created_at: "2026-10-20T12:00:00Z",
+          content: "Verified the native build. Café 日本語.",
+          thinking: "Private reasoning is not a result.",
+        });
+        fs.writeFileSync(transcript, finalResponse + "\n");
+        assert.deepEqual(
+          await runHook(agent, state, "Stop", {
+            conversationId: "a1",
+            workspacePaths: [repository],
+            transcriptPath: transcript,
+            terminationReason: "NO_TOOL_CALL",
+            fullyIdle: true,
+          }),
+          { decision: "stop" },
+        );
+        const completed = runtime.db
+          .prepare(
+            "SELECT * FROM events WHERE agent=? AND kind='Stop' ORDER BY rowid DESC LIMIT 1",
+          )
+          .get(agent);
+        assert.equal(
+          completed.summary,
+          "Verified the native build. Café 日本語.",
+        );
+        assert.equal(completed.project, "github.com/example/project");
+        assert.ok(
+          recentWork(runtime).some((event) => event.id === completed.id),
+        );
+        const recorded = JSON.parse(completed.data);
+        assert.equal(recorded.last_assistant_message, completed.summary);
+        assert.equal(recorded.assistant_message_source.path, transcript);
+        assert.equal(
+          recorded.assistant_message_source.record_sha256,
+          createHash("sha256").update(finalResponse).digest("hex"),
+        );
+        assert.ok(!completed.data.includes("Private reasoning"));
+        await runHook(agent, state, "Stop", {
+          conversationId: "a1",
+          workspacePaths: [repository],
+          transcriptPath: transcript,
+          fullyIdle: true,
+          last_assistant_message:
+            "Response supplied directly by the native hook.",
+        });
+        assert.equal(
+          runtime.db
+            .prepare("SELECT summary FROM events ORDER BY rowid DESC LIMIT 1")
+            .get().summary,
+          "Response supplied directly by the native hook.",
         );
       }
     }
