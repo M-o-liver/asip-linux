@@ -84,14 +84,20 @@ migration, or release is required to lift the full-domain preview gate.
 ## Device connection
 
 Beacon opens a browser approval page containing a SHA-256 proof challenge,
-random state, computer name, and a temporary loopback callback. The owner sees
-the cloud account and the local account, and explicitly approves synchronization
-of existing and future history. The callback accepts POST only from the ASIP
-origin, with the correct state and loopback Host. It does not put credentials
-in URL parameters, fragments, logs, or browser history.
+random state, ephemeral P-256 public key, computer name, and a temporary loopback
+callback. The owner sees the cloud account and the local account, and explicitly
+approves synchronization of existing and future history. The Worker encrypts
+the reply using ephemeral ECDH, HKDF-SHA-256 and AES-256-GCM, bound to the proof
+challenge and state. A normal browser navigation returns only that ciphertext
+to the callback. Plaintext credentials never enter callback URLs or browser
+history. This avoids a cross-site form POST, which Chrome blocked during real
+qualification, without changing browser security settings.
 
 The browser returns a two-minute, single-use code and its preview Access
-assertion to Beacon. Redeeming the code requires the original proof verifier.
+assertion inside this encrypted reply to Beacon. The loopback callback checks
+Host, decrypts with its in-memory private key, and verifies the state. Forged
+or altered replies fail without consuming the pending connection. Redeeming
+the code requires the original proof verifier.
 D1 consumes the code atomically. The resulting device token is random, hashed
 on the server, expires after 90 days, and is revocable in the workspace.
 

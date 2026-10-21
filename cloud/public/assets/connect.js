@@ -43,18 +43,7 @@ approve.onclick = async () => {
     });
     const result = await response.json();
     if (!response.ok) throw Error(result.error);
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = result.redirect;
-    for (const name of ["code", "state", "access"]) {
-      const input = document.createElement("input");
-      input.type = "hidden";
-      input.name = name;
-      input.value = result[name];
-      form.append(input);
-    }
-    document.body.append(form);
-    form.submit();
+    location.assign(result.redirect);
   } catch (e) {
     error.textContent = e.message;
     approve.disabled = false;

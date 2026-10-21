@@ -62,7 +62,7 @@ export function secure(response) {
   h.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   h.set(
     "Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self' http://127.0.0.1:*; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+    "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; form-action 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
   );
   if (
     !/\/(?:assets)\//.test(new URL(response.url || "https://asip.ca/").pathname)

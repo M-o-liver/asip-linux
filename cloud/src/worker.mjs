@@ -1,4 +1,5 @@
 import { sha256 } from "../../beacon/cloud-protocol.mjs";
+import { sealDeviceReply } from "../../beacon/device-link.mjs";
 import {
   HttpError,
   fail,
@@ -56,7 +57,8 @@ async function deviceRoutes(request, env, url, auth) {
     const input = await body(request, 8192);
     if (
       !/^[a-f0-9]{64}$/.test(input.challenge || "") ||
-      !/^[a-f0-9]{64}$/.test(input.state || "")
+      !/^[a-f0-9]{64}$/.test(input.state || "") ||
+      !/^04[a-f0-9]{128}$/.test(input.publicKey || "")
     )
       fail(400, "Invalid device connection.");
     let redirect;
@@ -79,6 +81,21 @@ async function deviceRoutes(request, env, url, auth) {
     const label = String(input.label || "Computer").slice(0, 120),
       platform = String(input.platform || "unknown").slice(0, 50);
     const code = random();
+    let reply;
+    try {
+      reply = await sealDeviceReply(
+        {
+          code,
+          state: input.state,
+          access: request.headers.get("Cf-Access-Jwt-Assertion") || "",
+        },
+        input.publicKey,
+        input.challenge,
+        input.state,
+      );
+    } catch {
+      fail(400, "Invalid device public key.");
+    }
     await env.DB.prepare("INSERT INTO device_codes VALUES(?,?,?,?,?,?)")
       .bind(
         await sha256(code),
@@ -89,12 +106,8 @@ async function deviceRoutes(request, env, url, auth) {
         expires(120),
       )
       .run();
-    return json({
-      code,
-      state: input.state,
-      redirect: redirect.href,
-      access: request.headers.get("Cf-Access-Jwt-Assertion") || "",
-    });
+    redirect.searchParams.set("response", reply);
+    return json({ redirect: redirect.href });
   }
   if (url.pathname === "/api/v1/devices" && request.method === "GET") {
     owner(auth);

@@ -4,6 +4,7 @@ import os from "node:os";
 import http from "node:http";
 import crypto from "node:crypto";
 import { canonical, cloudEvent, sha256 } from "./cloud-protocol.mjs";
+import { deviceKey, openDeviceReply } from "./device-link.mjs";
 
 export class CloudSync {
   constructor(
@@ -193,8 +194,10 @@ export class CloudSync {
     const localAccount = this.runtime.account.accountId,
       verifier = crypto.randomBytes(32).toString("hex"),
       state = crypto.randomBytes(32).toString("hex");
-    let server, timer;
+    let server, timer, challenge, link;
     try {
+      challenge = await sha256(verifier);
+      link = await deviceKey();
       const received = new Promise((resolve, reject) => {
         server = http.createServer(async (req, res) => {
           const finish = (status, message) => {
@@ -207,28 +210,39 @@ export class CloudSync {
             });
             res.end(message);
           };
+          let callback;
+          try {
+            callback = new URL(req.url, "http://127.0.0.1");
+          } catch {
+            finish(400, "Invalid ASIP connection.");
+            return;
+          }
           if (
-            req.method !== "POST" ||
-            req.url !== "/callback" ||
-            req.headers.origin !== this.origin ||
+            req.method !== "GET" ||
+            callback.pathname !== "/callback" ||
+            req.url.length > 24000 ||
             req.headers.host !== "127.0.0.1:" + server.address().port
           ) {
             finish(400, "Invalid ASIP connection.");
             return;
           }
-          let raw = "";
-          for await (const chunk of req) {
-            raw += chunk;
-            if (raw.length > 32768) {
-              finish(413, "Invalid ASIP connection.");
-              return;
-            }
+          let reply;
+          try {
+            reply = await openDeviceReply(
+              callback.searchParams.get("response"),
+              link.privateKey,
+              challenge,
+              state,
+            );
+          } catch {
+            finish(400, "Invalid ASIP connection.");
+            return;
           }
-          const params = new URLSearchParams(raw);
           if (
-            params.get("state") !== state ||
-            !/^[a-f0-9]{64}$/.test(params.get("code") || "") ||
-            /[\r\n;]/.test(params.get("access") || "")
+            reply.state !== state ||
+            !/^[a-f0-9]{64}$/.test(reply.code || "") ||
+            typeof reply.access !== "string" ||
+            /[\r\n;]/.test(reply.access)
           ) {
             finish(400, "Invalid ASIP connection.");
             return;
@@ -238,8 +252,8 @@ export class CloudSync {
             "ASIP received the connection. Return to Beacon to check synchronization. You can close this tab.",
           );
           resolve({
-            code: params.get("code"),
-            access: params.get("access") || "",
+            code: reply.code,
+            access: reply.access,
           });
         });
         this.cancelPair = () =>
@@ -256,8 +270,9 @@ export class CloudSync {
       });
       const url = new URL(this.origin + "/connect");
       url.search = new URLSearchParams({
-        challenge: await sha256(verifier),
+        challenge,
         state,
+        publicKey: link.publicKey,
         redirect: "http://127.0.0.1:" + server.address().port + "/callback",
         label: os.hostname(),
         platform: process.platform,

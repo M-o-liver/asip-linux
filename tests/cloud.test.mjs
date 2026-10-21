@@ -10,6 +10,11 @@ import { Miniflare, convertV4MiniflareOptions } from "miniflare";
 import { Runtime } from "../beacon/runtime.mjs";
 import { CloudSync } from "../beacon/cloud.mjs";
 import { canonical, sha256 } from "../beacon/cloud-protocol.mjs";
+import {
+  deviceKey,
+  sealDeviceReply,
+  openDeviceReply,
+} from "../beacon/device-link.mjs";
 import { accessClaims } from "../cloud/src/auth.mjs";
 import { encryptionFixture } from "./encryption-fixture.mjs";
 import { generateKeyPair, SignJWT } from "jose";
@@ -154,24 +159,24 @@ test("native browser handoff stores encrypted credentials, resumes after restart
         headers: {
           Cookie: "__Host-asip=" + session,
           Origin: "https://asip.ca",
+          "Cf-Access-Jwt-Assertion": "fixture-private-preview-assertion",
         },
       });
       assert.equal(response.status, 200);
       const result = await response.json();
       assert.equal(
-        (
-          await fetch(result.redirect, {
-            method: "POST",
-            headers: { Origin: "https://asip.ca" },
-            body: new URLSearchParams({
-              code: result.code,
-              state: result.state,
-              access: result.access,
-            }),
-          })
-        ).status,
-        200,
+        result.redirect.includes("fixture-private-preview-assertion"),
+        false,
       );
+      assert.deepEqual(Object.keys(result), ["redirect"]);
+      const forged = new URL(result.redirect);
+      forged.searchParams.set("response", "invalid");
+      assert.equal((await fetch(forged)).status, 400);
+      assert.equal(
+        (await fetch(result.redirect, { method: "POST" })).status,
+        400,
+      );
+      assert.equal((await fetch(result.redirect)).status, 200);
     },
   });
   t.after(async () => {
@@ -181,6 +186,7 @@ test("native browser handoff stores encrypted credentials, resumes after restart
     fs.rmSync(home, { recursive: true, force: true });
   });
   await sync.connect();
+  assert.equal(sync.connection.access, "fixture-private-preview-assertion");
   await sync.sync();
   sync.stop();
   const saved = fs.readFileSync(sync.file);
@@ -202,6 +208,34 @@ test("native browser handoff stores encrypted credentials, resumes after restart
       .prepare("SELECT account_id FROM cloud_binding WHERE id=1")
       .get().account_id,
     accountId,
+  );
+});
+test("device replies bind encryption to the initiating key, challenge, and state", async () => {
+  const link = await deviceKey(),
+    other = await deviceKey(),
+    challenge = "a".repeat(64),
+    state = "b".repeat(64),
+    value = { code: "c".repeat(64), state, access: "private-admission" };
+  const reply = await sealDeviceReply(value, link.publicKey, challenge, state);
+  assert.equal(reply.includes(value.access), false);
+  assert.deepEqual(
+    await openDeviceReply(reply, link.privateKey, challenge, state),
+    value,
+  );
+  await assert.rejects(
+    openDeviceReply(reply, other.privateKey, challenge, state),
+  );
+  await assert.rejects(
+    openDeviceReply(reply, link.privateKey, "0".repeat(64), state),
+  );
+  await assert.rejects(
+    openDeviceReply(reply, link.privateKey, challenge, "0".repeat(64)),
+  );
+  await assert.rejects(
+    openDeviceReply("bad", link.privateKey, challenge, state),
+  );
+  await assert.rejects(
+    sealDeviceReply(value, "04" + "0".repeat(128), challenge, state),
   );
 });
 async function credential({
@@ -431,10 +465,12 @@ test("browser mutation requires same origin; pairing uses PKCE and atomically co
     .run();
   const headers = { Cookie: "__Host-asip=" + session };
   const verifier = crypto.randomBytes(32).toString("hex"),
-    state = crypto.randomBytes(32).toString("hex");
+    state = crypto.randomBytes(32).toString("hex"),
+    link = await deviceKey();
   const value = {
     challenge: await sha256(verifier),
     state,
+    publicKey: link.publicKey,
     label: "Fixture laptop",
     platform: "win32",
     redirect: "http://127.0.0.1:49152/callback",
@@ -465,7 +501,13 @@ test("browser mutation requires same origin; pairing uses PKCE and atomically co
     headers: { ...headers, Origin: "https://asip.ca" },
   });
   assert.equal(authorized.status, 200);
-  const { code } = await authorized.json();
+  const { redirect } = await authorized.json();
+  const { code } = await openDeviceReply(
+    new URL(redirect).searchParams.get("response"),
+    link.privateKey,
+    value.challenge,
+    state,
+  );
   assert.equal(
     (
       await request("/api/v1/devices/redeem", null, {
