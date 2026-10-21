@@ -489,6 +489,7 @@ h3 {
   border-radius: 5px;
 }
 .recall-demo > div {
+  min-width: 0;
   padding: 29px 35px;
 }
 .recall-demo > div + div {
@@ -850,6 +851,8 @@ th {
     flex-direction: row;
   }
   .proof-tabs button {
+    flex-direction: column;
+    min-width: 0;
     padding: 20px 15px;
     gap: 10px;
     align-items: start;

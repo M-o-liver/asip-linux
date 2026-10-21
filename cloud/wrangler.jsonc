@@ -6,6 +6,7 @@
   "account_id": "fd3003b1fc128cb091196b3358400844",
   "workers_dev": false,
   "preview_urls": false,
+  "routes": [{ "pattern": "asip.ca", "custom_domain": true }],
   "assets": {
     "directory": "./public",
     "binding": "ASSETS",

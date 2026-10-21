@@ -36,6 +36,19 @@ import { oauth } from "./oauth.mjs";
 
 async function deviceRoutes(request, env, url, auth) {
   if (
+    url.pathname === "/api/v1/devices/self/revoke" &&
+    request.method === "POST"
+  ) {
+    if (auth.credential?.kind !== "device")
+      fail(403, "A connected device is required.");
+    await env.DB.prepare(
+      "UPDATE credentials SET revoked_at=? WHERE account_id=? AND id=?",
+    )
+      .bind(now(), auth.accountId, auth.credential.id)
+      .run();
+    return json({ revoked: true });
+  }
+  if (
     url.pathname === "/api/v1/devices/authorize" &&
     request.method === "POST"
   ) {

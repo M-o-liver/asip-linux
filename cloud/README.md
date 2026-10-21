@@ -7,7 +7,7 @@ the local and hosted record protocol can be reviewed and released together.
 ## Resources
 
 - Worker: `asip-cloud`; `workers.dev` and version preview URLs are disabled.
-- Website: `https://asip.ca`, with a redirect from `www.asip.ca` when attached.
+- Website: `https://asip.ca`. The optional `www` alias is not attached.
 - D1: `asip-cloud`, ID `256ab73a-fef4-48e2-91a3-2f2b324fea07`.
 - Private R2 bucket: `asip-cloud-records`; no public bucket domain is required.
 - Existing publication Worker: `asip-publication`, retained for recovery.
@@ -123,7 +123,9 @@ during private preview, a valid Access cookie.
 - Pull uses a monotonically increasing server sequence, independent of device
   clocks. Every record is checked against its hash before a local transaction
   inserts it and advances the durable cursor. Original native times remain
-  unchanged. Search pagination follows server ingestion sequence.
+  unchanged. History is displayed by the original recorded time, with stable
+  pagination across equal timestamps. New work is uploaded before the older
+  backfill, so an existing history does not delay a fresh handoff.
 - Event IDs, agents, native session IDs, project associations, intent, results,
   failures, and recorded evidence synchronize. Explicit project metadata,
   paths, relationships, and session details also synchronize. Metadata uses

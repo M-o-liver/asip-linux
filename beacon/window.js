@@ -304,9 +304,16 @@ function render(state) {
   $("cloud-actions").hidden = !state.cloud?.connected;
   $("cloud-sync").disabled = Boolean(state.cloud?.syncing);
   $("cloud-status").textContent = state.cloud?.syncing
-    ? "Synchronizing project memory…"
+    ? "Synchronizing… · " +
+      (state.cloud.sent || 0).toLocaleString() +
+      " sent · " +
+      (state.cloud.received || 0).toLocaleString() +
+      " received"
     : state.cloud?.connected
-      ? "Connected as " +
+      ? (state.cloud.pending
+          ? state.cloud.pending.toLocaleString() + " records waiting · "
+          : "") +
+        "Connected as " +
         state.cloud.account +
         (state.cloud.lastSync
           ? " · Synced " + new Date(state.cloud.lastSync).toLocaleTimeString()

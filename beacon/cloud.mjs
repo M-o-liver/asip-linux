@@ -84,6 +84,15 @@ export class CloudSync {
       this.error =
         "The cloud connection could not be opened with the system keychain.";
     }
+    let pending = 0;
+    if (this.connection && this.runtime.db)
+      try {
+        pending = this.runtime.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM events e LEFT JOIN cloud_acked a ON a.id=e.id WHERE a.id IS NULL",
+          )
+          .get().n;
+      } catch {}
     return {
       connected: Boolean(this.connection),
       account: this.connection?.account?.handle || null,
@@ -95,6 +104,7 @@ export class CloudSync {
       error: this.error,
       sent: this.sent,
       received: this.received,
+      pending,
       connecting: Boolean(this.pairing),
     };
   }
@@ -273,10 +283,15 @@ export class CloudSync {
         binding = db
           .prepare("SELECT account_id FROM cloud_binding WHERE id=1")
           .get();
-      if (binding && binding.account_id !== result.account.id)
+      if (binding && binding.account_id !== result.account.id) {
+        await this.request("/api/v1/devices/self/revoke", {
+          method: "POST",
+          connection: { ...result, access },
+        }).catch(() => {});
         throw new Error(
           "This local history belongs to another cloud account. Use a separate Beacon account.",
         );
+      }
       db.prepare("INSERT OR IGNORE INTO cloud_binding VALUES(1,?)").run(
         result.account.id,
       );
@@ -288,6 +303,11 @@ export class CloudSync {
         this.connection = previous;
         throw error;
       }
+      if (previous?.id && previous.account.id === result.account.id)
+        await this.request("/api/v1/devices/self/revoke", {
+          method: "POST",
+          connection: { ...previous, access },
+        }).catch(() => {});
       this.start();
       return this.status();
     } catch (error) {
@@ -338,7 +358,7 @@ export class CloudSync {
           active();
           const pending = db
             .prepare(
-              "SELECT e.* FROM events e LEFT JOIN cloud_acked a ON a.id=e.id WHERE a.id IS NULL ORDER BY e.rowid LIMIT 40",
+              "SELECT e.* FROM events e LEFT JOIN cloud_acked a ON a.id=e.id WHERE a.id IS NULL ORDER BY e.rowid DESC LIMIT 40",
             )
             .all();
           if (!pending.length) break;
@@ -588,12 +608,26 @@ export class CloudSync {
     this.onChange();
     return this.inflight;
   }
-  disconnect() {
+  async disconnect() {
     this.load();
     this.stop();
+    const previous = this.connection,
+      local = this.loadedAccount;
     this.connection = null;
     if (this.file) fs.rmSync(this.file, { force: true });
     this.error = "";
+    this.onChange();
+    if (previous)
+      try {
+        await this.request("/api/v1/devices/self/revoke", {
+          method: "POST",
+          connection: previous,
+        });
+      } catch {
+        if (this.loadedAccount === local)
+          this.error =
+            "Disconnected here. Cloud revocation could not be confirmed; revoke this computer in your cloud workspace.";
+      }
     this.onChange();
     return this.status();
   }

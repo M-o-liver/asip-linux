@@ -368,6 +368,32 @@ async function load() {
     if (!response.ok)
       throw new Error(data.error || "ASIP could not load project history.");
     if (controller !== request) return;
+    $("cloud-connect").hidden =
+      !data.cloud || (data.cloud.connected && !data.cloud.error);
+    $("cloud-connect").disabled = Boolean(data.cloud?.connecting);
+    $("cloud-connect").textContent = data.cloud?.connecting
+      ? "Finish in browser…"
+      : data.cloud?.connected
+        ? "Reconnect cloud"
+        : "Connect cloud";
+    $("cloud-open").hidden = !data.cloud?.connected;
+    if (data.cloud?.workspace) $("cloud-open").href = data.cloud.workspace;
+    $("cloud-status").hidden = !data.cloud;
+    $("cloud-status").textContent =
+      data.cloud?.error ||
+      (data.cloud?.syncing
+        ? "Cloud sync · " +
+          data.cloud.sent.toLocaleString() +
+          " sent · " +
+          data.cloud.received.toLocaleString() +
+          " received"
+        : data.cloud?.connected
+          ? "Cloud connected · " +
+            data.cloud.account +
+            (data.cloud.pending
+              ? " · " + data.cloud.pending.toLocaleString() + " records waiting"
+              : "")
+          : "Connect cloud to keep this project memory across computers.");
     document.body.classList.remove("signed-out");
     $("reopen").hidden = true;
     $("error").hidden = true;
@@ -410,6 +436,20 @@ $("sessions-next").onclick = () => {
   load();
 };
 $("refresh").onclick = load;
+$("cloud-connect").onclick = async () => {
+  $("cloud-connect").disabled = true;
+  $("cloud-status").textContent =
+    "Finish the cloud connection in your browser.";
+  try {
+    const response = await fetch("cloud/connect", { method: "POST" });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error);
+    await load();
+  } catch (error) {
+    $("cloud-status").textContent = error.message;
+    $("cloud-connect").disabled = false;
+  }
+};
 $("kind").onchange = () => {
   state.kind = $("kind").value;
   state.offset = 0;

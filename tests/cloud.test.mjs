@@ -11,6 +11,7 @@ import { Runtime } from "../beacon/runtime.mjs";
 import { CloudSync } from "../beacon/cloud.mjs";
 import { canonical, sha256 } from "../beacon/cloud-protocol.mjs";
 import { accessClaims } from "../cloud/src/auth.mjs";
+import { encryptionFixture } from "./encryption-fixture.mjs";
 import { generateKeyPair, SignJWT } from "jose";
 
 let mf, db, bucket;
@@ -53,23 +54,12 @@ before(async () => {
   );
   db = await mf.getD1Database("DB");
   bucket = await mf.getR2Bucket("RECORDS");
-  await db.exec(
-    fs
-      .readFileSync(
-        new URL(
-          "../cloud/migrations/0002_session_catalogue.sql",
-          import.meta.url,
-        ),
-        "utf8",
-      )
-      .replace("CREATE TABLE", "CREATE TABLE IF NOT EXISTS"),
-  );
-  await db.exec(
-    fs.readFileSync(
-      new URL("../cloud/migrations/0001_cloud.sql", import.meta.url),
-      "utf8",
-    ),
-  );
+  const migrationDirectory = new URL("../cloud/migrations/", import.meta.url);
+  for (const name of fs
+    .readdirSync(migrationDirectory)
+    .filter((n) => n.endsWith(".sql"))
+    .sort())
+    await db.exec(fs.readFileSync(new URL(name, migrationDirectory), "utf8"));
   for (const [id, handle] of [
     [accountId, "owner"],
     [otherId, "other"],
@@ -81,6 +71,138 @@ before(async () => {
 });
 after(async () => {
   await mf?.dispose();
+});
+test("history pagination follows original time during out-of-order backfill", async () => {
+  const c = await credential();
+  const events = [
+    {
+      ...source,
+      id: "sort-new",
+      project: "github.com/example/sort",
+      at: "2026-10-21T15:00:00.000Z",
+    },
+    {
+      ...source,
+      id: "sort-old",
+      project: "github.com/example/sort",
+      at: "2026-10-20T15:00:00.000Z",
+    },
+    {
+      ...source,
+      id: "sort-tie",
+      project: "github.com/example/sort",
+      at: "2026-10-21T15:00:00.000Z",
+    },
+  ];
+  assert.equal(
+    (
+      await request("/api/v1/sync/push", c.token, {
+        method: "POST",
+        value: { events },
+      })
+    ).status,
+    200,
+  );
+  const first = await (
+    await request(
+      "/api/v1/events?project=github.com/example/sort&limit=1",
+      c.token,
+    )
+  ).json();
+  assert.equal(first.events[0].id, "sort-tie");
+  const second = await (
+    await request(
+      "/api/v1/events?project=github.com/example/sort&limit=1&before=" +
+        encodeURIComponent(first.next),
+      c.token,
+    )
+  ).json();
+  assert.equal(second.events[0].id, "sort-new");
+  const third = await (
+    await request(
+      "/api/v1/events?project=github.com/example/sort&limit=1&before=" +
+        encodeURIComponent(second.next),
+      c.token,
+    )
+  ).json();
+  assert.equal(third.events[0].id, "sort-old");
+  assert.equal(third.next, null);
+});
+test("native browser handoff stores encrypted credentials, resumes after restart, and disconnect revokes access", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-pair-")),
+    runtime = new Runtime(home),
+    cipher = encryptionFixture();
+  runtime.signIn({
+    accountId: nativeId,
+    provider: "google",
+    subject: "fixture",
+    handle: "fixture@example.com",
+  });
+  const session = crypto.randomBytes(32).toString("hex");
+  await db
+    .prepare("INSERT INTO browser_sessions VALUES(?,?,?)")
+    .bind(await sha256(session), accountId, "2099-01-01T00:00:00Z")
+    .run();
+  const sync = new CloudSync(runtime, {
+    ...cipher,
+    fetcher: (url, options) => mf.dispatchFetch(url, options),
+    openBrowser: async (url) => {
+      const params = new URL(url).searchParams;
+      const response = await request("/api/v1/devices/authorize", null, {
+        method: "POST",
+        value: Object.fromEntries(params),
+        headers: {
+          Cookie: "__Host-asip=" + session,
+          Origin: "https://asip.ca",
+        },
+      });
+      assert.equal(response.status, 200);
+      const result = await response.json();
+      assert.equal(
+        (
+          await fetch(result.redirect, {
+            method: "POST",
+            headers: { Origin: "https://asip.ca" },
+            body: new URLSearchParams({
+              code: result.code,
+              state: result.state,
+              access: result.access,
+            }),
+          })
+        ).status,
+        200,
+      );
+    },
+  });
+  t.after(async () => {
+    runtime.cloud?.stop();
+    await runtime.cloud?.inflight?.catch(() => {});
+    await runtime.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  await sync.connect();
+  await sync.sync();
+  sync.stop();
+  const saved = fs.readFileSync(sync.file);
+  assert.equal(saved.includes(Buffer.from(sync.connection.token)), false);
+  const token = sync.connection.token;
+  const restarted = new CloudSync(runtime, {
+    ...cipher,
+    fetcher: (url, options) => mf.dispatchFetch(url, options),
+  });
+  restarted.load();
+  assert.equal(restarted.connection.token, token);
+  await restarted.sync();
+  await restarted.disconnect();
+  assert.equal((await request("/api/v1/me", token)).status, 401);
+  assert.equal(fs.existsSync(restarted.file), false);
+  assert.equal(
+    runtime
+      .storage()
+      .prepare("SELECT account_id FROM cloud_binding WHERE id=1")
+      .get().account_id,
+    accountId,
+  );
 });
 async function credential({
   account = accountId,
@@ -424,6 +546,38 @@ test("Linux and Windows local stores exchange original native records and Codex 
     s2 = cloud(windows, c2),
     ag = connect(linux, "antigravity"),
     codex = connect(windows, "codex");
+  linux
+    .storage()
+    .prepare("INSERT INTO projects VALUES(?,?,?,?,?,?)")
+    .run(
+      "github.com/example/empty",
+      "Named project",
+      "Preserved project description",
+      "github.com/example/empty",
+      "2026-10-21T00:00:00Z",
+      JSON.stringify(["/home/user/empty"]),
+    );
+  linux
+    .storage()
+    .prepare("INSERT INTO session_details VALUES(?,?,?)")
+    .run(
+      "antigravity",
+      "linux-native-session",
+      JSON.stringify({ title: "Native session title" }),
+    );
+  linux.connectionStore = {
+    list: () => [
+      {
+        name: "github.work",
+        provider: "github",
+        label: "GitHub",
+        origin: "https://api.github.com",
+        projects: [],
+        credential: "never-upload-this-credential",
+      },
+    ],
+    clear() {},
+  };
   const recorded = linux.record(ag, {
     session: "linux-native-session",
     project: "github.com/example/portable",
@@ -444,6 +598,28 @@ test("Linux and Windows local stores exchange original native records and Codex 
   assert.equal(recalled.session, "linux-native-session");
   assert.equal(recalled.agent, "antigravity");
   assert.equal(recalled.data.source.step, 11);
+  assert.equal(
+    windows.projects().find((p) => p.id === "github.com/example/empty")
+      .description,
+    "Preserved project description",
+  );
+  assert.equal(
+    JSON.parse(
+      windows
+        .storage()
+        .prepare(
+          "SELECT details FROM session_details WHERE agent=? AND session=?",
+        )
+        .get("antigravity", "linux-native-session").details,
+    ).title,
+    "Native session title",
+  );
+  assert.equal(
+    JSON.stringify(
+      await (await request("/api/v1/connections", c1.token)).json(),
+    ).includes("never-upload-this-credential"),
+    false,
+  );
   await s1.sync();
   await s2.sync();
   assert.equal(

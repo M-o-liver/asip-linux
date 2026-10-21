@@ -152,22 +152,43 @@ export async function listEvents(env, auth, params) {
     );
     values.push(query, query);
   }
-  const before = Number(params.get("before"));
+  const before = params.get("before");
   if (before) {
-    conditions.push("seq<?");
-    values.push(before);
+    let cursor;
+    try {
+      cursor = JSON.parse(atob(before.replace(/-/g, "+").replace(/_/g, "/")));
+    } catch {
+      fail(400, "Invalid history cursor.");
+    }
+    if (
+      !Array.isArray(cursor) ||
+      cursor.length !== 2 ||
+      !Number.isFinite(Date.parse(cursor[0])) ||
+      !Number.isSafeInteger(cursor[1])
+    )
+      fail(400, "Invalid history cursor.");
+    conditions.push(
+      "(julianday(at)<julianday(?) OR (julianday(at)=julianday(?) AND seq<?))",
+    );
+    values.push(cursor[0], cursor[0], cursor[1]);
   }
   const limit = Math.max(1, Math.min(100, Number(params.get("limit")) || 50));
   const { results } = await env.DB.prepare(
     "SELECT * FROM events WHERE " +
       conditions.join(" AND ") +
-      " ORDER BY seq DESC LIMIT ?",
+      " ORDER BY julianday(at) DESC,seq DESC LIMIT ?",
   )
     .bind(...values, limit + 1)
     .all();
   return {
     events: results.slice(0, limit).map(decoded),
-    next: results.length > limit ? results[limit - 1].seq : null,
+    next:
+      results.length > limit
+        ? btoa(JSON.stringify([results[limit - 1].at, results[limit - 1].seq]))
+            .replace(/=/g, "")
+            .replace(/\+/g, "-")
+            .replace(/\//g, "_")
+        : null,
   };
 }
 export async function projects(env, auth) {
