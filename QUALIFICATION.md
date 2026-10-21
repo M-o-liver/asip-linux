@@ -4,7 +4,7 @@ This page separates native build checks from observed desktop behavior. Installa
 
 ## Native builds
 
-[Build 39515877528](https://github.com/M-o-liver/asip-linux/actions/runs/39515877528) passed for source `1767ef0` on Windows, Linux, Apple Silicon macOS, and Intel macOS. Each job runs the application tests, Go race checks, native plugin-manager installation, Codex/Claude MCP connection, installer packaging, and packaged application startup.
+[Release build 39518756248](https://github.com/M-o-liver/asip-linux/actions/runs/39518756248) passed for source `0706e85` (`v0.4.1-alpha.2`) on Windows, Linux, Apple Silicon macOS, and Intel macOS. Each job runs the application tests, Go race checks, native plugin-manager installation, Codex/Claude MCP connection, installer packaging, and packaged application startup.
 
 The local application suite has 56 cases: 54 passed and two Windows-specific skips. Windows CI also runs the upgrade regression with a real executable image mapped and the native plugin directory held as a process working directory. Native qualification uses Codex 0.162.1, Claude Code 2.1.299, and the pinned Antigravity CLI releases and hashes in `scripts/antigravity-releases.json`. It uses disposable identities and profiles; no model subscription or live provider login is implied by a CI pass.
 
@@ -29,7 +29,7 @@ The VMs initially received source `2a50c4a` from [build 39035520339](https://git
 | Experience                              | Linux                                  | Windows VM                                             | Intel Mac VM                                              |
 | --------------------------------------- | -------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------- |
 | Install/update retaining Google sign-in | Observed                               | Observed through NSIS                                  | Observed through DMG → Applications                       |
-| Beacon window/panel                     | Full application                       | Tray panel                                             | Menu-bar panel                                            |
+| Beacon window/panel                     | Full application                       | Tray panel and full taskbar window                      | Menu-bar panel                                            |
 | Open local Projects workspace           | Observed                               | Observed in Edge                                       | Observed in Safari                                        |
 | ChatGPT/Codex native record and recall  | Observed with existing integration     | Completed file verification and fresh-chat retrieval   | Completed cross-agent recall and file verification        |
 | Packaged Open in ChatGPT button         | Native CLI installed                   | Opened installed ASIP plugin page                      | Opened installed ASIP plugin page                         |
@@ -76,6 +76,8 @@ The installed `efbd4b7` build then exposed temporary-plugin discovery: Antigravi
 
 After fully restarting Antigravity against the refreshed `efbd4b7` native registration, a fresh conversation recalled ChatGPT's saved `ASIP-hook-check` result, including the verified text, SHA-256, and successful command output, without reading project files. This exercised the managed helper after removal of the redundant native executable copy.
 
+Installing the corrected `1767ef0` NSIS build with both agents still open completed without a plugin setup error. Google sign-in and both connections remained. Edge showed one project, six sessions, and all 86 events, including 16 automatically captured events from the fresh Antigravity recall. This installed build has the same application/helper/test source as the tagged release; only documentation changed before the tag.
+
 The Windows workspace's **Open Beacon** opens a normal taskbar window. Tray clicks retain the compact panel. Windows may keep the browser in the foreground; selecting Beacon on the taskbar brings up the full window.
 
 ### Intel Mac Antigravity
@@ -90,13 +92,19 @@ The Mac is an experimental Intel Sequoia 15.8.1 guest on an AMD host, without ac
 
 After the `000a57c` Mac update, Beacon retained both agents and all 54 events. Safari showed one project and both native sessions. A restarted Antigravity conversation retrieved ChatGPT’s saved file verification, read-back text, exit code, and SHA-256 evidence through native ASIP MCP. The client wrote the long MCP response to its own output artifact; the agent summarized that artifact after clarification without reading project files.
 
-The subsequent `218fcf7` DMG update retained Google sign-in, both agents, and all 62 events. **Open ASIP** opened Safari with one project and three sessions. The workspace's **Open Beacon** control returned to the native menu-bar panel.
+The subsequent `218fcf7`, `c272e00`, and `efbd4b7` DMG updates retained Google sign-in, both agents, and all 62 events. **Open ASIP** opened Safari with one project and three sessions. The workspace's **Open Beacon** control returned to the native menu-bar panel.
+
+## Published alpha
+
+[ASIP 0.4.1 alpha 2](https://github.com/M-o-liver/asip-linux/releases/tag/v0.4.1-alpha.2) contains nine installers, four native qualification records, and `SHA256SUMS`. All 13 asset digests matched the checksum manifest; each qualification record names the exact clean tagged revision and tree. The Windows EXE returned HTTP 200 without authentication after publication. Both earlier implementation PRs are merged.
 
 ## Existing records and API connections
 
 The October 20 Linux upgrade to the `000a57c` AppImage passed the packaged secondary-launch check, preserved the encrypted credential file byte-for-byte, and passed SQLite integrity checking. The running native Codex plugin listed all 14 connections afterward. The subsequent clean `2341594` and `d8840b8` AppImages restored the saved sign-in and retained the encrypted credential files unchanged. The final integrity check returned `ok` with 9,096 recorded events; activity continues to grow during this work.
 
-The Linux upgrade retained 14 named connections, including 13 migrated credentials and signing secrets, and 24 projects. The workspace displayed the full total of 505 sessions and navigated to older sessions. The final archived administration journal contains 3,895 operations; reconciliation added three missing operations, updated the final entry, and corrected 810 lifecycle/verification classifications using the archive's actual action and result fields. Original archives remain unchanged. A checkpoint preceded each reconciliation; five recovery records remained afterward.
+The final Linux update installed the published, checksum-verified `0706e85` AppImage. Saved sign-in resumed, encrypted credential files remained byte-for-byte unchanged, and SQLite integrity checking returned `ok` with 9,760 events. Native Codex tools then listed all 14 connections and 25 projects, including the 24 historical projects and the new Linux qualification project.
+
+The earlier Linux upgrade retained 14 named connections, including 13 migrated credentials and signing secrets, and 24 projects. The workspace displayed the full total of 505 sessions and navigated to older sessions. The final archived administration journal contains 3,895 operations; reconciliation added three missing operations, updated the final entry, and corrected 810 lifecycle/verification classifications using the archive's actual action and result fields. Original archives remain unchanged. A checkpoint preceded each reconciliation; five recovery records remained afterward.
 
 Real read-only calls through the installed Codex plugin returned:
 
@@ -112,6 +120,7 @@ The rejected credentials need replacement or renewed authorization. Their names 
 
 ## Qualification limits
 
+- Some Antigravity turn-ending entries display “Stop” rather than a descriptive summary; explicit result records retain the supplied summary.
 - Verify launch-at-login across an actual guest login cycle.
 - Complete a Claude turn when an authenticated paid account is available.
 - Verify real GitHub identity sign-in in an isolated account/profile. Google sign-in and GitHub API authorization have been exercised; these are separate flows.
