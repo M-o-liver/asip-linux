@@ -31,6 +31,7 @@ ASIP's Google desktop client and GitHub OAuth app are registered. Public client 
 - A standalone compiled helper bundled with each plugin. Users do not install Python, Node, or Go.
 - Native Codex and Claude Code plugin manifests, onboarding skills, MCP tools, and lifecycle hooks. First MCP startup opens the account connection without a model request.
 - An Antigravity plugin bundle using its own hook format and conversation metadata, installed and inspected through its native CLI on all three operating systems, with desktop registration checked separately.
+- Automatic Antigravity final-response capture from its native conversation transcript, including source-row evidence. Completed replies appear in recent work without an explicit ASIP request.
 - Google authorization code sign-in with PKCE and verified identity tokens; GitHub device sign-in with a verified provider account.
 - A connection handshake between the installed plugin and Beacon.
 - Durable account-specific activity records: agent, native session, project, intent, tool input/result, failure, repository revision, worktree state, and trace reference.
@@ -76,13 +77,15 @@ If you used the earlier ASIP workspace, choose **Import previous history** in Be
 
 The CI workflow runs connection and OAuth fixture tests, installs the Codex and Claude plugins into disposable runner profiles, and builds native installers on Windows, Linux, and both Apple Silicon and Intel Macs. These checks do not verify a real provider login.
 
-Alpha tags matching the application version, such as `v0.4.1-alpha.2`, also publish the installers, native qualification records, and SHA-256 checksums after all four native jobs pass. Release publishing uses the build's repository token; it does not require a personal API credential.
+Alpha tags matching the application version, such as `v0.4.1-alpha.3`, also publish the installers, native qualification records, and SHA-256 checksums after all four native jobs pass. Release publishing uses the build's repository token; it does not require a personal API credential.
 
 ## Qualification and current limits
 
 See [qualification results](QUALIFICATION.md) for the tested builds, native checks, desktop observations, and remaining checks.
 
 Actual Codex CLI sessions have automatically recorded prompts, tool calls/results, repository revision, worktree state, and final results. ChatGPT and Antigravity completed native file-verification and memory workflows in the Windows and Intel Mac VMs. Fresh ChatGPT conversations recalled Antigravity's saved verification without reading the project files; Mac Antigravity also retrieved ChatGPT's saved evidence. After native hook review, ChatGPT automatically recorded the prompt and final response on both systems. Windows path reconciliation merged the agents' earlier duplicate project entries and retained all records. Linux Antigravity completed a native MCP workflow, and Codex retrieved its result. Claude complete-turn capture still needs an authenticated paid account.
+
+Antigravity also passed ordinary reply capture on Linux, Windows, and Intel Mac: the native reply appeared automatically in Beacon's recent work and the project workspace with its transcript source. Codex retrieved the Linux reply through ASIP. Existing generic Stop records are preserved; the change applies to new completed turns.
 
 GitHub repository authorization and a real API call through Codex's installed plugin have passed, including the stored request/result audit. Recall excludes ASIP's own tool-call audit rows, and hooks retain their hashes without copying memory responses back into memory. The project workspace has been exercised in Chrome against those actual records. Probabilistic project classification remains an investigated future integration. Recovery checkpoints contain ASIP activity history; they do not restore project files or the operating system. The old administration daemon is not a dependency of this implementation.
 
