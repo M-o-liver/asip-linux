@@ -1,4 +1,7 @@
 import { checkConnection } from "./api-check.js";
+import { queryCache } from "./query-cache.js";
+
+const aggregates = queryCache();
 
 const $ = (id) => document.getElementById(id),
   names = {
@@ -152,8 +155,8 @@ async function loadHistory() {
   if (project) scope.set("project", project);
   const [history, sessions, relations] = await Promise.all([
     api("events?" + params),
-    api("sessions?" + scope),
-    api("relationships"),
+    aggregates.get("sessions?" + scope, () => api("sessions?" + scope)),
+    aggregates.get("relationships", () => api("relationships")),
   ]);
   if (current !== generation) return;
   lastEvents = history.events;
@@ -283,8 +286,15 @@ $("clear-session").onclick = () => {
   pages = [null];
   loadHistory().catch(report);
 };
-$("refresh").onclick = () =>
-  Promise.all([loadProjects(), loadHistory()]).catch(report);
+$("refresh").onclick = async () => {
+  aggregates.clear();
+  try {
+    await loadProjects();
+    await loadHistory();
+  } catch (error) {
+    report(error);
+  }
+};
 function management(container, title, description, id, revoked, kind) {
   const row = node("article", undefined, "management-item"),
     text = node("div");
