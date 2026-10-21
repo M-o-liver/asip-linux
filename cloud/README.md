@@ -145,6 +145,42 @@ during private preview, a valid Access cookie.
   checkpoint pauses synchronization and then rescans cloud records. Cloud
   records cannot silently rewrite different local evidence.
 
+### Quotas and idle synchronization
+
+The initial private rollout exposed a daily-write defect: the original sync
+pass replaced unchanged project, session and connection metadata every 30
+seconds, and the request limiter also wrote D1 for every authenticated request.
+The owner reported the resulting quota alert. At inspection, the database held
+12,258 records in 100,159,488 bytes; account analytics reported 118,192 row
+writes and 3,216,722 row reads that UTC day. This was a daily usage issue, not
+an exhausted 500 MB database. No account data was discarded.
+
+Beacon now persists per-entry metadata hashes and sends only changed entries
+in resumable chunks. An idle event check uses the indexed server cursor;
+catalogue/account refreshes occur at most every five minutes. Reconnecting a
+device resends its metadata under the new revocable credential. Removing a
+named connection prunes only that device's cloud metadata.
+
+The server independently uses conditional metadata upserts so older clients
+cannot rewrite identical rows. Metadata downloads do not aggregate the event
+table. Workers rate-limit bindings replace the D1-backed request counter;
+authenticated reads require no database writes. Their limits are approximate
+per Cloudflare location, not a strict worldwide counter. The three namespaces
+in `wrangler.jsonc` are reserved for this service.
+
+Quota failures return an explicit code and Retry-After. Daily quota pauses last
+until the next UTC reset, and persist in Beacon's encrypted connection across
+restarts. Other network failures back off from 30 seconds to 15 minutes.
+Local recording continues. Storage exhaustion returns a separate administrator
+message with an hourly retry. These mechanisms do not increase the Cloudflare
+plan or spending allowance. Monitor D1 daily rows, database bytes and R2 usage
+before admitting larger histories or additional testers.
+
+Regression checks meter the real emulator's D1 row writes: unchanged metadata
+writes zero rows, changing one session writes one row, and an idle native pass
+makes only its cursor request. Metadata acknowledgments and quota pauses both
+survive restart.
+
 History can contain paths and sensitive work. Existing trace redaction remains
 in Beacon; it is a best-effort filter, not end-to-end encryption. Cloudflare
 infrastructure encryption protects storage in transit and at rest. The account

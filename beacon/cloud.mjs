@@ -50,6 +50,8 @@ export class CloudSync {
     this.lastSync = null;
     this.sent = 0;
     this.received = 0;
+    this.retryAt = 0;
+    this.failures = 0;
   }
   load() {
     const id = this.runtime.account?.accountId;
@@ -59,12 +61,16 @@ export class CloudSync {
     this.connection = null;
     this.lastSync = null;
     this.error = "";
+    this.retryAt = 0;
+    this.failures = 0;
     if (!id) return;
     this.file = path.join(this.runtime.home, "accounts", id, "cloud.bin");
     if (fs.existsSync(this.file)) {
       this.connection = JSON.parse(this.unseal(fs.readFileSync(this.file)));
       if (this.connection.origin !== this.origin)
         throw new Error("The saved cloud service differs from this build.");
+      this.retryAt = Number(this.connection.retryAt) || 0;
+      this.error = this.connection.syncError || "";
     }
   }
   persist() {
@@ -107,6 +113,7 @@ export class CloudSync {
       received: this.received,
       pending,
       connecting: Boolean(this.pairing),
+      retryAt: this.retryAt ? new Date(this.retryAt).toISOString() : null,
     };
   }
   start() {
@@ -177,10 +184,18 @@ export class CloudSync {
         "ASIP cloud did not return a complete response. Reconnect cloud if preview sign-in expired.",
       );
     }
-    if (!response.ok)
-      throw new Error(
+    if (!response.ok) {
+      const error = new Error(
         data.error || "ASIP cloud returned HTTP " + response.status + ".",
       );
+      const delay = Number(
+        data.retryAfter || response.headers.get("Retry-After"),
+      );
+      if (Number.isFinite(delay) && delay > 0)
+        error.retryAt = Date.now() + Math.min(delay, 86400) * 1000;
+      error.status = response.status;
+      throw error;
+    }
     return data;
   }
   async connect() {
@@ -342,7 +357,7 @@ export class CloudSync {
   schema() {
     const db = this.runtime.storage();
     db.exec(
-      "CREATE TABLE IF NOT EXISTS cloud_binding(id INTEGER PRIMARY KEY CHECK(id=1),account_id TEXT NOT NULL); CREATE TABLE IF NOT EXISTS cloud_acked(id TEXT PRIMARY KEY,sha256 TEXT NOT NULL); CREATE TABLE IF NOT EXISTS cloud_cursor(id INTEGER PRIMARY KEY CHECK(id=1),cursor INTEGER NOT NULL);",
+      "CREATE TABLE IF NOT EXISTS cloud_binding(id INTEGER PRIMARY KEY CHECK(id=1),account_id TEXT NOT NULL); CREATE TABLE IF NOT EXISTS cloud_acked(id TEXT PRIMARY KEY,sha256 TEXT NOT NULL); CREATE TABLE IF NOT EXISTS cloud_cursor(id INTEGER PRIMARY KEY CHECK(id=1),cursor INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS cloud_catalogue_acked(device TEXT NOT NULL,kind TEXT NOT NULL,key TEXT NOT NULL,sha256 TEXT NOT NULL,PRIMARY KEY(device,kind,key)); CREATE TABLE IF NOT EXISTS cloud_catalogue_state(device TEXT PRIMARY KEY,initialized INTEGER NOT NULL,pulled_at INTEGER NOT NULL);",
     );
     return db;
   }
@@ -350,6 +365,10 @@ export class CloudSync {
     this.load();
     if (!this.connection) return;
     if (this.inflight) return this.inflight;
+    if (this.retryAt > Date.now())
+      throw new Error(
+        this.error || "Cloud synchronization is waiting before retrying.",
+      );
     const local = this.runtime.account.accountId,
       connection = this.connection;
     const controller = (this.controller = new AbortController());
@@ -533,89 +552,183 @@ export class CloudSync {
             }),
           ),
         };
-        const entries = Object.entries(outgoingCatalogue).flatMap(
-          ([kind, items]) => items.map((item) => ({ kind, item })),
+        const metadataState = db
+          .prepare("SELECT * FROM cloud_catalogue_state WHERE device=?")
+          .get(connection.id);
+        const acknowledged = new Map(
+          db
+            .prepare(
+              "SELECT kind,key,sha256 FROM cloud_catalogue_acked WHERE device=?",
+            )
+            .all(connection.id)
+            .map((e) => [e.kind + ":" + e.key, e.sha256]),
         );
-        for (let i = 0; i < Math.max(1, entries.length); i += 30) {
+        const keyFor = (kind, item) =>
+          canonical(
+            kind === "sessions"
+              ? [item.agent, item.session]
+              : kind === "links"
+                ? [item.source, item.target, item.relation]
+                : [kind === "connections" ? item.name : item.id],
+          );
+        const entries = [];
+        for (const [kind, items] of Object.entries(outgoingCatalogue))
+          for (const item of items) {
+            const key = keyFor(kind, item),
+              digest = await sha256(canonical(item));
+            if (acknowledged.get(kind + ":" + key) !== digest)
+              entries.push({ kind, item, key, digest });
+          }
+        active();
+        const connectionNames = outgoingCatalogue.connections.map(
+          (c) => c.name,
+        );
+        const removedConnections = [...acknowledged.keys()].some(
+          (key) =>
+            key.startsWith("connections:") &&
+            !connectionNames.some(
+              (name) => "connections:" + canonical([name]) === key,
+            ),
+        );
+        const sendMetadata =
+          entries.length || removedConnections || !metadataState?.initialized;
+        for (
+          let i = 0;
+          sendMetadata && i < Math.max(1, entries.length);
+          i += 30
+        ) {
           const chunk = {
             projects: [],
             links: [],
             sessions: [],
             connections: [],
-            reset: i === 0,
           };
           for (const { kind, item } of entries.slice(i, i + 30))
             chunk[kind].push(item);
+          if (i + 30 >= entries.length)
+            chunk.pruneConnections = connectionNames;
           await this.request("/api/v1/sync/catalogue", {
             method: "POST",
             body: chunk,
             signal: controller.signal,
           });
           active();
-        }
-        active();
-        const catalogue = await this.request("/api/v1/sync/catalogue", {
-          signal: controller.signal,
-        });
-        active();
-        db.exec("BEGIN IMMEDIATE");
-        try {
-          for (const p of catalogue.projects || []) {
-            const existing = db
-              .prepare("SELECT * FROM projects WHERE id=?")
-              .get(p.id);
-            if (existing)
-              db.prepare("UPDATE projects SET roots=? WHERE id=?").run(
-                JSON.stringify([
-                  ...new Set([
-                    ...JSON.parse(existing.roots),
-                    ...(p.roots || []),
-                  ]),
-                ]),
-                p.id,
+          db.exec("BEGIN IMMEDIATE");
+          try {
+            for (const entry of entries.slice(i, i + 30))
+              db.prepare(
+                "INSERT OR REPLACE INTO cloud_catalogue_acked VALUES(?,?,?,?)",
+              ).run(connection.id, entry.kind, entry.key, entry.digest);
+            if (i + 30 >= entries.length) {
+              db.prepare(
+                "DELETE FROM cloud_catalogue_acked WHERE device=? AND kind='connections' AND key NOT IN (SELECT value FROM json_each(?))",
+              ).run(
+                connection.id,
+                JSON.stringify(
+                  connectionNames.map((name) => canonical([name])),
+                ),
               );
-            else
-              db.prepare("INSERT INTO projects VALUES(?,?,?,?,?,?)").run(
-                p.id,
-                p.name || p.id.split("/").at(-1),
-                p.description || "",
-                p.repository || "",
-                new Date().toISOString(),
-                JSON.stringify(p.roots || []),
-              );
+              db.prepare(
+                "INSERT INTO cloud_catalogue_state VALUES(?,1,0) ON CONFLICT(device) DO UPDATE SET initialized=1",
+              ).run(connection.id);
+            }
+            db.exec("COMMIT");
+          } catch (error) {
+            db.exec("ROLLBACK");
+            throw error;
           }
-          for (const l of catalogue.links || [])
-            db.prepare("INSERT OR IGNORE INTO project_links VALUES(?,?,?)").run(
-              l.source,
-              l.target,
-              l.relation,
-            );
-          for (const s of catalogue.sessions || [])
-            db.prepare(
-              "INSERT OR IGNORE INTO session_details VALUES(?,?,?)",
-            ).run(s.agent, s.session, JSON.stringify(s.details));
-          db.exec("COMMIT");
-        } catch (error) {
-          db.exec("ROLLBACK");
-          throw error;
         }
-        const me = await this.request("/api/v1/me", {
-          signal: controller.signal,
-        });
         active();
-        if (me.account.id !== connection.account.id)
-          throw new Error("The cloud account changed.");
+        // Events continue every 30 seconds. Slow-changing catalogue/account
+        // metadata refreshes at most every five minutes, including after restart.
         if (
-          me.account.handle !== connection.account.handle ||
-          me.account.name !== connection.account.name
+          !metadataState?.pulled_at ||
+          Date.now() - metadataState.pulled_at >= 300000
         ) {
-          connection.account = me.account;
-          this.persist();
+          const catalogue = await this.request("/api/v1/sync/catalogue", {
+            signal: controller.signal,
+          });
+          active();
+          db.exec("BEGIN IMMEDIATE");
+          try {
+            for (const p of catalogue.projects || []) {
+              const existing = db
+                .prepare("SELECT * FROM projects WHERE id=?")
+                .get(p.id);
+              if (existing)
+                db.prepare("UPDATE projects SET roots=? WHERE id=?").run(
+                  JSON.stringify([
+                    ...new Set([
+                      ...JSON.parse(existing.roots),
+                      ...(p.roots || []),
+                    ]),
+                  ]),
+                  p.id,
+                );
+              else
+                db.prepare("INSERT INTO projects VALUES(?,?,?,?,?,?)").run(
+                  p.id,
+                  p.name || p.id.split("/").at(-1),
+                  p.description || "",
+                  p.repository || "",
+                  new Date().toISOString(),
+                  JSON.stringify(p.roots || []),
+                );
+            }
+            for (const l of catalogue.links || [])
+              db.prepare(
+                "INSERT OR IGNORE INTO project_links VALUES(?,?,?)",
+              ).run(l.source, l.target, l.relation);
+            for (const s of catalogue.sessions || [])
+              db.prepare(
+                "INSERT OR IGNORE INTO session_details VALUES(?,?,?)",
+              ).run(s.agent, s.session, JSON.stringify(s.details));
+            db.exec("COMMIT");
+          } catch (error) {
+            db.exec("ROLLBACK");
+            throw error;
+          }
+          const me = await this.request("/api/v1/me", {
+            signal: controller.signal,
+          });
+          active();
+          if (me.account.id !== connection.account.id)
+            throw new Error("The cloud account changed.");
+          if (
+            me.account.handle !== connection.account.handle ||
+            me.account.name !== connection.account.name
+          ) {
+            connection.account = me.account;
+            this.persist();
+          }
+          db.prepare(
+            "INSERT INTO cloud_catalogue_state VALUES(?,1,?) ON CONFLICT(device) DO UPDATE SET pulled_at=excluded.pulled_at",
+          ).run(connection.id, Date.now());
         }
         this.lastSync = new Date().toISOString();
         this.error = "";
+        this.retryAt = 0;
+        this.failures = 0;
+        if (connection.retryAt || connection.syncError) {
+          delete connection.retryAt;
+          delete connection.syncError;
+          this.persist();
+        }
       } catch (error) {
-        if (!controller.signal.aborted) this.error = error.message;
+        if (!controller.signal.aborted) {
+          this.error = error.message;
+          this.retryAt =
+            error.retryAt ||
+            Date.now() +
+              Math.min(900000, 30000 * 2 ** Math.min(this.failures++, 5));
+          connection.retryAt = this.retryAt;
+          connection.syncError = this.error;
+          try {
+            this.persist();
+          } catch {
+            /* Keep the original actionable network error. */
+          }
+        }
         throw error;
       } finally {
         this.inflight = null;

@@ -11,6 +11,7 @@ import {
   expires,
   now,
   throttle,
+  serviceError,
 } from "./http.mjs";
 import {
   accessClaims,
@@ -599,17 +600,7 @@ export default {
     try {
       return secure(await handle(request, env));
     } catch (error) {
-      return secure(
-        json(
-          {
-            error:
-              error instanceof HttpError
-                ? error.message
-                : "ASIP could not complete this request.",
-          },
-          error instanceof HttpError ? error.status : 500,
-        ),
-      );
+      return secure(serviceError(error));
     }
   },
 };

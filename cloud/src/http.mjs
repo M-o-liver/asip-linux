@@ -78,12 +78,56 @@ export function browserMutation(request, env) {
     fail(403, "Use your ASIP workspace.");
 }
 export async function throttle(env, key, limit = 120) {
-  const window = Math.floor(Date.now() / 60000);
-  const result = await env.DB.prepare(
-    "INSERT INTO rate_limits(key,window,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN window=excluded.window THEN count+1 ELSE 1 END,window=excluded.window RETURNING count",
-  )
-    .bind(key, window)
-    .first();
-  if (result.count > limit)
+  // Admission must not consume D1 writes: doing so makes even reads fail when
+  // the account reaches its daily write allowance. Workers supplies a bounded,
+  // per-location limiter independently of the database.
+  const binding =
+    limit <= 30
+      ? env.PAIR_LIMIT
+      : limit <= 120
+        ? env.API_LIMIT
+        : env.SYNC_LIMIT;
+  if (!binding) throw new Error("ASIP rate limiter is not configured.");
+  if (!(await binding.limit({ key })).success)
     fail(429, "Too many requests. Try again in a minute.");
+}
+
+export function serviceError(error) {
+  if (error instanceof HttpError)
+    return json({ error: error.message }, error.status);
+  const message = String(error);
+  if (
+    /exceeded.*(?:daily|free tier).*?(?:row|read|write)|daily.*(?:read|write).*limit/i.test(
+      message,
+    )
+  ) {
+    const reset = new Date();
+    reset.setUTCHours(24, 1, 0, 0);
+    const retryAfter = Math.max(
+      60,
+      Math.ceil((reset.getTime() - Date.now()) / 1000),
+    );
+    return json(
+      {
+        error:
+          "Cloudflare's daily database allowance is exhausted. Beacon keeps recording locally and will retry after the UTC daily reset.",
+        code: "CLOUD_DAILY_QUOTA",
+        retryAfter,
+      },
+      503,
+      { "Retry-After": String(retryAfter) },
+    );
+  }
+  if (/database.*(?:full|storage limit)|SQLITE_FULL/i.test(message))
+    return json(
+      {
+        error:
+          "ASIP cloud storage needs administrator attention. Local recording continues.",
+        code: "CLOUD_STORAGE_FULL",
+        retryAfter: 3600,
+      },
+      507,
+      { "Retry-After": "3600" },
+    );
+  return json({ error: "ASIP could not complete this request." }, 500);
 }

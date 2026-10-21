@@ -94,9 +94,14 @@ export async function ingest(env, auth, inputs) {
   }
   if (auth.credential)
     await env.DB.prepare(
-      "UPDATE credentials SET last_seen=? WHERE id=? AND account_id=?",
+      "UPDATE credentials SET last_seen=? WHERE id=? AND account_id=? AND (last_seen IS NULL OR last_seen<?)",
     )
-      .bind(now(), auth.credential.id, auth.accountId)
+      .bind(
+        now(),
+        auth.credential.id,
+        auth.accountId,
+        new Date(Date.now() - 15 * 60000).toISOString(),
+      )
       .run();
   return {
     accepted: prepared.map((p) => ({ id: p.event.id, sha256: p.digest })),
@@ -263,18 +268,14 @@ export async function catalogue(env, auth, input) {
     0,
   );
   if (total > 30) fail(400, "Send at most 30 catalogue entries per request.");
-  if (input.reset)
-    statements.push(
-      env.DB.prepare(
-        "DELETE FROM project_catalogue WHERE account_id=? AND device_id=?",
-      ).bind(auth.accountId, device),
-    );
+  // Legacy clients send reset every pass. Preserve rows and only update changed
+  // values instead of deleting/reinserting the entire catalogue every 30 seconds.
   for (const p of input.projects || []) {
     if (!Array.isArray(p.roots) || p.roots.length > 100)
       fail(400, "Invalid project roots.");
     statements.push(
       env.DB.prepare(
-        "INSERT OR REPLACE INTO project_catalogue VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO project_catalogue VALUES(?,?,?,?,?,?,?) ON CONFLICT(account_id,device_id,id) DO UPDATE SET name=excluded.name,description=excluded.description,repository=excluded.repository,roots=excluded.roots WHERE name<>excluded.name OR description<>excluded.description OR repository<>excluded.repository OR roots<>excluded.roots",
       ).bind(
         auth.accountId,
         device,
@@ -297,19 +298,13 @@ export async function catalogue(env, auth, input) {
         string(l.relation, 100),
       ),
     );
-  if (input.reset)
-    statements.push(
-      env.DB.prepare(
-        "DELETE FROM connection_catalogue WHERE account_id=? AND device_id=?",
-      ).bind(auth.accountId, device),
-    );
   for (const c of input.connections || []) {
     if (!Array.isArray(c.projects) || c.projects.length > 100)
       fail(400, "Invalid connection projects.");
     // An allowlist of metadata fields: no credential, prefix, or request bodies.
     statements.push(
       env.DB.prepare(
-        "INSERT OR REPLACE INTO connection_catalogue VALUES(?,?,?,?,?,?,?)",
+        "INSERT INTO connection_catalogue VALUES(?,?,?,?,?,?,?) ON CONFLICT(account_id,device_id,name) DO UPDATE SET provider=excluded.provider,label=excluded.label,origin=excluded.origin,projects=excluded.projects WHERE provider<>excluded.provider OR label<>excluded.label OR origin<>excluded.origin OR projects<>excluded.projects",
       ).bind(
         auth.accountId,
         device,
@@ -330,7 +325,7 @@ export async function catalogue(env, auth, input) {
       fail(400, "Invalid session details.");
     statements.push(
       env.DB.prepare(
-        "INSERT OR REPLACE INTO session_catalogue VALUES(?,?,?,?,?)",
+        "INSERT INTO session_catalogue VALUES(?,?,?,?,?) ON CONFLICT(account_id,device_id,agent,session) DO UPDATE SET details=excluded.details WHERE details<>excluded.details",
       ).bind(
         auth.accountId,
         device,
@@ -338,6 +333,20 @@ export async function catalogue(env, auth, input) {
         string(s.session, 200),
         JSON.stringify(s.details),
       ),
+    );
+  }
+  if (input.pruneConnections !== undefined) {
+    if (
+      !Array.isArray(input.pruneConnections) ||
+      input.pruneConnections.length > 1000
+    )
+      fail(400, "Invalid connection catalogue.");
+    const names = input.pruneConnections.map((name) => string(name, 80));
+    // JSON membership keeps the statement below D1's 100-parameter limit.
+    statements.push(
+      env.DB.prepare(
+        "DELETE FROM connection_catalogue WHERE account_id=? AND device_id=? AND name NOT IN (SELECT value FROM json_each(?))",
+      ).bind(auth.accountId, device, JSON.stringify(names)),
     );
   }
   // D1 permits at most 100 bound parameters in each statement. These inserts
@@ -363,5 +372,22 @@ export async function readCatalogue(env, auth) {
       .bind(auth.accountId)
       .all()
   ).results.map((s) => ({ ...s, details: JSON.parse(s.details) }));
-  return { projects: await projects(env, auth), links, sessions };
+  // Device metadata refreshes need catalogue rows, not an aggregate scan of all
+  // recorded events. The user-facing project endpoint still supplies counts.
+  const catalogueProjects = (
+    await env.DB.prepare(
+      "SELECT id,name,description,repository,roots FROM project_catalogue WHERE account_id=? ORDER BY device_id LIMIT 1000",
+    )
+      .bind(auth.accountId)
+      .all()
+  ).results;
+  const merged = new Map();
+  for (const p of catalogueProjects) {
+    const previous = merged.get(p.id);
+    merged.set(p.id, {
+      ...p,
+      roots: [...new Set([...(previous?.roots || []), ...JSON.parse(p.roots)])],
+    });
+  }
+  return { projects: [...merged.values()], links, sessions };
 }

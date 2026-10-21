@@ -16,6 +16,8 @@ import {
   openDeviceReply,
 } from "../beacon/device-link.mjs";
 import { accessClaims } from "../cloud/src/auth.mjs";
+import { catalogue, readCatalogue } from "../cloud/src/memory.mjs";
+import { serviceError } from "../cloud/src/http.mjs";
 import { encryptionFixture } from "./encryption-fixture.mjs";
 import { generateKeyPair, SignJWT } from "jose";
 
@@ -54,6 +56,20 @@ before(async () => {
       compatibilityDate: "2026-10-21",
       d1Databases: ["DB"],
       r2Buckets: ["RECORDS"],
+      ratelimits: {
+        PAIR_LIMIT: {
+          namespace_id: "27274001",
+          simple: { limit: 30, period: 60 },
+        },
+        API_LIMIT: {
+          namespace_id: "27274002",
+          simple: { limit: 120, period: 60 },
+        },
+        SYNC_LIMIT: {
+          namespace_id: "27274003",
+          simple: { limit: 240, period: 60 },
+        },
+      },
       bindings: { ORIGIN: "https://asip.ca", PRIVATE_PREVIEW: "false" },
     }),
   );
@@ -76,6 +92,223 @@ before(async () => {
 });
 after(async () => {
   await mf?.dispose();
+});
+test("unchanged metadata and authenticated reads consume no D1 writes", async () => {
+  const c = await credential();
+  const auth = { accountId, credential: { id: c.id, kind: "device" } };
+  let writes = 0;
+  const metered = {
+    DB: {
+      prepare: (...args) => db.prepare(...args),
+      batch: async (statements) => {
+        const results = await db.batch(statements);
+        writes += results.reduce((n, r) => n + r.meta.rows_written, 0);
+        return results;
+      },
+    },
+  };
+  const metadata = {
+    reset: true,
+    projects: [{ id: "quota-project", name: "Quota fixture", roots: [] }],
+    sessions: [
+      {
+        agent: "codex",
+        session: "quota-session",
+        details: { title: "Unchanged" },
+      },
+    ],
+    connections: [
+      { name: "quota.connection", provider: "github", projects: [] },
+    ],
+  };
+  await catalogue(metered, auth, metadata);
+  assert.ok(writes > 0);
+  writes = 0;
+  await catalogue(metered, auth, metadata);
+  assert.equal(writes, 0, "legacy reset must not rewrite identical metadata");
+  metadata.sessions[0].details.title = "One changed session";
+  await catalogue(metered, auth, metadata);
+  assert.equal(writes, 1, "only the changed session is written");
+  const readOnly = {
+    DB: {
+      prepare(sql) {
+        assert.equal(
+          /FROM events/i.test(sql),
+          false,
+          "device metadata must not scan history",
+        );
+        return db.prepare(sql);
+      },
+    },
+  };
+  assert.ok(
+    (await readCatalogue(readOnly, auth)).projects.some(
+      (p) => p.id === "quota-project",
+    ),
+  );
+  const rateRowsBefore = (
+    await db.prepare("SELECT count(*) AS n FROM rate_limits").first()
+  ).n;
+  assert.equal((await request("/api/v1/me", c.token)).status, 200);
+  assert.equal(
+    (await db.prepare("SELECT count(*) AS n FROM rate_limits").first()).n,
+    rateRowsBefore,
+  );
+  writes = 0;
+  await catalogue(metered, auth, { pruneConnections: [] });
+  assert.equal(writes, 1, "only the removed connection is written");
+  assert.equal(
+    (
+      await db
+        .prepare(
+          "SELECT count(*) AS n FROM connection_catalogue WHERE device_id=?",
+        )
+        .bind(c.id)
+        .first()
+    ).n,
+    0,
+  );
+});
+test("quota errors are actionable and native retries remain paused across restart", async (t) => {
+  const response = serviceError(
+    Error(
+      "D1_ERROR: Your account has exceeded D1's free tier daily row write limit.",
+    ),
+  );
+  assert.equal(response.status, 503);
+  const failure = await response.json();
+  assert.equal(failure.code, "CLOUD_DAILY_QUOTA");
+  assert.ok(failure.retryAfter >= 60 && failure.retryAfter <= 86400);
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-quota-"));
+  const runtime = new Runtime(home);
+  runtime.signIn({
+    accountId: nativeId,
+    provider: "google",
+    subject: "fixture",
+    handle: "fixture",
+  });
+  t.after(async () => {
+    runtime.cloud?.stop();
+    await runtime.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  let requests = 0;
+  const options = {
+    seal: (v) => Buffer.from(v),
+    unseal: (v) => v.toString(),
+    fetcher: async () => {
+      requests++;
+      return new Response(JSON.stringify(failure), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    },
+  };
+  const sync = new CloudSync(runtime, options);
+  sync.load();
+  sync.connection = {
+    id: "quota-device",
+    token: "fixture",
+    account: { id: accountId, handle: "owner" },
+    origin: "https://asip.ca",
+  };
+  sync.schema().prepare("INSERT INTO cloud_binding VALUES(1,?)").run(accountId);
+  await assert.rejects(sync.sync(), /daily database allowance/);
+  const retryAt = sync.retryAt;
+  await assert.rejects(sync.sync(), /daily database allowance/);
+  assert.equal(requests, 1);
+  const restarted = new CloudSync(runtime, options);
+  restarted.load();
+  assert.equal(restarted.retryAt, retryAt);
+  await assert.rejects(restarted.sync(), /daily database allowance/);
+  assert.equal(requests, 1, "restarting Beacon must not bypass quota backoff");
+});
+test("native metadata sends only changes, survives restart, and prunes removed connection names", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-metadata-delta-"));
+  const runtime = new Runtime(home);
+  runtime.signIn({
+    accountId: nativeId,
+    provider: "google",
+    subject: "fixture",
+    handle: "fixture",
+  });
+  t.after(async () => {
+    runtime.cloud?.stop();
+    await runtime.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const database = runtime.storage();
+  for (let i = 0; i < 65; i++)
+    database
+      .prepare("INSERT INTO session_details VALUES(?,?,?)")
+      .run(
+        "codex",
+        "delta-session-" + i,
+        JSON.stringify({ title: "Session " + i }),
+      );
+  let connections = [
+    { name: "delta.connection", provider: "github", projects: [] },
+  ];
+  runtime.connectionStore = { list: () => connections, clear() {} };
+  const posts = [],
+    reads = [];
+  const options = {
+    seal: (v) => Buffer.from(v),
+    unseal: (v) => v.toString(),
+    fetcher: async (url, init = {}) => {
+      const route = new URL(url).pathname;
+      if (route.endsWith("/catalogue") && init.method === "POST") {
+        posts.push(JSON.parse(init.body));
+        return Response.json({ saved: true });
+      }
+      reads.push(route);
+      if (route.endsWith("/pull"))
+        return Response.json({ events: [], cursor: 0, more: false });
+      if (route.endsWith("/catalogue"))
+        return Response.json({ projects: [], links: [], sessions: [] });
+      if (route.endsWith("/me"))
+        return Response.json({ account: { id: accountId, handle: "owner" } });
+      throw Error("Unexpected fixture request: " + route);
+    },
+  };
+  const sync = new CloudSync(runtime, options);
+  sync.load();
+  sync.connection = {
+    id: "delta-device",
+    token: "fixture",
+    account: { id: accountId, handle: "owner" },
+    origin: "https://asip.ca",
+  };
+  sync.schema().prepare("INSERT INTO cloud_binding VALUES(1,?)").run(accountId);
+  sync.persist();
+  await sync.sync();
+  assert.equal(posts.length, 3);
+  posts.length = reads.length = 0;
+  await sync.sync();
+  assert.equal(posts.length, 0);
+  assert.deepEqual(
+    reads,
+    ["/api/v1/sync/pull"],
+    "idle sync must only check the indexed event cursor",
+  );
+  const restarted = new CloudSync(runtime, options);
+  await restarted.sync();
+  assert.equal(posts.length, 0, "metadata acknowledgments survive restart");
+  database
+    .prepare("UPDATE session_details SET details=? WHERE session=?")
+    .run(JSON.stringify({ title: "Changed session" }), "delta-session-23");
+  await restarted.sync();
+  assert.equal(posts.length, 1);
+  assert.equal(posts[0].sessions.length, 1);
+  assert.equal(posts[0].sessions[0].session, "delta-session-23");
+  posts.length = 0;
+  connections = [];
+  await restarted.sync();
+  assert.equal(posts.length, 1);
+  assert.deepEqual(posts[0].pruneConnections, []);
+  posts.length = 0;
+  await restarted.sync();
+  assert.equal(posts.length, 0);
 });
 test("history pagination follows original time during out-of-order backfill", async () => {
   const c = await credential();
