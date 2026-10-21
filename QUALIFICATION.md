@@ -2,6 +2,28 @@
 
 This page separates native build checks from observed desktop behavior. Installation, MCP startup, and a complete agent session are different checks.
 
+## Automatic Antigravity summaries — October 21
+
+Source `21d4f9c` passed all four native jobs in [build 39525991704](https://github.com/M-o-liver/asip-linux/actions/runs/39525991704). The installed Linux AppImage, Windows EXE, and Intel Mac DMG came from that run's clean merge tree `9e090e4513d44e10f52c3fceef6d3b23adae74b4` (build revision `539d89ee`). This tree matches the source branch exactly.
+
+The helper now reads the completed response at Antigravity's idle Stop from the conversation-specific native JSONL transcript. It records the response and source path, row SHA-256, step index, and native timestamp. Regression checks cover both native transcript filenames, Unicode, bounded reads, later user messages, incomplete responses, tool calls, errors, partial records, direct-message priority, and appearance in recent work. Unknown or unavailable transcripts retain the existing Stop metadata. Existing history is not rewritten.
+
+All three actual agent tests used the ordinary prompt **Reply exactly: Automatic turn summary verified.** without requesting any ASIP tool or record. Linux additionally specified no tools. Each native app returned that text; Beacon recorded it automatically.
+
+| Environment                    | Observed result                                                                                                                                                                                                                                                                                                                                                 |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux, Antigravity CLI 1.4.2   | Same conversation before and after upgrading Beacon: the earlier response produced generic Stop metadata; the new response produced the exact final text and source evidence. Recomputed the native row hash and matched it to the stored hash. Codex retrieved the new automatic record through `asip_recall`.                                                 |
+| Windows, Antigravity desktop   | Updated Beacon while Antigravity and ChatGPT remained open. Sign-in, both agents, one project, and six sessions remained. The response appeared in Beacon's recent work and Edge's project activity. The evidence inspector showed its native transcript path, row hash, step 17, and timestamp. Total activity reached 89 records.                             |
+| Intel Mac, Antigravity desktop | Updated through DMG → Applications while both agents remained open. Sign-in, both agents, all 62 prior events, and three sessions remained. The response appeared in the menu-bar panel's recent work and Safari's correct project/session. Its evidence showed transcript source, hash, step 11, timestamp, and final text; total activity reached 63 records. |
+
+Linux automatic record: `34558e14-b60b-4b24-8715-521bc46d175b`; native session `5d49d953-c68a-4c4d-adc3-c23956e7385f`. Source row SHA-256: `66b61c466d58c7b9f71340558f9ae9ffb94857acc0be0a49f69925b0010ea9f1`.
+
+Windows automatic record: `3a6feb8b-4069-43ea-9f12-0d5828aa4dd1`; native session `520c4ef0-fbb5-4d25-b0ae-8d8e4e92086a`.
+
+Mac automatic record: `20c89226-53c8-42f4-ab38-d1264098820e`; native session `61778954-87a7-467e-9b2e-61f5adf13aa8`.
+
+The Linux installed upgrade also retained encrypted credential files byte-for-byte and passed SQLite integrity checking with 9,986 events at upgrade. The application suite passed 54 cases with two Windows-only skips locally; Windows runs those platform checks in native CI. Go race tests passed. This follow-up changes automatic Antigravity capture, not account linking or history synchronization.
+
 ## Native builds
 
 [Release build 39518756248](https://github.com/M-o-liver/asip-linux/actions/runs/39518756248) passed for source `0706e85` (`v0.4.1-alpha.2`) on Windows, Linux, Apple Silicon macOS, and Intel macOS. Each job runs the application tests, Go race checks, native plugin-manager installation, Codex/Claude MCP connection, installer packaging, and packaged application startup.
@@ -29,7 +51,7 @@ The VMs initially received source `2a50c4a` from [build 39035520339](https://git
 | Experience                              | Linux                                  | Windows VM                                             | Intel Mac VM                                              |
 | --------------------------------------- | -------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------- |
 | Install/update retaining Google sign-in | Observed                               | Observed through NSIS                                  | Observed through DMG → Applications                       |
-| Beacon window/panel                     | Full application                       | Tray panel and full taskbar window                      | Menu-bar panel                                            |
+| Beacon window/panel                     | Full application                       | Tray panel and full taskbar window                     | Menu-bar panel                                            |
 | Open local Projects workspace           | Observed                               | Observed in Edge                                       | Observed in Safari                                        |
 | ChatGPT/Codex native record and recall  | Observed with existing integration     | Completed file verification and fresh-chat retrieval   | Completed cross-agent recall and file verification        |
 | Packaged Open in ChatGPT button         | Native CLI installed                   | Opened installed ASIP plugin page                      | Opened installed ASIP plugin page                         |
@@ -120,7 +142,7 @@ The rejected credentials need replacement or renewed authorization. Their names 
 
 ## Qualification limits
 
-- Some Antigravity turn-ending entries display “Stop” rather than a descriptive summary; explicit result records retain the supplied summary.
+- Earlier Antigravity turn-ending entries retain “Stop”. New completed turns capture the native final response when its supported transcript is available; missing or unsupported transcripts retain metadata only.
 - Verify launch-at-login across an actual guest login cycle.
 - Complete a Claude turn when an authenticated paid account is available.
 - Verify real GitHub identity sign-in in an isolated account/profile. Google sign-in and GitHub API authorization have been exercised; these are separate flows.
