@@ -367,7 +367,7 @@ export async function readCatalogue(env, auth) {
   ).results;
   const sessions = (
     await env.DB.prepare(
-      "SELECT agent,session,details FROM session_catalogue WHERE account_id=? ORDER BY device_id LIMIT 1000",
+      "SELECT agent,session,details FROM (SELECT agent,session,details,ROW_NUMBER() OVER(PARTITION BY agent,session ORDER BY device_id) AS precedence FROM session_catalogue WHERE account_id=?) WHERE precedence=1 LIMIT 1000",
     )
       .bind(auth.accountId)
       .all()

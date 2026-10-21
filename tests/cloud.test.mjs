@@ -229,6 +229,34 @@ test("quota errors are actionable and native retries remain paused across restar
   await assert.rejects(restarted.sync(), /daily database allowance/);
   assert.equal(requests, 1, "restarting Beacon must not bypass quota backoff");
 });
+test("metadata from multiple computers returns each native session once", async () => {
+  const devices = await Promise.all([credential(), credential(), credential()]);
+  for (const device of devices)
+    await catalogue(
+      { DB: db },
+      { accountId, credential: { id: device.id, kind: "device" } },
+      {
+        sessions: [
+          {
+            agent: "codex",
+            session: "same-native-session-across-devices",
+            details: { title: "Original native session" },
+          },
+        ],
+      },
+    );
+  const result = await readCatalogue(
+    { DB: db },
+    { accountId, credential: { id: devices[0].id, kind: "device" } },
+  );
+  assert.equal(
+    result.sessions.filter(
+      (s) => s.session === "same-native-session-across-devices",
+    ).length,
+    1,
+    "replicas must not consume the unique-session metadata limit",
+  );
+});
 test("native metadata sends only changes, survives restart, and prunes removed connection names", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-metadata-delta-"));
   const runtime = new Runtime(home);
