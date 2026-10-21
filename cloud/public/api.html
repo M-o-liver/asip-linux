@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Cloud API & agent connections — ASIP</title>
+    <link rel="icon" href="/assets/mark.svg" />
+    <link rel="stylesheet" href="/assets/site.css" />
+  </head>
+  <body>
+    <header class="nav wrap">
+      <a class="wordmark" href="/"
+        ><img src="/assets/mark.svg" alt="" width="34" height="34" />ASIP</a
+      >
+      <nav aria-label="Main navigation">
+        <a href="/">Home</a><a href="/download">Download</a>
+      </nav>
+      <a class="nav-action" href="/auth/access">Your workspace ↗</a>
+    </header>
+    <main class="wrap">
+      <header class="page-intro">
+        <p class="eyebrow">Project knowledge, within reach</p>
+        <h1>Your memory.<br />Your agents.</h1>
+        <p class="lede">
+          Give an authorized agent the context, history and evidence behind your
+          projects, wherever it operates.
+        </p>
+      </header>
+      <article class="prose">
+        <p class="notice">
+          Create a named agent connection in your workspace under
+          <strong>Account & API access</strong>. Choose its projects and whether
+          it can append records. Each token expires after 90 days and can be
+          revoked.
+        </p>
+        <h2>Ask for context over HTTP.</h2>
+        <pre><code>GET https://asip.ca/api/v1/events
+    ?project=github.com/owner/project&query=deployment
+Authorization: Bearer &lt;your ASIP token&gt;</code></pre>
+        <p>
+          During private preview, also send the preview authorization cookie
+          shown when creating a connection. This is Cloudflare Access admission;
+          your ASIP token independently controls which account and projects the
+          agent can read. The preview cookie expires with the browser’s Access
+          session.
+        </p>
+        <pre><code>Cookie: CF_Authorization=&lt;your preview session&gt;</code></pre>
+        <h2>Or connect through MCP.</h2>
+        <p>
+          The cloud endpoint is <code>https://asip.ca/mcp</code>. It accepts
+          authenticated Streamable HTTP JSON requests. Configure the
+          Authorization header and, during preview, the Cookie header in your
+          client’s supported connection settings.
+        </p>
+        <pre><code>{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "asip_recall",
+    "arguments": {
+      "project": "github.com/owner/project",
+      "query": "what was verified"
+    }
+  }
+}</code></pre>
+        <p>
+          Cloud tools: <code>asip_status</code>, <code>asip_projects</code>,
+          <code>asip_recall</code>, <code>asip_connections</code>, and
+          <code>asip_record</code> for connections granted write access. Native
+          Beacon plugins continue to record locally and recall the synchronized
+          history.
+        </p>
+        <h2>Follow the record to its source.</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Endpoint</th>
+              <th>What it returns</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>GET /api/v1/me</code></td>
+              <td>Authenticated account and workspace</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/v1/projects</code></td>
+              <td>Projects, repositories and activity counts</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/v1/events</code></td>
+              <td>
+                Searchable history with query, project, session, agent and
+                category filters
+              </td>
+            </tr>
+            <tr>
+              <td><code>GET /api/v1/sessions</code></td>
+              <td>Native agent sessions and activity</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/v1/events/:id/source</code></td>
+              <td>Original canonical record, checked against its SHA-256</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/v1/relationships</code></td>
+              <td>Explicit and shared-session project relationships</td>
+            </tr>
+            <tr>
+              <td><code>GET /api/v1/connections</code></td>
+              <td>Named connection metadata and owning computers</td>
+            </tr>
+            <tr>
+              <td><code>POST /api/v1/events</code></td>
+              <td>Append immutable records with write permission</td>
+            </tr>
+          </tbody>
+        </table>
+        <p>
+          Events preserve their original IDs, time, agent, native session,
+          project, kind, summary, and evidence. Repeating an identical record is
+          safe. Reusing its ID with different content returns HTTP 409. Query
+          results include a <code>next</code> cursor; pass it as
+          <code>before</code> for the next page.
+        </p>
+        <h2>Keep the scope clear.</h2>
+        <p>
+          Cloud connections access the owner’s account and assigned projects.
+          Provider credentials are never returned by the cloud API. A connection
+          named <code>github.work</code> still runs provider requests through
+          the Beacon holding that credential.
+        </p>
+        <p>
+          <a href="https://github.com/M-o-liver/asip-linux"
+            >Protocol, implementation & qualification evidence ↗</a
+          >
+        </p>
+      </article>
+    </main>
+    <footer class="footer wrap">
+      <a class="wordmark" href="/">ASIP</a>
+      <p>Memory that moves with your work.</p>
+      <a href="/auth/access">Your workspace ↗</a>
+    </footer>
+  </body>
+</html>

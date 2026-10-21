@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Your project memory — ASIP</title>
+    <link rel="icon" href="/assets/mark.svg" />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <link rel="stylesheet" href="/assets/workspace.css" />
+    <script defer src="/assets/workspace.js"></script>
+  </head>
+  <body class="workspace">
+    <a class="skip" href="#activity">Skip to activity</a>
+    <aside class="ws-sidebar">
+      <a href="/" class="wordmark"
+        ><img src="/assets/mark.svg" alt="" width="31" height="31" />ASIP</a
+      >
+      <p class="sidebar-caption">YOUR CLOUD WORKSPACE</p>
+      <button id="all-projects" class="project-button selected">
+        All project memory
+      </button>
+      <div class="sidebar-section">
+        PROJECTS <span id="project-count"></span>
+      </div>
+      <nav id="projects" aria-label="Projects"></nav>
+      <div class="sidebar-bottom">
+        <button data-view="devices">Computers & agents <span>↗</span></button
+        ><button data-view="connections">API connections <span>↗</span></button
+        ><button data-view="settings">
+          Account & API access <span>↗</span></button
+        ><a href="/download">Download Beacon <span>↓</span></a>
+        <div class="account-chip">
+          <span id="avatar">A</span>
+          <div>
+            <strong id="account-name">Loading…</strong
+            ><small id="account-handle"></small>
+          </div>
+        </div>
+      </div>
+    </aside>
+    <div class="ws-shell">
+      <header class="ws-topbar">
+        <button id="menu" aria-label="Toggle project navigation">☰</button
+        ><span id="breadcrumb">Your workspace / Project memory</span>
+        <div>
+          <span class="cloud-badge"
+            ><span class="live-dot"></span> Private cloud</span
+          ><button id="refresh">Refresh ↻</button>
+        </div>
+      </header>
+      <main class="ws-main">
+        <p id="error" class="error" role="alert"></p>
+        <section data-panel="history">
+          <header class="ws-heading">
+            <div>
+              <p class="eyebrow">Continuous project memory</p>
+              <h1 id="title">All project memory</h1>
+              <p id="project-description">
+                The intent, the work, and the evidence. Together.
+              </p>
+            </div>
+            <span class="record-count" id="record-count"></span>
+          </header>
+          <div id="empty-onboarding" class="empty-onboarding" hidden>
+            <img src="/assets/mark.svg" alt="" width="56" height="56" />
+            <h2>Your next session starts here.</h2>
+            <p>
+              Download Beacon, sign in, and choose
+              <strong>Connect cloud</strong>. Your recorded work will appear
+              here as it synchronizes.
+            </p>
+            <a href="/download" class="button primary">Get Beacon ↓</a>
+          </div>
+          <div class="history-layout">
+            <section id="activity" class="activity">
+              <form id="filters" class="ws-filters">
+                <input
+                  type="search"
+                  id="query"
+                  placeholder="Search work and evidence"
+                  aria-label="Search work and evidence"
+                /><select id="kind" aria-label="Record category">
+                  <option value="work">Work & outcomes</option>
+                  <option value="">All records</option>
+                  <option value="intent">Intent</option>
+                  <option value="results">Results & evidence</option>
+                  <option value="failures">
+                    Failures & unresolved
+                  </option></select
+                ><select id="agent" aria-label="Agent">
+                  <option value="">Every agent</option>
+                  <option value="codex">Codex</option>
+                  <option value="claude-code">Claude Code</option>
+                  <option value="antigravity">Antigravity</option></select
+                ><button type="submit">Search</button>
+              </form>
+              <div id="session-filter" class="session-filter" hidden>
+                <span id="session-label"></span
+                ><button id="clear-session">Clear ×</button>
+              </div>
+              <div id="events" aria-live="polite"></div>
+              <p id="empty" class="muted" hidden>
+                No matching records. Try another filter.
+              </p>
+              <div class="pagination">
+                <button id="previous" disabled>← Newer</button
+                ><span id="page">Page 1</span
+                ><button id="next" disabled>Older →</button>
+              </div>
+            </section>
+            <aside class="ws-details">
+              <section class="ws-card evidence">
+                <div class="ws-card-heading">
+                  <h2>Source & evidence</h2>
+                  <span>↗</span>
+                </div>
+                <p id="evidence-empty" class="muted">
+                  Select a record to follow its source.
+                </p>
+                <div id="evidence" hidden>
+                  <h3 id="evidence-title"></h3>
+                  <dl id="facts"></dl>
+                  <a id="source-download" class="underlink"
+                    >Download source record ↓</a
+                  >
+                  <details>
+                    <summary>Recorded evidence</summary>
+                    <pre id="record-data"></pre>
+                  </details>
+                </div>
+              </section>
+              <section class="ws-card">
+                <div class="ws-card-heading">
+                  <h2>Agent sessions</h2>
+                  <span id="session-count"></span>
+                </div>
+                <div id="sessions"></div>
+              </section>
+              <section class="ws-card">
+                <div class="ws-card-heading">
+                  <h2>Project relationships</h2>
+                </div>
+                <div id="relationships"></div>
+              </section>
+            </aside>
+          </div>
+        </section>
+        <section data-panel="devices" hidden>
+          <header class="ws-heading">
+            <div>
+              <p class="eyebrow">Your memory moves with you</p>
+              <h1>Computers & agents</h1>
+              <p>Manage the computers that synchronize with this account.</p>
+            </div>
+          </header>
+          <p class="notice">
+            To add a computer, open Beacon and choose
+            <strong>Connect cloud</strong>. Revoking a device stops its future
+            cloud access. Its local history remains on that computer.
+          </p>
+          <div id="devices" class="management-list"></div>
+        </section>
+        <section data-panel="connections" hidden>
+          <header class="ws-heading">
+            <div>
+              <p class="eyebrow">Names your agents can use</p>
+              <h1>API connections</h1>
+              <p>Connection metadata from your synchronized computers.</p>
+            </div>
+          </header>
+          <p class="notice">
+            Provider credentials stay in the owning computer’s OS keychain.
+            Native agents use that Beacon to call these named connections. Cloud
+            API access is managed in Account & API access.
+          </p>
+          <div id="connections" class="management-list"></div>
+        </section>
+        <section data-panel="settings" hidden>
+          <header class="ws-heading">
+            <div>
+              <p class="eyebrow">Your account. Your knowledge.</p>
+              <h1>Account & API access</h1>
+              <p>
+                Choose your address and authorize agents to access your memory.
+              </p>
+            </div>
+          </header>
+          <div class="settings-grid">
+            <section class="ws-card">
+              <h2>Your workspace</h2>
+              <form id="profile">
+                <label
+                  >Name<input
+                    id="profile-name"
+                    maxlength="200"
+                    required /></label
+                ><label
+                  >Workspace handle<input
+                    id="profile-handle"
+                    pattern="[a-z0-9][a-z0-9_-]{2,39}"
+                    minlength="3"
+                    maxlength="40"
+                    required
+                /></label>
+                <p class="small muted">
+                  asip.ca/users/<span id="profile-preview"></span>
+                </p>
+                <button type="submit" class="button primary">
+                  Save account
+                </button>
+                <p id="profile-status" role="status"></p>
+              </form>
+              <div id="identity-links"></div>
+              <button id="signout" class="signout">Sign out</button>
+            </section>
+            <section class="ws-card">
+              <h2>Create an agent connection</h2>
+              <p class="muted">
+                Tokens expire after 90 days. Choose the smallest access this
+                agent needs.
+              </p>
+              <form id="token-form">
+                <label
+                  >Connection name<input
+                    id="token-label"
+                    placeholder="Codex on my laptop"
+                    maxlength="120"
+                    required /></label
+                ><label
+                  >Agent<select id="token-agent">
+                    <option value="codex">Codex</option>
+                    <option value="claude-code">Claude Code</option>
+                    <option value="antigravity">Antigravity</option>
+                    <option value="http">HTTP integration</option>
+                  </select></label
+                ><label
+                  >Project access<select
+                    id="token-projects"
+                    multiple
+                    aria-describedby="token-project-help"
+                  ></select
+                ></label>
+                <p id="token-project-help" class="small muted">
+                  No selected projects grants access to all of your projects.
+                </p>
+                <label class="checkbox"
+                  ><input type="checkbox" id="token-write" />Allow this agent to
+                  append records</label
+                ><button type="submit" class="button primary">
+                  Create connection
+                </button>
+              </form>
+              <div id="token-result" hidden>
+                <p class="notice">
+                  Save these credentials now. The ASIP token is shown once. Keep
+                  them out of prompts, repositories, and shared logs.
+                </p>
+                <label
+                  >ASIP bearer token<input
+                    id="token-value"
+                    readonly
+                    type="password" /></label
+                ><button id="copy-token">Copy ASIP token</button>
+                <div id="preview-result" hidden>
+                  <label
+                    >Preview authorization cookie<input
+                      id="preview-value"
+                      readonly
+                      type="password" /></label
+                  ><button id="copy-preview">Copy preview cookie</button>
+                  <p class="small muted">
+                    Also send this as the Cookie header while the preview gate
+                    is active. It expires with the 24-hour preview session. Sign
+                    in again to renew it.
+                  </p>
+                </div>
+                <a href="/api" class="underlink">API & MCP instructions ↗</a>
+              </div>
+            </section>
+          </div>
+          <h2 class="list-heading">Authorized agents</h2>
+          <div id="tokens" class="management-list"></div>
+        </section>
+      </main>
+    </div>
+  </body>
+</html>

@@ -88,6 +88,7 @@ export class Runtime {
     this.account = account;
   }
   signOut() {
+    this.cloud?.stop();
     this.workspace?.clear();
     this.abortRequests();
     this.connectionStore?.clear();
@@ -462,6 +463,7 @@ export class Runtime {
       );
     return {
       events: rows.map((row) => ({ ...row, data: JSON.parse(row.data) })),
+      ...(this.cloud ? { cloud: this.cloud.status() } : {}),
     };
   }
 
@@ -524,6 +526,7 @@ export class Runtime {
             project: this.projectForSession(c.agent, body.session),
             lastSession: c.lastSession || null,
             lastProject: c.lastProject || null,
+            cloud: this.cloud?.status(),
           };
         } else if (req.url === "/projects") {
           this.client(token);

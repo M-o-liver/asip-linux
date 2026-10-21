@@ -53,7 +53,7 @@ Use **Import connections** to load a JSON list of connection objects. Each objec
 
 API requests currently support JSON bodies up to 64 KiB and responses up to 64 KiB. Larger responses return `truncated: true` without a body; use the provider's pagination or filtering. Streaming and file uploads are not implemented. Google API access currently uses Gemini keys; Google account sign-in does not authorize other Google APIs.
 
-The account is identified by the Google or GitHub provider's stable subject. Account linking, hosted account management, and cross-device synchronization are not implemented.
+The local account is identified by the Google or GitHub provider's stable subject. Cloud-enabled Beacon builds connect that local history to a durable hosted ASIP account through explicit browser approval. Choose **Connect cloud** to synchronize existing and future project records, evidence, sessions, relationships, and named API metadata. Provider credentials stay in the device's OS keychain. Offline recording continues, and sync resumes when connectivity returns. See [the cloud architecture and operations guide](cloud/README.md).
 
 [Implementation notes](ARCHITECTURE.md) describe record attribution, project association, API behavior, platform qualification, and the Jev investigation.
 

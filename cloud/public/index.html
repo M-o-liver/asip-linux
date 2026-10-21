@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      name="description"
+      content="Continuous project memory across Codex, Claude Code, Antigravity and your computers. ASIP preserves what agents intended, accomplished and verified."
+    />
+    <meta name="theme-color" content="#f4f3ed" />
+    <meta
+      property="og:title"
+      content="ASIP — Your agents change. Your project memory stays."
+    />
+    <meta
+      property="og:description"
+      content="One durable history for your AI work, across agents and computers."
+    />
+    <title>ASIP — Memory that moves with your work</title>
+    <link rel="icon" href="/assets/mark.svg" />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <script src="/assets/site.js" defer></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="nav wrap">
+      <a class="wordmark" href="/" aria-label="ASIP home"
+        ><img src="/assets/mark.svg" alt="" width="34" height="34" />ASIP</a
+      >
+      <nav aria-label="Main navigation">
+        <a href="#how">How it works</a><a href="/api">For agents</a
+        ><a href="/download">Download</a>
+      </nav>
+      <a href="/auth/access" class="nav-action"
+        >Your workspace <span aria-hidden="true">↗</span></a
+      >
+    </header>
+    <main id="main">
+      <section class="hero wrap">
+        <div class="hero-copy">
+          <p class="eyebrow">
+            <span class="live-dot"></span> Continuous memory for AI work
+          </p>
+          <h1>
+            Your agents change.<br />Your project<br /><em>memory stays.</em>
+          </h1>
+          <p class="lede">
+            Pick up where your last agent left off. Keep the intent, the work,
+            and the evidence together—across agents and computers.
+          </p>
+          <div class="actions">
+            <a class="button primary" href="/download"
+              >Get ASIP Beacon <span aria-hidden="true">↓</span></a
+            ><a class="underlink" href="#proof"
+              >See what it remembers <span aria-hidden="true">↘</span></a
+            >
+          </div>
+          <p class="small muted">Windows, macOS & Linux · Private preview</p>
+        </div>
+        <div class="hero-visual">
+          <div class="visual-label">
+            <span>ONE PROJECT. EVERY HANDOFF.</span
+            ><span class="small">01 / ASIP workspace</span>
+          </div>
+          <div class="product-frame">
+            <div class="window-bar">
+              <span class="window-dots">● ● ●</span><span>ASIP / Projects</span
+              ><span class="synced"
+                ><span class="live-dot"></span> Memory connected</span
+              >
+            </div>
+            <img
+              class="workspace-shot"
+              src="/assets/workspace.png"
+              width="1280"
+              height="900"
+              alt="ASIP’s project workspace showing recorded agent work, sessions and source evidence"
+              fetchpriority="high"
+            />
+            <div class="frame-caption">
+              <span>Real product. Traceable work.</span
+              ><span>Intent → Result → Evidence</span>
+            </div>
+          </div>
+          <div class="handoff-note">
+            <img src="/assets/mark.svg" alt="" width="34" height="34" />
+            <div>
+              <strong>Start the next session with context.</strong>
+              <p>Your history follows the project.</p>
+            </div>
+            <span aria-hidden="true">↗</span>
+          </div>
+        </div>
+      </section>
+      <section class="agent-strip wrap" aria-label="Supported agents">
+        <span>Different agents.<br /><strong>One shared memory.</strong></span>
+        <div><span class="agent-glyph">⌘</span>Codex</div>
+        <div><span class="claude-glyph">✳</span>Claude Code</div>
+        <div><span class="agent-glyph">△</span>Antigravity</div>
+      </section>
+      <section id="proof" class="section wrap proof">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">A record you can return to</p>
+            <h2>“What happened?”<br />Already answered.</h2>
+          </div>
+          <p>
+            Plans become work. Work leaves evidence.<br />ASIP keeps the
+            connections intact, so the next agent can understand what came
+            before.
+          </p>
+        </div>
+        <div class="proof-layout">
+          <div
+            class="proof-tabs"
+            role="tablist"
+            aria-label="Explore a recorded handoff"
+          >
+            <button
+              role="tab"
+              id="tab-intent"
+              aria-selected="true"
+              aria-controls="proof-panel"
+              data-proof="intent"
+            >
+              <span>01</span>
+              <div>
+                <strong>The original intent</strong>
+                <p>Know what the agent set out to do.</p>
+              </div>
+              <span aria-hidden="true">↗</span></button
+            ><button
+              role="tab"
+              id="tab-result"
+              aria-selected="false"
+              aria-controls="proof-panel"
+              data-proof="result"
+              tabindex="-1"
+            >
+              <span>02</span>
+              <div>
+                <strong>The completed work</strong>
+                <p>See the result, including failures.</p>
+              </div>
+              <span aria-hidden="true">↗</span></button
+            ><button
+              role="tab"
+              id="tab-evidence"
+              aria-selected="false"
+              aria-controls="proof-panel"
+              data-proof="evidence"
+              tabindex="-1"
+            >
+              <span>03</span>
+              <div>
+                <strong>The supporting evidence</strong>
+                <p>Follow the source back to its session.</p>
+              </div>
+              <span aria-hidden="true">↗</span>
+            </button>
+          </div>
+          <article
+            class="proof-panel"
+            id="proof-panel"
+            role="tabpanel"
+            aria-labelledby="tab-intent"
+            tabindex="0"
+          >
+            <p class="eyebrow" id="proof-kind">
+              INTENT / ASIP RELEASE QUALIFICATION
+            </p>
+            <h3 id="proof-title">Capture the work without asking twice.</h3>
+            <p id="proof-text">
+              Verify that an ordinary Antigravity reply is automatically
+              preserved and can be recalled by Codex, with its original session
+              and source evidence.
+            </p>
+            <div class="record-facts">
+              <div>
+                <span>Project</span><code>github.com/M-o-liver/asip-linux</code>
+              </div>
+              <div>
+                <span>Recorded in</span><code>Native agent session</code>
+              </div>
+              <div>
+                <span>Source</span
+                ><a
+                  href="https://github.com/M-o-liver/asip-linux/blob/main/QUALIFICATION.md"
+                  >Published qualification evidence ↗</a
+                >
+              </div>
+            </div>
+            <p class="small muted">
+              Example drawn from ASIP’s published alpha 3 qualification.
+            </p>
+          </article>
+        </div>
+      </section>
+      <section id="how" class="dark-section">
+        <div class="wrap">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Continuity, built in</p>
+              <h2>Close the laptop.<br />Keep the thread.</h2>
+            </div>
+            <p>
+              Beacon records on your computer. Your private workspace brings the
+              record with you. Connected agents can recall the same project
+              knowledge wherever you work.
+            </p>
+          </div>
+          <ol class="flow">
+            <li>
+              <span>01 / RECORD</span>
+              <h3>Work normally.</h3>
+              <p>
+                Native plugins connect Codex, Claude Code, and Antigravity to
+                Beacon.
+              </p>
+            </li>
+            <li>
+              <span>02 / PRESERVE</span>
+              <h3>Keep the useful parts.</h3>
+              <p>
+                Intent, results, native sessions, project associations, and
+                structured evidence stay together.
+              </p>
+            </li>
+            <li>
+              <span>03 / CONTINUE</span>
+              <h3>Pick it up anywhere.</h3>
+              <p>
+                Connect another computer or authorize an agent to retrieve your
+                cloud history.
+              </p>
+            </li>
+          </ol>
+          <div class="recall-demo">
+            <div>
+              <span class="code-label">AN AGENT ASKS</span>
+              <pre><code>asip_recall({
+  project: "github.com/M-o-liver/asip-linux",
+  query: "Automatic turn summary"
+})</code></pre>
+            </div>
+            <div>
+              <span class="code-label">THE PROJECT REMEMBERS</span>
+              <blockquote>“Automatic turn summary verified.”</blockquote>
+              <p>
+                Original response · Native session · Source hash<br />Available
+                to the next connected agent.
+              </p>
+              <a href="/api"
+                >Explore the cloud API <span aria-hidden="true">↗</span></a
+              >
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="section wrap details-grid">
+        <div>
+          <p class="eyebrow">A home for the whole project</p>
+          <h2>Less archaeology.<br />More momentum.</h2>
+          <p class="lede">
+            Explore the work by project, session, agent, or outcome. Open the
+            evidence when you need the detail.
+          </p>
+          <a class="underlink" href="/auth/access">Open your workspace ↗</a>
+        </div>
+        <div class="editorial-list">
+          <article>
+            <span>01</span>
+            <div>
+              <h3>The history behind the handoff</h3>
+              <p>
+                Search past work, inspect changes and failures, and follow a
+                record to its original conversation.
+              </p>
+            </div>
+          </article>
+          <article>
+            <span>02</span>
+            <div>
+              <h3>Connections with names you remember</h3>
+              <p>
+                Give APIs clear names and project assignments. Your agents use
+                the connection; Beacon holds the credential in your OS keychain.
+              </p>
+            </div>
+          </article>
+          <article>
+            <span>03</span>
+            <div>
+              <h3>Your computers, working together</h3>
+              <p>
+                Keep recording locally while offline. Synchronization resumes
+                when the connection returns, preserving record IDs and evidence.
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section class="closing wrap">
+        <p class="eyebrow">Your next session can start here</p>
+        <h2>Give your AI work<br />a lasting memory.</h2>
+        <a class="button primary" href="/download"
+          >Get ASIP Beacon <span aria-hidden="true">↓</span></a
+        >
+        <p class="small muted">
+          Private preview · Admission managed by the ASIP administrator
+        </p>
+      </section>
+    </main>
+    <footer class="footer wrap">
+      <a class="wordmark" href="/"
+        ><img src="/assets/mark.svg" alt="" width="27" height="27" />ASIP</a
+      >
+      <p>Memory that moves with your work.</p>
+      <nav aria-label="Footer">
+        <a href="/api">API</a
+        ><a href="https://github.com/M-o-liver/asip-linux">Source ↗</a
+        ><a href="/download">Download</a>
+      </nav>
+    </footer>
+  </body>
+</html>

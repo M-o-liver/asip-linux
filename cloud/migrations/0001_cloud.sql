@@ -1,0 +1,17 @@
+PRAGMA foreign_keys=ON;
+CREATE TABLE accounts(id TEXT PRIMARY KEY,handle TEXT NOT NULL UNIQUE,name TEXT NOT NULL,created_at TEXT NOT NULL);
+CREATE TABLE identities(provider TEXT NOT NULL,subject TEXT NOT NULL,account_id TEXT NOT NULL REFERENCES accounts(id),email TEXT,PRIMARY KEY(provider,subject));
+CREATE TABLE credentials(hash TEXT PRIMARY KEY,id TEXT NOT NULL UNIQUE,account_id TEXT NOT NULL REFERENCES accounts(id),kind TEXT NOT NULL,label TEXT NOT NULL,agent TEXT NOT NULL,scopes TEXT NOT NULL,projects TEXT NOT NULL,created_at TEXT NOT NULL,expires_at TEXT NOT NULL,revoked_at TEXT,last_seen TEXT);
+CREATE INDEX credentials_account ON credentials(account_id,kind);
+CREATE TABLE browser_sessions(hash TEXT PRIMARY KEY,account_id TEXT NOT NULL REFERENCES accounts(id),expires_at TEXT NOT NULL);
+CREATE TABLE device_codes(hash TEXT PRIMARY KEY,account_id TEXT NOT NULL REFERENCES accounts(id),challenge TEXT NOT NULL,label TEXT NOT NULL,platform TEXT NOT NULL,expires_at TEXT NOT NULL);
+CREATE TABLE oauth_states(hash TEXT PRIMARY KEY,provider TEXT NOT NULL,verifier TEXT NOT NULL,nonce TEXT NOT NULL,account_id TEXT,expires_at TEXT NOT NULL);
+CREATE TABLE events(seq INTEGER PRIMARY KEY AUTOINCREMENT,account_id TEXT NOT NULL REFERENCES accounts(id),id TEXT NOT NULL,at TEXT NOT NULL,agent TEXT NOT NULL,session TEXT NOT NULL,kind TEXT NOT NULL,project TEXT,summary TEXT NOT NULL,data TEXT NOT NULL,sha256 TEXT NOT NULL,object_key TEXT NOT NULL,device_id TEXT NOT NULL,received_at TEXT NOT NULL,UNIQUE(account_id,id));
+CREATE INDEX events_project ON events(account_id,project,at DESC,seq DESC);
+CREATE INDEX events_session ON events(account_id,agent,session,at DESC);
+CREATE INDEX events_cursor ON events(account_id,seq);
+CREATE TRIGGER event_collision BEFORE INSERT ON events WHEN EXISTS(SELECT 1 FROM events WHERE account_id=NEW.account_id AND id=NEW.id AND sha256<>NEW.sha256) BEGIN SELECT RAISE(ABORT,'event_conflict'); END;
+CREATE TABLE project_catalogue(account_id TEXT NOT NULL REFERENCES accounts(id),device_id TEXT NOT NULL,id TEXT NOT NULL,name TEXT NOT NULL,description TEXT NOT NULL,repository TEXT NOT NULL,roots TEXT NOT NULL,PRIMARY KEY(account_id,device_id,id));
+CREATE TABLE project_links(account_id TEXT NOT NULL REFERENCES accounts(id),source TEXT NOT NULL,target TEXT NOT NULL,relation TEXT NOT NULL,PRIMARY KEY(account_id,source,target,relation));
+CREATE TABLE connection_catalogue(account_id TEXT NOT NULL REFERENCES accounts(id),device_id TEXT NOT NULL,name TEXT NOT NULL,provider TEXT NOT NULL,label TEXT NOT NULL,origin TEXT NOT NULL,projects TEXT NOT NULL,PRIMARY KEY(account_id,device_id,name));
+CREATE TABLE rate_limits(key TEXT PRIMARY KEY,window INTEGER NOT NULL,count INTEGER NOT NULL);

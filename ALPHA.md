@@ -33,7 +33,7 @@ For APIs, open **API connections**, add a named connection, select the projects 
 
 The [qualification report](QUALIFICATION.md) identifies which workflows were observed in the desktop applications and which have automated coverage only. A working MCP connection does not by itself verify automatic hook capture. ChatGPT desktop and Codex CLI require native hook review. After enabling hooks, start a fresh chat and check that its tool activity appears in ASIP.
 
-Activity is stored on the computer running Beacon. Account linking and cross-device history synchronization are not implemented. Recovery retains up to ten ASIP history checkpoints; it does not back up repository files.
+Activity is first stored on the computer running Beacon. The 0.5 cloud preview adds opt-in synchronization to a private asip.ca account. In a cloud-enabled build, choose **Connect cloud**, enter the preview gate, and approve the computer. Repeat on another computer using the same cloud workspace. Project records, evidence, session details, project metadata and named API metadata synchronize. Provider credentials and repository files remain local. Recovery retains up to ten ASIP history checkpoints; restoring one does not delete cloud records or back up repository files. See [cloud setup and limits](cloud/README.md) and the qualification report for what has actually been deployed and verified.
 
 ## Send feedback
 

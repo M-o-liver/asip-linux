@@ -1,6 +1,6 @@
 {
   "name": "asip-beacon",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "description": "ASIP Beacon and native agent plugins",
   "author": "ASIP",
@@ -10,8 +10,11 @@
   "desktopName": "asip-beacon.desktop",
   "scripts": {
     "start": "electron .",
-    "format": "prettier --write beacon scripts tests package.json README.md .github",
-    "check:format": "prettier --check beacon scripts tests package.json README.md .github",
+    "format": "prettier --write beacon scripts tests cloud/src cloud/public cloud/*.md cloud/*.jsonc package.json README.md .github",
+    "check:format": "prettier --check beacon scripts tests cloud/src cloud/public cloud/*.md cloud/*.jsonc package.json README.md .github",
+    "test:cloud": "node --test tests/cloud.test.mjs",
+    "cloud:dev": "wrangler dev --config cloud/wrangler.jsonc",
+    "cloud:build": "wrangler deploy --dry-run --config cloud/wrangler.jsonc --outdir build/cloud",
     "test": "npm run build:helper && node --test tests/*.test.mjs",
     "build:helper": "node scripts/build-helper.mjs",
     "build:all-helpers": "node scripts/build-helper.mjs --all",
@@ -24,7 +27,10 @@
   "devDependencies": {
     "electron": "44.7.2",
     "electron-builder": "26.15.3",
-    "prettier": "3.9.10"
+    "esbuild": "0.28.2",
+    "miniflare": "5.20261019.1-beta",
+    "prettier": "3.9.10",
+    "wrangler": "4.151.3"
   },
   "build": {
     "appId": "com.asip.beacon",

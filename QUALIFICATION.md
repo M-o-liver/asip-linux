@@ -152,3 +152,48 @@ The rejected credentials need replacement or renewed authorization. Their names 
 - Verify real GitHub identity sign-in in an isolated account/profile. Google sign-in and GitHub API authorization have been exercised; these are separate flows.
 
 Installers remain unsigned and macOS builds are not notarized. Cross-device history synchronization, account linking, streaming API responses, file uploads, and raw signing-secret injection are not implemented. Recovery restores ASIP activity history, not repository files or operating-system state.
+# Cloud memory candidate — 2026-10-21
+
+Candidate application version: **0.5.0**, based on alpha 3 and `bf7e00b`.
+
+Implemented the ASIP landing/download/API site, persistent hosted accounts,
+editable workspace handles, D1 event indexing, private R2 source records,
+device approval with PKCE, encrypted Beacon cloud connections, resumable
+bidirectional record synchronization, project/session metadata synchronization,
+named connection metadata, scoped revocable agent tokens, and a stateless
+HTTP MCP endpoint. Local provider credentials remain in the existing keychain.
+
+The complete local application suite passed **61 tests**, with the existing
+two Windows-only skips. Cloud tests run the actual bundled Worker in the
+official Cloudflare emulator with D1/R2. They cover JWT verification, account
+and project isolation, source hashes, identical retries, atomic conflicting
+batches, revoked tokens, agent attribution, same-origin browser mutations,
+single-use proof-bound device codes, and a two-store Antigravity → Codex
+handoff. An offline record was retained and synchronized after connectivity
+returned. This is simulated device continuity on Linux, not an installed
+Windows or macOS cloud claim.
+
+The landing page was opened in Chrome and its first screen visually inspected.
+Its product image is generated from the actual Beacon workspace in a separate
+fixture account using public alpha 3 qualification evidence. It contains no
+installed user history or credentials. The production Worker bundle passed a
+Wrangler dry run.
+
+Cloudflare resources created: `asip-cloud` D1 database,
+`asip-cloud-records` private R2 bucket, an email one-time PIN identity provider,
+and Access application `8abaeac3-0c90-495b-b512-25acbce70dd8` covering `asip.ca`
+and `*.asip.ca`. The user explicitly approved both initial email addresses and
+24-hour admission sessions. The allowlist policy was read back successfully.
+Both D1 migrations were applied remotely to the new empty database.
+
+The renewed Cloudflare credential is an **account-owned token**. Its account
+verification endpoint returns 200; the personal `/user/tokens/verify` endpoint
+returns 401. Beacon Check now discovers authorized accounts and verifies the
+correct endpoint, with a passing regression test. The renewed `github.work`
+connection returned 200 and identifies M-o-liver.
+
+At this source milestone, production Worker deployment, custom-domain
+attachment, real cloud browser sign-in, native CI, installers, and installed
+cross-device cloud qualification remain pending. These must be recorded with
+their actual results before a cloud release is described as qualified.
+

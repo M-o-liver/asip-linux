@@ -55,6 +55,22 @@ $("view-agents").onclick = () => navigate("agents");
 $("expand-window").onclick = () => window.asip.showFull();
 $("hide-window").onclick = () => window.asip.hideWindow();
 $("quit").onclick = () => window.asip.quit();
+$("cloud-connect").onclick = async () => {
+  try {
+    await window.asip.cloudConnect();
+  } catch (error) {
+    $("cloud-error").textContent = error.message;
+  }
+};
+$("cloud-open").onclick = () => window.asip.cloudOpen();
+$("cloud-disconnect").onclick = () => window.asip.cloudDisconnect();
+$("cloud-sync").onclick = async () => {
+  try {
+    await window.asip.cloudSync();
+  } catch (error) {
+    $("cloud-error").textContent = error.message;
+  }
+};
 function openPluginFolder(plugin) {
   selectedPlugin = plugin;
   $("agent-setup-title").textContent = plugin.name + " plugin";
@@ -278,6 +294,25 @@ function render(state) {
   $("metric-projects").textContent = state.workspace?.projects || 0;
   $("metric-agents").textContent = state.clients.length;
   $("metric-records").textContent = state.records;
+  $("cloud-connect").hidden = state.cloud?.connected && !state.cloud?.error;
+  $("cloud-connect").disabled = Boolean(state.cloud?.connecting);
+  $("cloud-connect").textContent = state.cloud?.connecting
+    ? "Finish in browser…"
+    : state.cloud?.connected
+      ? "Reconnect cloud"
+      : "Connect cloud";
+  $("cloud-actions").hidden = !state.cloud?.connected;
+  $("cloud-sync").disabled = Boolean(state.cloud?.syncing);
+  $("cloud-status").textContent = state.cloud?.syncing
+    ? "Synchronizing project memory…"
+    : state.cloud?.connected
+      ? "Connected as " +
+        state.cloud.account +
+        (state.cloud.lastSync
+          ? " · Synced " + new Date(state.cloud.lastSync).toLocaleTimeString()
+          : " · Ready to sync")
+      : "Keep your project memory across computers.";
+  $("cloud-error").textContent = state.cloud?.error || "";
   $("project-count").textContent =
     (state.workspace?.projects || 0) +
     (state.workspace?.projects === 1 ? " project · " : " projects · ") +

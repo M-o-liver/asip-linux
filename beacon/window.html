@@ -154,6 +154,33 @@
             <p id="preview" hidden>Sign-in is not configured in this build.</p>
           </section>
           <section id="account" hidden>
+            <div class="surface settings-group" id="cloud-card">
+              <div class="setting-row">
+                <div>
+                  <strong>ASIP cloud</strong>
+                  <p id="cloud-status">
+                    Keep your project memory across computers.
+                  </p>
+                </div>
+                <button id="cloud-connect" class="primary">
+                  Connect cloud
+                </button>
+              </div>
+              <p id="cloud-error" role="status"></p>
+              <div class="buttons" id="cloud-actions" hidden>
+                <button id="cloud-open" class="secondary">
+                  Cloud workspace
+                </button>
+                <button id="cloud-sync" class="secondary">Sync now</button>
+                <button id="cloud-disconnect" class="text-button">
+                  Disconnect cloud
+                </button>
+              </div>
+              <p class="help">
+                History, evidence, projects, and connection names sync. API
+                credentials stay in this computer’s keychain.
+              </p>
+            </div>
             <div class="workspace-card">
               <div class="workspace-icon">
                 <svg aria-hidden="true"><use href="#i-overview" /></svg>
