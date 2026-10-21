@@ -98,6 +98,7 @@ assertion inside this encrypted reply to Beacon. The loopback callback checks
 Host, decrypts with its in-memory private key, and verifies the state. Forged
 or altered replies fail without consuming the pending connection. Redeeming
 the code requires the original proof verifier.
+The callback returns the browser to the hosted workspace.
 D1 consumes the code atomically. The resulting device token is random, hashed
 on the server, expires after 90 days, and is revocable in the workspace.
 
@@ -162,6 +163,9 @@ credentials default to read access, can be restricted to a project list, bind
 new records to a named agent, and expire after 90 days. Every read endpoint,
 source download, relationship query, session query, and MCP call enforces that
 account and project scope. Tokens are shown once and stored only as hashes.
+After creating a connection, **Check connection** exercises bearer HTTP access,
+project restrictions, source SHA-256 integrity and MCP recall. The token stays
+in the owner's browser throughout this check.
 
 ## Operations
 

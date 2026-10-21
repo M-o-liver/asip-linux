@@ -1,3 +1,5 @@
+import { checkConnection } from "./api-check.js";
+
 const $ = (id) => document.getElementById(id),
   names = {
     codex: "Codex",
@@ -14,7 +16,8 @@ let account,
   page = 0,
   lastEvents = [],
   projectList = [],
-  generation = 0;
+  generation = 0,
+  issuedProjects = [];
 const node = (tag, text, className) => {
   const el = document.createElement(tag);
   if (text !== undefined) el.textContent = text;
@@ -401,6 +404,10 @@ $("token-form").onsubmit = async (e) => {
       }),
     });
     $("token-value").value = result.token;
+    issuedProjects = [...$("token-projects").selectedOptions].map(
+      (o) => o.value,
+    );
+    $("token-check-status").textContent = "";
     $("token-result").hidden = false;
     const preview = await api("preview-authorization", {
       method: "POST",
@@ -420,6 +427,31 @@ $("copy-token").onclick = async () => {
 $("copy-preview").onclick = async () => {
   await navigator.clipboard.writeText($("preview-value").value);
   $("copy-preview").textContent = "Copied";
+};
+$("check-token").onclick = async () => {
+  $("check-token").disabled = true;
+  $("token-check-status").textContent =
+    "Checking HTTP, MCP, and source integrity…";
+  try {
+    const result = await checkConnection(
+      $("token-value").value,
+      issuedProjects,
+    );
+    $("token-check-status").textContent =
+      "Connected to @" +
+      result.account +
+      ". HTTP and MCP recall passed. " +
+      result.projects.length +
+      " accessible projects. " +
+      (result.write ? "Recording allowed. " : "Read-only access. ") +
+      (result.sourceVerified
+        ? "Source SHA-256 verified for record " + result.record + "."
+        : "No source records yet.");
+  } catch (e) {
+    $("token-check-status").textContent = e.message;
+  } finally {
+    $("check-token").disabled = false;
+  }
 };
 $("signout").onclick = async () => {
   await fetch("/auth/logout", { method: "POST" });

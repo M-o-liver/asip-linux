@@ -7,7 +7,7 @@
     <link rel="icon" href="/assets/mark.svg" />
     <link rel="stylesheet" href="/assets/site.css" />
     <link rel="stylesheet" href="/assets/workspace.css" />
-    <script defer src="/assets/workspace.js"></script>
+    <script type="module" src="/assets/workspace.js"></script>
   </head>
   <body class="workspace">
     <a class="skip" href="#activity">Skip to activity</a>
@@ -274,6 +274,8 @@
                     in again to renew it.
                   </p>
                 </div>
+                <button id="check-token">Check connection</button>
+                <p id="token-check-status" role="status" class="small"></p>
                 <a href="/api" class="underlink">API & MCP instructions ↗</a>
               </div>
             </section>

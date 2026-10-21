@@ -247,10 +247,12 @@ export class CloudSync {
             finish(400, "Invalid ASIP connection.");
             return;
           }
-          finish(
-            200,
-            "ASIP received the connection. Return to Beacon to check synchronization. You can close this tab.",
-          );
+          res.writeHead(303, {
+            Location: this.origin + "/auth/access",
+            "Cache-Control": "no-store",
+            "Referrer-Policy": "no-referrer",
+          });
+          res.end();
           resolve({
             code: reply.code,
             access: reply.access,

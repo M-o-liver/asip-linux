@@ -176,7 +176,12 @@ test("native browser handoff stores encrypted credentials, resumes after restart
         (await fetch(result.redirect, { method: "POST" })).status,
         400,
       );
-      assert.equal((await fetch(result.redirect)).status, 200);
+      const callback = await fetch(result.redirect, { redirect: "manual" });
+      assert.equal(callback.status, 303);
+      assert.equal(
+        callback.headers.get("location"),
+        "https://asip.ca/auth/access",
+      );
     },
   });
   t.after(async () => {
@@ -464,6 +469,14 @@ test("browser mutation requires same origin; pairing uses PKCE and atomically co
     .bind(await sha256(session), accountId, "2099-01-01T00:00:00Z")
     .run();
   const headers = { Cookie: "__Host-asip=" + session };
+  assert.equal(
+    (
+      await request("/api/v1/me", null, {
+        headers: { ...headers, Authorization: "Bearer invalid" },
+      })
+    ).status,
+    401,
+  );
   const verifier = crypto.randomBytes(32).toString("hex"),
     state = crypto.randomBytes(32).toString("hex"),
     link = await deviceKey();

@@ -111,6 +111,8 @@ export async function authenticate(request, env, required = "memory:read") {
   const token = /^Bearer (asip_[a-f0-9]{64})$/.exec(
     request.headers.get("authorization") || "",
   )?.[1];
+  if (request.headers.has("authorization") && !token)
+    fail(401, "Use a valid ASIP bearer token.");
   if (token) {
     const credential = await env.DB.prepare(
       "SELECT c.*,a.handle,a.name FROM credentials c JOIN accounts a ON a.id=c.account_id WHERE c.hash=? AND c.revoked_at IS NULL AND c.expires_at>?",
