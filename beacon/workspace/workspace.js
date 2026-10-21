@@ -369,7 +369,7 @@ async function load() {
       throw new Error(data.error || "ASIP could not load project history.");
     if (controller !== request) return;
     $("cloud-connect").hidden =
-      !data.cloud || (data.cloud.connected && !data.cloud.error);
+      !data.cloud || (data.cloud.connected && !data.cloud.reconnectRequired);
     $("cloud-connect").disabled = Boolean(data.cloud?.connecting);
     $("cloud-connect").textContent = data.cloud?.connecting
       ? "Finish in browser…"

@@ -294,7 +294,8 @@ function render(state) {
   $("metric-projects").textContent = state.workspace?.projects || 0;
   $("metric-agents").textContent = state.clients.length;
   $("metric-records").textContent = state.records;
-  $("cloud-connect").hidden = state.cloud?.connected && !state.cloud?.error;
+  $("cloud-connect").hidden =
+    state.cloud?.connected && !state.cloud?.reconnectRequired;
   $("cloud-connect").disabled = Boolean(state.cloud?.connecting);
   $("cloud-connect").textContent = state.cloud?.connecting
     ? "Finish in browser…"

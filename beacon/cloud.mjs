@@ -114,6 +114,7 @@ export class CloudSync {
       pending,
       connecting: Boolean(this.pairing),
       retryAt: this.retryAt ? new Date(this.retryAt).toISOString() : null,
+      reconnectRequired: Boolean(this.connection?.reconnectRequired),
     };
   }
   start() {
@@ -151,10 +152,13 @@ export class CloudSync {
         ? AbortSignal.any([signal, AbortSignal.timeout(30000)])
         : AbortSignal.timeout(30000),
     });
-    if ([301, 302, 303, 307, 308].includes(response.status))
-      throw new Error(
+    if ([301, 302, 303, 307, 308].includes(response.status)) {
+      const error = new Error(
         "The private preview session expired. Reconnect cloud to sign in again.",
       );
+      error.code = "PREVIEW_SESSION";
+      throw error;
+    }
     let raw = "";
     if (response.body) {
       const reader = response.body.getReader();
@@ -194,6 +198,7 @@ export class CloudSync {
       if (Number.isFinite(delay) && delay > 0)
         error.retryAt = Date.now() + Math.min(delay, 86400) * 1000;
       error.status = response.status;
+      error.code = data.code;
       throw error;
     }
     return data;
@@ -329,6 +334,18 @@ export class CloudSync {
       );
       const previous = this.connection;
       this.connection = { ...result, access, origin: this.origin };
+      // Fresh admission clears an authentication/network backoff. A quota pause
+      // belongs to the service allowance and must survive reauthorization too.
+      this.retryAt =
+        previous?.quotaRetryAt > Date.now() ? previous.quotaRetryAt : 0;
+      this.failures = 0;
+      this.error = this.retryAt ? previous.syncError : "";
+      if (this.retryAt)
+        Object.assign(this.connection, {
+          retryAt: this.retryAt,
+          quotaRetryAt: this.retryAt,
+          syncError: this.error,
+        });
       try {
         this.persist();
       } catch (error) {
@@ -712,6 +729,8 @@ export class CloudSync {
         if (connection.retryAt || connection.syncError) {
           delete connection.retryAt;
           delete connection.syncError;
+          delete connection.quotaRetryAt;
+          delete connection.reconnectRequired;
           this.persist();
         }
       } catch (error) {
@@ -723,6 +742,10 @@ export class CloudSync {
               Math.min(900000, 30000 * 2 ** Math.min(this.failures++, 5));
           connection.retryAt = this.retryAt;
           connection.syncError = this.error;
+          connection.reconnectRequired =
+            error.code === "PREVIEW_SESSION" || error.status === 401;
+          if (["CLOUD_DAILY_QUOTA", "CLOUD_STORAGE_FULL"].includes(error.code))
+            connection.quotaRetryAt = this.retryAt;
           try {
             this.persist();
           } catch {

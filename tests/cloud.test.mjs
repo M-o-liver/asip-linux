@@ -215,6 +215,12 @@ test("quota errors are actionable and native retries remain paused across restar
   sync.schema().prepare("INSERT INTO cloud_binding VALUES(1,?)").run(accountId);
   await assert.rejects(sync.sync(), /daily database allowance/);
   const retryAt = sync.retryAt;
+  assert.equal(
+    sync.status().reconnectRequired,
+    false,
+    "a quota error does not ask the owner to reconnect",
+  );
+  assert.equal(sync.connection.quotaRetryAt, retryAt);
   await assert.rejects(sync.sync(), /daily database allowance/);
   assert.equal(requests, 1);
   const restarted = new CloudSync(runtime, options);
