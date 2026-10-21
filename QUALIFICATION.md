@@ -22,6 +22,8 @@ Windows automatic record: `3a6feb8b-4069-43ea-9f12-0d5828aa4dd1`; native session
 
 Mac automatic record: `20c89226-53c8-42f4-ab38-d1264098820e`; native session `61778954-87a7-467e-9b2e-61f5adf13aa8`.
 
+After capture, native ChatGPT on both Windows and Intel Mac used `asip_status` and `asip_recall` to retrieve the new Antigravity response without reading project files. Both returned the exact saved text, native session, and source step (Windows 17, Mac 11). The Mac answer also identified the matching record ID. This completes cross-agent retrieval of the automatic response on all three tested systems.
+
 The Linux installed upgrade also retained encrypted credential files byte-for-byte and passed SQLite integrity checking with 9,986 events at upgrade. The application suite passed 54 cases with two Windows-only skips locally; Windows runs those platform checks in native CI. Go race tests passed. This follow-up changes automatic Antigravity capture, not account linking or history synchronization.
 
 ## Native builds
@@ -117,6 +119,8 @@ After the `000a57c` Mac update, Beacon retained both agents and all 54 events. S
 The subsequent `218fcf7`, `c272e00`, and `efbd4b7` DMG updates retained Google sign-in, both agents, and all 62 events. **Open ASIP** opened Safari with one project and three sessions. The workspace's **Open Beacon** control returned to the native menu-bar panel.
 
 ## Published alpha
+
+[ASIP 0.4.1 alpha 3](https://github.com/M-o-liver/asip-linux/releases/tag/v0.4.1-alpha.3) publishes source `57f5c7c`, with the same application/helper code exercised above; only README and qualification notes changed from candidate `21d4f9c`. [Tagged build 39608084047](https://github.com/M-o-liver/asip-linux/actions/runs/39608084047) passed all four native jobs and the release job. The nine installers and four qualification records matched all 13 digests in `SHA256SUMS`; every qualification record names the exact clean tagged revision and tree. The Windows installer returned HTTP 200 without authentication. PR #6 is merged. Windows EXE SHA-256: `1f81b67bc2e1bade143ec84abcb726911baf52092ecaa90eb9cc564d7bc69d4e`.
 
 [ASIP 0.4.1 alpha 2](https://github.com/M-o-liver/asip-linux/releases/tag/v0.4.1-alpha.2) contains nine installers, four native qualification records, and `SHA256SUMS`. All 13 asset digests matched the checksum manifest; each qualification record names the exact clean tagged revision and tree. The Windows EXE returned HTTP 200 without authentication after publication. Both earlier implementation PRs are merged.
 
