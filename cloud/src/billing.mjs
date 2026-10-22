@@ -84,7 +84,7 @@ async function stripe(env, path, parameters, key) {
       ...(key ? { "Idempotency-Key": key } : {}),
     },
     body: parameters ? new URLSearchParams(parameters) : undefined,
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(15000),
   });
   if (!response.ok)

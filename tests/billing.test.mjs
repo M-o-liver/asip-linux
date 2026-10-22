@@ -13,7 +13,10 @@ import {
   verifyWebhook,
   webhook,
 } from "../cloud/src/billing.mjs";
-let mf, db;
+let mf,
+  db,
+  redirectProvider = false;
+const outboundHosts = [];
 const origin = "https://asip.ca",
   founder = "f".repeat(64);
 before(async () => {
@@ -30,6 +33,32 @@ before(async () => {
       modules: true,
       script: bundled.outputFiles[0].text,
       compatibilityDate: "2026-10-21",
+      outboundService: async (request) => {
+        const url = new URL(request.url);
+        outboundHosts.push(url.hostname);
+        if (redirectProvider)
+          return new Response(null, {
+            status: 302,
+            headers: { Location: "https://unexpected.example/" },
+          });
+        if (url.href === "https://github.com/login/oauth/access_token")
+          return Response.json({ access_token: "provider-fixture" });
+        if (url.href === "https://api.github.com/user")
+          return Response.json({ id: 123456, login: "runtime-fixture" });
+        if (url.href === "https://api.github.com/user/emails")
+          return Response.json([
+            { email: "runtime@example.test", primary: true, verified: true },
+          ]);
+        if (url.href === "https://api.stripe.com/v1/prices/price_fixture")
+          return Response.json({
+            active: true,
+            livemode: false,
+            currency: "cad",
+            unit_amount: 1200,
+            recurring: { interval: "month", interval_count: 1 },
+          });
+        return new Response(null, { status: 404 });
+      },
       d1Databases: ["DB"],
       r2Buckets: ["RECORDS"],
       ratelimits: Object.fromEntries(
@@ -49,6 +78,10 @@ before(async () => {
         GITHUB_CLIENT_SECRET: "github-secret",
         GOOGLE_WEB_CLIENT_ID: "google-fixture",
         GOOGLE_WEB_CLIENT_SECRET: "google-secret",
+        STRIPE_SECRET_KEY: "sk_test_fixture",
+        STRIPE_WEBHOOK_SECRET: "whsec_fixture",
+        STRIPE_PRICE_ID: "price_fixture",
+        STRIPE_LIVEMODE: "false",
       },
     }),
   );
@@ -230,6 +263,52 @@ test("both OAuth providers bind PKCE and single-use state; redirects remain loca
         .bind(await sha256(url.searchParams.get("state")))
         .first(),
     );
+  }
+});
+test("Worker runtime completes GitHub identity and Stripe plan requests while rejecting provider redirects", async () => {
+  const start = async (provider) => {
+    const response = await mf.dispatchFetch(origin + "/auth/" + provider, {
+      redirect: "manual",
+    });
+    const state = new URL(response.headers.get("Location")).searchParams.get(
+      "state",
+    );
+    return mf.dispatchFetch(
+      origin + "/auth/" + provider + "/callback?code=fixture&state=" + state,
+      {
+        redirect: "manual",
+        headers: { Cookie: "__Host-asip_oauth=" + state },
+      },
+    );
+  };
+  const signedIn = await start("github");
+  assert.equal(signedIn.status, 303);
+  const session = signedIn.headers.get("Set-Cookie").split(";")[0];
+  assert.match(session, /^__Host-asip=/);
+  assert.match(signedIn.headers.get("Location"), /^\/users\/runtime-fixture/);
+  const billing = await mf.dispatchFetch(origin + "/api/v1/billing?refresh=1", {
+    headers: { Cookie: session },
+  });
+  assert.equal(billing.status, 200);
+  const access = await billing.json();
+  assert.equal(access.providerVerified, true);
+  assert.equal(access.status, "trialing");
+  assert.equal(access.allowed, true);
+  try {
+    redirectProvider = true;
+    for (const provider of ["github", "google"])
+      assert.equal((await start(provider)).status, 502);
+    assert.equal(
+      (
+        await mf.dispatchFetch(origin + "/api/v1/billing?refresh=1", {
+          headers: { Cookie: session },
+        })
+      ).status,
+      502,
+    );
+    assert.ok(!outboundHosts.includes("unexpected.example"));
+  } finally {
+    redirectProvider = false;
   }
 });
 test("Stripe checkout is server-priced, account-bound and reused; only verified current subscription state grants access", async () => {

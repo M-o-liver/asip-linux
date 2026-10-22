@@ -679,6 +679,15 @@ export default {
         ) &&
         request.headers.get("Accept")?.includes("text/html")
       ) {
+        if (!(error instanceof HttpError))
+          console.error("Unexpected OAuth failure", {
+            provider: new URL(request.url).pathname.split("/")[2],
+            name: error?.name || "Error",
+            frames: String(error?.stack || "")
+              .split("\n")
+              .slice(1, 7)
+              .join("\n"),
+          });
         return secure(
           new Response(null, {
             status: 303,

@@ -14,7 +14,7 @@ const googleKeys = createRemoteJWKSet(
 async function providerJSON(url, options) {
   const response = await fetch(url, {
     ...options,
-    redirect: "error",
+    redirect: "manual",
     signal: AbortSignal.timeout(15000),
   });
   if (!response.ok)
