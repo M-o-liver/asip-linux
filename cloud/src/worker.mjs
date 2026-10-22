@@ -14,7 +14,7 @@ import {
   serviceError,
 } from "./http.mjs";
 import {
-  accessClaims,
+  signinClaims,
   accountForIdentity,
   browserAccount,
   sessionFor,
@@ -533,10 +533,7 @@ async function handle(request, env) {
   if (url.pathname === "/health")
     return json({ service: "asip-cloud", schema: 1 });
   if (url.pathname === "/auth/access") {
-    const claims = await accessClaims(request, {
-      ...env,
-      PRIVATE_PREVIEW: "true",
-    });
+    const claims = await signinClaims(request, env);
     const account = await accountForIdentity(
       env,
       "cloudflare-access",

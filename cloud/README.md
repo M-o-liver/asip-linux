@@ -40,12 +40,18 @@ actual product, rather than a live cloud synchronization claim.
 The private preview uses a Cloudflare Access self-hosted application covering
 `asip.ca` and `*.asip.ca`. Its Allow policy contains administrator-selected
 email addresses. One-time PIN verifies those addresses. An unlisted visitor
-cannot enter. Add and remove testers in Zero Trust → Access → Applications →
-ASIP private preview → the allowlist policy. Do not add an Everyone rule while
-the preview is private.
+cannot enter. A second application, **ASIP account sign-in**, protects
+`asip.ca/auth/access` with a distinct audience and a path-scoped HttpOnly
+cookie. Both applications use the same reusable **Administrator-managed preview
+allowlist** policy, with the two owner-approved addresses and 24-hour sessions.
+Add and remove testers in that shared policy in Zero Trust → Access → Policies.
+Do not add an Everyone rule while the preview is private.
 
 The Worker verifies Access JWT signatures, issuer, audience, type, and expiry
-at `/auth/access`. The stable Access subject creates a durable ASIP account.
+at `/auth/access`, requiring `ACCESS_SIGNIN_AUD` to differ from the preview
+`ACCESS_AUD`. A preview assertion delegated to a device or scoped API client
+cannot create an owner browser session. The sign-in assertion stays in its
+path-scoped browser cookie. The stable Access subject creates a durable ASIP account.
 Handles such as `/users/mikethirtythirty` are editable addresses, not database
 identities or authorization boundaries. Two accounts never share records on the
 basis of a matching handle or email address.
@@ -73,13 +79,15 @@ local store; browser approval connects it to the selected hosted account.
 
 ### Open the website for launch
 
-Keep the same Access application and audience. Change its covered domains to
-only `asip.ca/auth/access`, remove the wildcard, and change its admission policy
-to the intended public sign-in audience. Landing, downloads and ASIP token API
-then become publicly reachable; `/auth/access` remains the managed sign-in
-entry. Account authorization remains enforced by ASIP. Provider web OAuth is
-optional when continuing to use Access for sign-in. No website rewrite, data
-migration, or release is required to lift the full-domain preview gate.
+Remove or disable the **ASIP private preview** domain application, and set
+`PRIVATE_PREVIEW` to `false` when clients no longer need preview admission.
+Keep **ASIP account sign-in**, its distinct audience and its cookie protections.
+Set that application's admission policy to the intended public sign-in audience
+when public account creation is approved. Landing, downloads and ASIP token API
+then become publicly reachable; `/auth/access` remains the managed sign-in entry.
+Account authorization remains enforced by ASIP. Provider web OAuth is optional
+when continuing to use Access for sign-in. No website rewrite or data migration
+is required to lift the full-domain preview gate.
 
 ## Device connection
 

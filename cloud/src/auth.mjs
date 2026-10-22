@@ -45,6 +45,22 @@ export async function accessClaims(request, env, keys) {
     fail(401, "The preview session expired. Sign in again.");
   }
 }
+export async function signinClaims(request, env, keys) {
+  // Delegated preview admission travels with scoped device/API credentials.
+  // It must not be usable to mint an owner browser session. Cloudflare protects
+  // this exact path with a separate, path-scoped application audience.
+  if (!env.ACCESS_SIGNIN_AUD || env.ACCESS_SIGNIN_AUD === env.ACCESS_AUD)
+    fail(503, "Independent account sign-in is not configured.");
+  return accessClaims(
+    request,
+    {
+      ...env,
+      PRIVATE_PREVIEW: "true",
+      ACCESS_AUD: env.ACCESS_SIGNIN_AUD,
+    },
+    keys,
+  );
+}
 export function cookie(request, name) {
   return (
     (request.headers.get("cookie") || "")

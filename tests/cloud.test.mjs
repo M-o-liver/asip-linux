@@ -15,7 +15,7 @@ import {
   sealDeviceReply,
   openDeviceReply,
 } from "../beacon/device-link.mjs";
-import { accessClaims } from "../cloud/src/auth.mjs";
+import { accessClaims, signinClaims } from "../cloud/src/auth.mjs";
 import { catalogue, readCatalogue } from "../cloud/src/memory.mjs";
 import { serviceError } from "../cloud/src/http.mjs";
 import { encryptionFixture } from "./encryption-fixture.mjs";
@@ -596,6 +596,74 @@ test("Access JWT verifies signature, issuer, audience and expiry without trustin
       publicKey,
     ),
     /expired/,
+  );
+});
+test("delegated preview admission cannot mint an account-owner sign-in session", async () => {
+  const { privateKey, publicKey } = await generateKeyPair("RS256");
+  const env = {
+    PRIVATE_PREVIEW: "true",
+    ACCESS_TEAM_DOMAIN: "fixture.cloudflareaccess.com",
+    ACCESS_AUD: "asip-preview",
+    ACCESS_SIGNIN_AUD: "asip-account-signin",
+  };
+  const token = (aud, type = "app", expiration = "2m") =>
+    new SignJWT({ email: "fixture@example.com", type })
+      .setProtectedHeader({ alg: "RS256" })
+      .setIssuer("https://fixture.cloudflareaccess.com")
+      .setAudience(aud)
+      .setSubject("same-native-user")
+      .setExpirationTime(expiration)
+      .sign(privateKey);
+  const requestFor = (value) =>
+    new Request("https://asip.ca/auth/access", {
+      headers: { "Cf-Access-Jwt-Assertion": value },
+    });
+  const preview = await token(env.ACCESS_AUD);
+  assert.equal(
+    (await accessClaims(requestFor(preview), env, publicKey)).sub,
+    "same-native-user",
+  );
+  await assert.rejects(
+    signinClaims(requestFor(preview), env, publicKey),
+    /expired/,
+  );
+  const signin = await token(env.ACCESS_SIGNIN_AUD);
+  assert.equal(
+    (await signinClaims(requestFor(signin), env, publicKey)).sub,
+    "same-native-user",
+    "the separate audience retains the durable Access identity",
+  );
+  await assert.rejects(
+    signinClaims(
+      requestFor(await token(env.ACCESS_SIGNIN_AUD, "org")),
+      env,
+      publicKey,
+    ),
+    /expired/,
+  );
+  await assert.rejects(
+    signinClaims(
+      requestFor(await token(env.ACCESS_SIGNIN_AUD, "app", 0)),
+      env,
+      publicKey,
+    ),
+    /expired/,
+  );
+  await assert.rejects(
+    signinClaims(
+      requestFor(preview),
+      { ...env, ACCESS_SIGNIN_AUD: "" },
+      publicKey,
+    ),
+    /not configured/,
+  );
+  await assert.rejects(
+    signinClaims(
+      requestFor(preview),
+      { ...env, ACCESS_SIGNIN_AUD: env.ACCESS_AUD },
+      publicKey,
+    ),
+    /not configured/,
   );
 });
 test("D1 and R2 preserve source bytes; retries are idempotent and conflicting batches are atomic", async () => {

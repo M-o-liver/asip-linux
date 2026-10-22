@@ -35,6 +35,7 @@
     "PRIVATE_PREVIEW": "true",
     "ACCESS_TEAM_DOMAIN": "damp-pond-2f61.cloudflareaccess.com",
     "ACCESS_AUD": "0728185fe661997d31b239987483e5d0bfd781786e931293294d3c314cd07231",
+    "ACCESS_SIGNIN_AUD": "793e8b38309cd1e498dff35eae8ae98d135fc01b04cfe61755d72ab08c192f23",
     "GOOGLE_DESKTOP_CLIENT_ID": "950143412142-1h4lm2jn47tq72snkrdt40tdvsisl2ij.apps.googleusercontent.com",
     "RELEASE_TAG": "v0.4.1-alpha.3",
   },
