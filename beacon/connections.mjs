@@ -342,11 +342,37 @@ export class Connections {
       throw new Error(
         "Use this connection through an agent to check its API result.",
       );
-    const result = await this.request({
+    let result = await this.request({
       name,
       path: route,
       project: entry.projects[0],
     });
+    // Account-owned Cloudflare tokens are rejected by /user/tokens/verify.
+    if (entry.provider === "cloudflare" && result.status === 401) {
+      const accounts = await this.request({
+        name,
+        path: "/client/v4/accounts?per_page=50",
+        project: entry.projects[0],
+      });
+      if (accounts.status === 200 && Array.isArray(accounts.body?.result)) {
+        for (const account of accounts.body.result.slice(0, 10)) {
+          if (!/^[a-f0-9]{32}$/.test(account.id || "")) continue;
+          const checked = await this.request({
+            name,
+            path: "/client/v4/accounts/" + account.id + "/tokens/verify",
+            project: entry.projects[0],
+          });
+          if (
+            checked.status === 200 &&
+            checked.body?.result?.status === "active"
+          ) {
+            result = checked;
+            break;
+          }
+        }
+      }
+      this.outcome(entry, this.loadedAccount, { status: result.status });
+    }
     return { name, status: result.status };
   }
   outcome(entry, accountId, result) {

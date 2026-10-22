@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Connect your computer — ASIP</title>
+    <link rel="icon" href="/assets/mark.svg" />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <script defer src="/assets/connect.js"></script>
+  </head>
+  <body>
+    <header class="nav wrap">
+      <a class="wordmark" href="/"
+        ><img src="/assets/mark.svg" alt="" width="34" height="34" />ASIP</a
+      ><a href="/auth/access" class="nav-action">Your workspace ↗</a>
+    </header>
+    <main class="wrap">
+      <section class="auth-card">
+        <p class="eyebrow">One memory, across computers</p>
+        <h1>Connect this computer.</h1>
+        <p>
+          Beacon will synchronize this computer’s project history with your
+          private cloud workspace.
+        </p>
+        <dl>
+          <dt>Cloud account</dt>
+          <dd id="owner">Checking sign-in…</dd>
+          <dt>Computer</dt>
+          <dd id="computer"></dd>
+          <dt>Local account</dt>
+          <dd id="local-account"></dd>
+        </dl>
+        <p class="notice">
+          Records include agent work, project associations, session IDs, paths,
+          and recorded evidence, including captured tool input, output and text
+          excerpts. Named API connection details sync; their credentials stay in
+          your device’s keychain. Files referenced by evidence are not uploaded
+          automatically.
+        </p>
+        <label
+          ><input type="checkbox" id="consent" />I want to connect this computer
+          and synchronize its existing and future ASIP records.</label
+        >
+        <div class="actions">
+          <button class="button primary" id="approve" disabled>
+            Connect computer ↗</button
+          ><a href="/" class="underlink">Cancel</a>
+        </div>
+        <p id="error" class="error" role="alert"></p>
+        <p class="small muted">
+          You can revoke this connection in your workspace.
+        </p>
+      </section>
+    </main>
+  </body>
+</html>

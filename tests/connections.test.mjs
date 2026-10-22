@@ -18,6 +18,35 @@ const account = {
   subject: "42",
   handle: "fixture",
 };
+test("Cloudflare Check supports account-owned tokens without misreporting the personal-token endpoint", async (t) => {
+  const calls = [];
+  const accountId = "c".repeat(32);
+  const { runtime, store } = setup(t, async (url, options) => {
+    calls.push(new URL(url).pathname);
+    assert.equal(options.headers.Authorization, "Bearer account-token-fixture");
+    if (new URL(url).pathname === "/client/v4/user/tokens/verify")
+      return Response.json(
+        { success: false, errors: [{ message: "Invalid API Token" }] },
+        { status: 401 },
+      );
+    if (new URL(url).pathname === "/client/v4/accounts")
+      return Response.json({ success: true, result: [{ id: accountId }] });
+    return Response.json({ success: true, result: { status: "active" } });
+  });
+  runtime.signIn(account);
+  store.save({
+    name: "cloudflare.account",
+    provider: "cloudflare",
+    credential: "account-token-fixture",
+  });
+  assert.equal((await store.check("cloudflare.account")).status, 200);
+  assert.equal(store.list()[0].lastRequest.status, 200);
+  assert.deepEqual(calls, [
+    "/client/v4/user/tokens/verify",
+    "/client/v4/accounts",
+    "/client/v4/accounts/" + accountId + "/tokens/verify",
+  ]);
+});
 function setup(t, fetcher) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-connections-"));
   const runtime = new Runtime(home);

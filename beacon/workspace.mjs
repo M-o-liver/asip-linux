@@ -147,6 +147,28 @@ export class Workspace {
       send(401, { error: "Sign in through Beacon, then reopen ASIP." });
       return;
     }
+    if (
+      req.method === "POST" &&
+      /^\/workspace\/cloud\/(connect|sync|disconnect)$/.test(url.pathname)
+    ) {
+      if (req.headers.origin !== "http://" + this.runtime.host) {
+        send(403, { error: "Use your ASIP workspace." });
+        return;
+      }
+      try {
+        const cloud = this.runtime.cloud;
+        if (!cloud)
+          throw new Error("Cloud connections are unavailable in this build.");
+        const action = url.pathname.split("/").at(-1);
+        if (action === "connect") await cloud.connect();
+        else if (action === "sync") await cloud.sync();
+        else await cloud.disconnect();
+        send(200, cloud.status());
+      } catch (error) {
+        send(400, { error: error.message });
+      }
+      return;
+    }
     if (req.method !== "GET") {
       send(405, { error: "Method not supported." });
       return;
@@ -182,6 +204,7 @@ export class Workspace {
       relationships: [],
       directories: [],
       connections: [],
+      cloud: runtime.cloud?.status(),
     };
     try {
       base.connections =

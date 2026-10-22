@@ -1,0 +1,51 @@
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "name": "asip-cloud",
+  "main": "src/worker.mjs",
+  "compatibility_date": "2026-10-21",
+  "account_id": "fd3003b1fc128cb091196b3358400844",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "asip.ca", "custom_domain": true }],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+  },
+  "observability": { "enabled": false },
+  "ratelimits": [
+    {
+      "name": "PAIR_LIMIT",
+      "namespace_id": "27274001",
+      "simple": { "limit": 30, "period": 60 },
+    },
+    {
+      "name": "API_LIMIT",
+      "namespace_id": "27274002",
+      "simple": { "limit": 120, "period": 60 },
+    },
+    {
+      "name": "SYNC_LIMIT",
+      "namespace_id": "27274003",
+      "simple": { "limit": 240, "period": 60 },
+    },
+  ],
+  "vars": {
+    "ORIGIN": "https://asip.ca",
+    "PRIVATE_PREVIEW": "true",
+    "ACCESS_TEAM_DOMAIN": "damp-pond-2f61.cloudflareaccess.com",
+    "ACCESS_AUD": "0728185fe661997d31b239987483e5d0bfd781786e931293294d3c314cd07231",
+    "ACCESS_SIGNIN_AUD": "793e8b38309cd1e498dff35eae8ae98d135fc01b04cfe61755d72ab08c192f23",
+    "GOOGLE_DESKTOP_CLIENT_ID": "950143412142-1h4lm2jn47tq72snkrdt40tdvsisl2ij.apps.googleusercontent.com",
+    "RELEASE_TAG": "v0.4.1-alpha.3",
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "asip-cloud",
+      "database_id": "256ab73a-fef4-48e2-91a3-2f2b324fea07",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "r2_buckets": [{ "binding": "RECORDS", "bucket_name": "asip-cloud-records" }],
+}

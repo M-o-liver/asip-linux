@@ -27,6 +27,7 @@ if (userDataDirectory) {
 let runtime,
   identity,
   connections,
+  cloud,
   recovery,
   window,
   tray,
@@ -105,6 +106,7 @@ function snapshot() {
       github: Boolean(identity.config.githubClientId),
     },
     connections: configuredConnections,
+    cloud: cloud?.status(),
     launchAtLogin: loginStartup.enabled(),
     installed: app.isPackaged,
   };
@@ -434,6 +436,13 @@ if (
       unseal: (value) => safeStorage.decryptString(value),
     });
     runtime.connectionStore = connections;
+    const { CloudSync } = await import("./cloud.mjs");
+    cloud = new CloudSync(runtime, {
+      seal: connections.seal,
+      unseal: connections.unseal,
+      openBrowser: (url) => shell.openExternal(url),
+      onChange: () => send(),
+    });
     try {
       if (fs.existsSync(sessionPath()) && safeStorage.isEncryptionAvailable()) {
         const state = JSON.parse(
@@ -445,6 +454,7 @@ if (
         }
       }
       await runtime.listen();
+      cloud.start();
     } catch (error) {
       lastError = "ASIP Beacon could not start: " + error.message;
     }
@@ -472,6 +482,13 @@ if (
       openWorkspace(project),
     );
     ipcMain.handle("asip:status", () => snapshot());
+    ipcMain.handle("asip:cloud-connect", () => cloud.connect());
+    ipcMain.handle("asip:cloud-sync", () => cloud.sync());
+    ipcMain.handle("asip:cloud-disconnect", () => cloud.disconnect());
+    ipcMain.handle("asip:cloud-open", () => {
+      const url = cloud.status().workspace;
+      if (url) return shell.openExternal(url);
+    });
     ipcMain.handle("asip:copy-text", (_event, text) => {
       if (typeof text !== "string" || text.length > 12000)
         throw new Error("Could not copy these commands.");
@@ -529,9 +546,26 @@ if (
       if (runtime.account?.accountId !== owner)
         throw new Error("The ASIP account changed.");
       runtime.abortRequests();
-      const records = recovery.restore(id);
-      send();
-      return records;
+      cloud.stop();
+      await cloud.inflight?.catch(() => {});
+      try {
+        const records = recovery.restore(id);
+        if (cloud.connection) {
+          const db = cloud.schema();
+          const binding = db
+            .prepare("SELECT account_id FROM cloud_binding WHERE id=1")
+            .get();
+          if (!binding)
+            db.prepare("INSERT INTO cloud_binding VALUES(1,?)").run(
+              cloud.connection.account.id,
+            );
+          db.prepare("DELETE FROM cloud_cursor").run();
+        }
+        send();
+        return records;
+      } finally {
+        cloud.start();
+      }
     });
     ipcMain.handle("asip:save-connection", (_event, input) => {
       connections.save(input);
@@ -611,6 +645,7 @@ if (
         const account = await identity.signIn(provider, controller.signal);
         controller.signal.throwIfAborted();
         runtime.signIn(account);
+        cloud.start();
         if (pending && !pending.account) {
           runtime.completeSignIn(pending.id, account);
           pending = null;

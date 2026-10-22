@@ -7,3 +7,6 @@ build/
 .env*
 .DS_Store
 beacon/google-client.json
+.wrangler/
+cloud/.wrangler/
+cloud/.dev.vars*

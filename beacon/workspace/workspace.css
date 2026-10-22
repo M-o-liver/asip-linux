@@ -9,6 +9,21 @@
   --line: #2b3240;
   --accent: #b3b8ff;
 }
+.workspace-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.workspace-actions a {
+  font-size: 12px;
+  color: var(--accent);
+  text-decoration: none;
+}
+#cloud-status {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 0 0 22px;
+}
 * {
   box-sizing: border-box;
 }

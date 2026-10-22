@@ -83,6 +83,10 @@ export class Recovery {
     }
   }
   restore(id) {
+    if (this.runtime.cloud?.inflight)
+      throw new Error(
+        "Wait for cloud synchronization to finish before restoring history.",
+      );
     const record = this.list().find((entry) => entry.id === id);
     if (!record) throw new Error("Choose an existing recovery record.");
     const bytes = fs.readFileSync(

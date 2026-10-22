@@ -25,8 +25,19 @@
           <h1 id="title">Projects</h1>
           <p id="repository"></p>
         </div>
-        <button id="refresh">Refresh</button>
+        <div class="workspace-actions">
+          <button id="cloud-connect" hidden>Connect cloud</button
+          ><a
+            id="cloud-open"
+            href="https://asip.ca"
+            target="_blank"
+            rel="noopener"
+            hidden
+            >Cloud workspace ↗</a
+          ><button id="refresh">Refresh</button>
+        </div>
       </header>
+      <p id="cloud-status" role="status" hidden></p>
       <p id="error" role="alert" hidden></p>
       <section class="map card">
         <div class="section-heading">

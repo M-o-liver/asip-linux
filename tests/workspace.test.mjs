@@ -7,6 +7,57 @@ import crypto from "node:crypto";
 import { Runtime } from "../beacon/runtime.mjs";
 import { Workspace, recentWork } from "../beacon/workspace.mjs";
 import { accountId } from "../beacon/identity.mjs";
+test("cloud controls require a valid local workspace session and same-origin requests", async (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-workspace-cloud-")),
+    runtime = new Runtime(home);
+  runtime.signIn({
+    accountId: accountId("github", "42"),
+    provider: "github",
+    handle: "fixture",
+  });
+  let connections = 0;
+  runtime.cloud = {
+    stop() {},
+    status: () => ({ connected: Boolean(connections), account: "fixture" }),
+    connect: async () => {
+      connections++;
+    },
+  };
+  const workspace = new Workspace(runtime),
+    endpoint = await runtime.listen();
+  t.after(async () => {
+    await runtime.close();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+  const opened = await fetch(workspace.openURL(), { redirect: "manual" }),
+    cookie = opened.headers.get("set-cookie").split(";")[0];
+  assert.equal(
+    (
+      await fetch(endpoint + "/workspace/cloud/connect", {
+        method: "POST",
+        headers: { Origin: endpoint },
+      })
+    ).status,
+    401,
+  );
+  assert.equal(
+    (
+      await fetch(endpoint + "/workspace/cloud/connect", {
+        method: "POST",
+        headers: { Origin: "https://elsewhere.example", Cookie: cookie },
+      })
+    ).status,
+    403,
+  );
+  assert.equal(connections, 0);
+  const result = await fetch(endpoint + "/workspace/cloud/connect", {
+    method: "POST",
+    headers: { Origin: endpoint, Cookie: cookie },
+  });
+  assert.equal(result.status, 200);
+  assert.equal(connections, 1);
+  assert.equal((await result.json()).connected, true);
+});
 
 test("project names recognize Windows folders while preserving their identities", async (t) => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), "asip-project-names-"));

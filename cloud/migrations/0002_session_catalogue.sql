@@ -1,0 +1,1 @@
+CREATE TABLE session_catalogue(account_id TEXT NOT NULL REFERENCES accounts(id),device_id TEXT NOT NULL,agent TEXT NOT NULL,session TEXT NOT NULL,details TEXT NOT NULL,PRIMARY KEY(account_id,device_id,agent,session));

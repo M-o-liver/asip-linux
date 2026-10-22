@@ -6,7 +6,7 @@ Beacon owns the local account, connection approvals, API credentials, and activi
 
 An installed plugin has no project memory or API access until the user signs into Beacon and connects it. Beacon attributes requests to that connection's agent and account. Disconnect and sign-out stop new recording and cancel outstanding API requests.
 
-The provider's stable subject identifies the local ASIP account. Google email addresses and GitHub handles are display fields. This preview does not provide account linking or cross-device synchronization.
+The provider's stable subject identifies the local ASIP account. Google email addresses and GitHub handles are display fields. Cloud-enabled Beacon connects that local store to a persistent hosted account through browser approval and a one-time proof exchange. The local account is permanently bound to its first cloud owner; account switches cannot export another owner's synchronized history. [Cloud architecture](cloud/README.md) describes admission, durable identities, D1/R2 storage, synchronization integrity, and scoped HTTP/MCP access.
 
 ## Records
 

@@ -1,6 +1,10 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("asip", {
   status: () => ipcRenderer.invoke("asip:status"),
+  cloudConnect: () => ipcRenderer.invoke("asip:cloud-connect"),
+  cloudSync: () => ipcRenderer.invoke("asip:cloud-sync"),
+  cloudDisconnect: () => ipcRenderer.invoke("asip:cloud-disconnect"),
+  cloudOpen: () => ipcRenderer.invoke("asip:cloud-open"),
   openWorkspace: (project) =>
     ipcRenderer.invoke("asip:open-workspace", project),
   startup: (enabled) => ipcRenderer.invoke("asip:startup", enabled),
