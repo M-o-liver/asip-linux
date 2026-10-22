@@ -4,7 +4,7 @@ This report records deployed behavior, installed-device observations, and automa
 
 ## Private cloud rollout — October 21, 2026
 
-The actual site runs at **https://asip.ca**, with a permanent landing page, download destination, API guide, and private account workspace. Cloudflare Worker `asip-cloud` serves the custom domain; workers.dev and version preview URLs are disabled. The original publication Worker remains available for recovery. D1 `asip-cloud` indexes account-owned records and metadata. R2 `asip-cloud-records` stores canonical source records privately, with its public bucket domain disabled. All three database migrations are applied remotely.
+The actual site runs at **https://asip.ca**, with a permanent landing page, download destination, API guide, and private account workspace. Cloudflare Worker `asip-cloud` serves the custom domain; workers.dev and version preview URLs are disabled. The original publication Worker remains available for recovery. D1 `asip-cloud` indexes account-owned records and metadata. R2 `asip-cloud-records` stores canonical source records and derived activity indexes privately, with its public bucket domain disabled. All four database migrations are applied remotely.
 
 Cloudflare Access admission is an administrator-managed email allowlist, initially containing two owner-approved addresses with 24-hour sessions. An anonymous request redirects to Access. The browser one-time PIN flow created a durable ASIP account and opened its hosted workspace. Google and GitHub local Beacon sign-in remain separate from this cloud approval; the web OAuth implementations require their own registrations before they can be enabled and live-qualified.
 
@@ -56,6 +56,27 @@ The correction persists per-entry metadata acknowledgments locally, sends only c
 Daily quota errors now return an explicit code and Retry-After. The installed app visibly retained local work and paused synchronization until `2026-10-22T00:01:00Z`; restarting did not clear the pause. Production browser reads remained available after deployment of the fix. The Cloudflare plan was not upgraded and no history was deleted.
 
 At `2026-10-22T12:21Z`, live Cloudflare analytics reported **6,491 row writes** and **21,447 row reads** for the new UTC day; database size was **111,185,920 bytes**. The installed Linux app had resumed automatically, sent **937 records** since restart and synced at `12:21:19Z`, with no error or retry pause and eight recent records queued. After Windows and Mac pairing and initial history downloads, account-wide analytics at approximately `13:24Z` reported **14,975 row writes** and **1,705,769 row reads**, within the daily free allowances of 100,000 writes and 5 million reads. These are observed preview loads, not an unlimited-capacity claim.
+
+### D1 read amplification correction — October 22, 2026
+
+The owner reported that D1 was still rising quickly after publication. At approximately `19:19Z`, account analytics showed **4,486,106 daily row reads** and **20,356 row writes**. Database metadata reported **131,022,848 bytes**. Live query insights identified the inferred-relationship self-join at an average **308,426 rows read per call**. Session aggregation scanned roughly 15,641 rows per call, and the default Work view averaged 2,680 reads for a 30-record page. These repeated read costs were defects in the initial workspace implementation.
+
+Source `63c45f3` replaced the three history aggregates with an account-owned R2 activity checkpoint. Every refresh checks the indexed account sequence and folds only new immutable D1 records into project/agent/session counts and time bounds. Conditional R2 writes protect concurrent updates. Account/project scopes are applied after authentication, including with an already populated checkpoint. Idle loads write neither D1 nor R2. Migration `0004_work_history.sql` adds a partial chronological index for Work records, leaving original records and evidence unchanged. Source `bf47679` also prevents overlapping Refresh requests. Existing Beacon installations require no update.
+
+All **19 cloud integration tests** passed in the official emulator. The full local suite passed **80 tests with two Windows-only skips and zero failures**. A 15,000-record fixture compared counts and relationships with the original SQL and metered:
+
+| Operation | D1 rows read |
+| --- | ---: |
+| One-time account checkpoint | 30,001 |
+| Twenty warm aggregate loads | 20 total |
+| Include one newly appended record | 3 |
+| A 30-record Work page | 31 |
+
+Aggregate operations wrote zero D1 rows. Tests cover duplicate uploads, backfilled original times, account/project isolation, cold reads, concurrent checkpoint conflicts, corrupt checkpoints, R2 failures and bounded relationship expansion. They do not substitute zero-cost mocks for the emulator's row counters.
+
+The additive migration was applied to production. Initial Worker `466d8802-2b7e-4c9a-b4d4-c25c75f8751b` used clean source `63c45f3`; the refresh guard deployment `21672cf4-cec2-4536-ad10-54ecd8a25f49` used source `bf47679`. Five completed refreshes of the real signed-in workspace showed **28 projects, 15,225 project records, 100 sessions, 77 relationships and 30 visible history rows**, with no error. Production query insights subsequently confirmed **16 sequence checks reading 16 rows**, and **14 Work page requests reading 434 rows total (31 each)**. The observed incremental aggregation queries read 28 rows total across two requests. Daily analytics at approximately `19:37Z` reported **4,537,144 reads and 22,741 writes**; this includes the additive index build and initial checkpoint. Cumulative daily usage does not decrease after deployment.
+
+The original source hashes, device credentials, admission policy and installed release remain intact. No plan upgrade or history deletion was used. Explicit full-text searches, other history filters, metadata downloads, and genuinely new records retain their normal database costs. See `cloud/README.md` for the checkpoint bounds and recovery procedure; future editing or deletion of source records must also invalidate the append-only derived index.
 
 ### Website observations
 

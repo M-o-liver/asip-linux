@@ -16,8 +16,15 @@ import {
   openDeviceReply,
 } from "../beacon/device-link.mjs";
 import { accessClaims, signinClaims } from "../cloud/src/auth.mjs";
-import { catalogue, readCatalogue } from "../cloud/src/memory.mjs";
+import { catalogue, readCatalogue, listEvents } from "../cloud/src/memory.mjs";
 import { serviceError } from "../cloud/src/http.mjs";
+import {
+  activityIndex,
+  scopedActivity,
+  activityProjects,
+  activitySessions,
+  activityRelationships,
+} from "../cloud/src/activity.mjs";
 import { encryptionFixture } from "./encryption-fixture.mjs";
 import { generateKeyPair, SignJWT } from "jose";
 
@@ -93,6 +100,399 @@ before(async () => {
 after(async () => {
   await mf?.dispose();
 });
+test("durable activity index scans new rows once, matches SQL counts, and costs no idle writes", async () => {
+  const c = await credential({ account: otherId });
+  const events = [
+    {
+      ...source,
+      id: "index-a1",
+      project: "index-a",
+      agent: "codex",
+      session: "shared",
+      at: "2026-10-21T12:00:00Z",
+    },
+    {
+      ...source,
+      id: "index-a2",
+      project: "index-a",
+      agent: "codex",
+      session: "shared",
+      at: "2026-10-21T13:00:00Z",
+    },
+    {
+      ...source,
+      id: "index-b",
+      project: "index-b",
+      agent: "codex",
+      session: "shared",
+    },
+    {
+      ...source,
+      id: "index-other-agent",
+      project: "index-a",
+      agent: "antigravity",
+      session: "shared",
+    },
+    {
+      ...source,
+      id: "index-null",
+      project: null,
+      agent: "codex",
+      session: "shared",
+    },
+  ];
+  const push = (rows) =>
+    request("/api/v1/sync/push", c.token, {
+      method: "POST",
+      value: { events: rows },
+    });
+  assert.equal((await push(events)).status, 200);
+  let reads = 0,
+    writes = 0,
+    puts = 0,
+    aggregateQueries = 0;
+  const sqls = [];
+  const metered = {
+    DB: {
+      prepare(sql) {
+        sqls.push(sql);
+        if (sql.includes("GROUP BY")) aggregateQueries++;
+        const statement = db.prepare(sql);
+        return {
+          bind: (...values) => {
+            const bound = statement.bind(...values);
+            const run = async () => {
+              const result = await bound.all();
+              reads += result.meta.rows_read;
+              writes += result.meta.rows_written;
+              return result;
+            };
+            return {
+              all: run,
+              first: async () => (await run()).results[0] || null,
+            };
+          },
+        };
+      },
+    },
+    RECORDS: {
+      get: (...args) => bucket.get(...args),
+      put: (...args) => {
+        puts++;
+        return bucket.put(...args);
+      },
+    },
+  };
+  const auth = { accountId: otherId, projects: [] };
+  let index = await activityIndex(metered, otherId);
+  assert.equal(aggregateQueries, 1);
+  assert.equal(writes, 0);
+  assert.equal(puts, 1);
+  assert.equal(activitySessions(index.rows)[0].events, 4);
+  assert.equal(
+    activityProjects(index.rows).find((p) => p.id === "index-a").sessions,
+    2,
+  );
+  assert.deepEqual(activityRelationships(index.rows), [
+    { source: "index-a", target: "index-b", sessions: 1 },
+  ]);
+  assert.equal(
+    scopedActivity(index, { ...auth, projects: ["index-a"] }).length,
+    2,
+  );
+  assert.deepEqual(
+    activityRelationships(
+      scopedActivity(index, { ...auth, projects: ["index-a"] }),
+    ),
+    [],
+  );
+  assert.throws(
+    () =>
+      scopedActivity(
+        index,
+        { ...auth, projects: ["index-a"] },
+        new URLSearchParams({ project: "index-b" }),
+      ),
+    /restricted/,
+  );
+  assert.equal(
+    activitySessions(
+      scopedActivity(
+        index,
+        auth,
+        new URLSearchParams({ project: "unassigned" }),
+      ),
+    )[0].events,
+    1,
+  );
+  const startReads = reads;
+  for (let i = 0; i < 10; i++) await activityIndex(metered, otherId);
+  assert.equal(
+    aggregateQueries,
+    1,
+    "idle and cold reads never re-aggregate history",
+  );
+  assert.ok(
+    reads - startReads <= 20,
+    "indexed MAX must have constant row cost",
+  );
+  assert.equal(puts, 1, "idle visits must not write R2");
+  assert.equal(writes, 0);
+  assert.equal(
+    (await push([events[0]])).status,
+    200,
+    "duplicate upload is idempotent",
+  );
+  await activityIndex(metered, otherId);
+  assert.equal(aggregateQueries, 1);
+  const older = {
+    ...events[0],
+    id: "index-backfill",
+    at: "2026-10-01T00:00:00Z",
+  };
+  assert.equal((await push([older])).status, 200);
+  const beforeTailReads = reads;
+  index = await activityIndex(metered, otherId);
+  assert.ok(
+    reads - beforeTailReads <= 5,
+    "one new row must not rescan the old history",
+  );
+  assert.equal(aggregateQueries, 2);
+  assert.equal(
+    index.rows.find((r) => r.project === "index-a" && r.agent === "codex")
+      .startedAt,
+    older.at,
+  );
+  assert.equal(
+    activityProjects(index.rows).find((p) => p.id === "index-a").events,
+    4,
+  );
+  const expected = (
+    await db
+      .prepare(
+        "SELECT project,agent,session,COUNT(*) AS events,MIN(at) AS startedAt,MAX(at) AS lastActivity FROM events WHERE account_id=? GROUP BY project,agent,session",
+      )
+      .bind(otherId)
+      .all()
+  ).results;
+  const ordered = (rows) =>
+    [...rows].sort((a, b) =>
+      JSON.stringify([a.project, a.agent, a.session]).localeCompare(
+        JSON.stringify([b.project, b.agent, b.session]),
+      ),
+    );
+  assert.deepEqual(ordered(index.rows), ordered(expected));
+  assert.ok(
+    sqls
+      .filter((s) => s.includes("GROUP BY"))
+      .every((s) => /seq>\? AND seq<=\?/.test(s)),
+  );
+  await assert.rejects(
+    activityIndex(
+      {
+        ...metered,
+        RECORDS: { get: () => Promise.reject(Error("R2 unavailable")) },
+      },
+      otherId,
+    ),
+    /R2 unavailable/,
+  );
+  assert.equal(
+    aggregateQueries,
+    2,
+    "R2 failures must not fall back to expensive scans",
+  );
+  // Leave the other-owner isolation fixture empty for subsequent API checks.
+  await db.prepare("DELETE FROM events WHERE account_id=?").bind(otherId).run();
+  await bucket.delete(otherId + "/indexes/activity-v1.json");
+});
+
+test("activity index compare-and-swap retries cannot lose or double-count concurrent updates", async () => {
+  const c = await credential({ account: otherId });
+  const base = { ...source, id: "index-race-base" };
+  const push = (event) =>
+    request("/api/v1/sync/push", c.token, {
+      method: "POST",
+      value: { events: [event] },
+    });
+  assert.equal((await push(base)).status, 200);
+  const env = { DB: db, RECORDS: bucket };
+  await activityIndex(env, otherId);
+  assert.equal((await push({ ...base, id: "index-race-first" })).status, 200);
+  let raced = false;
+  const competitor = {
+    DB: db,
+    RECORDS: {
+      get: (...args) => bucket.get(...args),
+      async put(...args) {
+        if (!raced) {
+          raced = true;
+          assert.equal(
+            (await push({ ...base, id: "index-race-second" })).status,
+            200,
+          );
+          await activityIndex(env, otherId);
+        }
+        return bucket.put(...args);
+      },
+    },
+  };
+  const result = await activityIndex(competitor, otherId);
+  assert.equal(result.rows[0].events, 3);
+  assert.equal((await activityIndex(env, otherId)).rows[0].events, 3);
+  const key = otherId + "/indexes/activity-v1.json";
+  const saved = await bucket.get(key);
+  const invalid = await saved.json();
+  invalid.accountId = accountId;
+  await bucket.put(key, JSON.stringify(invalid));
+  await assert.rejects(
+    activityIndex(env, otherId),
+    /counts are temporarily unavailable/,
+  );
+  await db.prepare("DELETE FROM events WHERE account_id=?").bind(otherId).run();
+  await bucket.delete(key);
+});
+
+test("15,000-record workspace has constant warm aggregate cost and indexed work history", async () => {
+  const id = await sha256("activity-read-budget");
+  await db
+    .prepare("INSERT INTO accounts VALUES(?,?,?,?)")
+    .bind(id, "read-budget", "Read budget fixture", source.at)
+    .run();
+  await db
+    .prepare(
+      "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<15000) INSERT INTO events(account_id,id,at,agent,session,kind,project,summary,data,sha256,object_key,device_id,received_at) SELECT ?,'budget-'||x,?,'codex','session-'||(x%101),CASE WHEN x%100=0 THEN 'Stop' ELSE 'PreToolUse' END,'project-'||(x%17),'Recorded work','{}','fixture','fixture','fixture',? FROM n",
+    )
+    .bind(id, source.at, source.at)
+    .run();
+  let reads = 0,
+    writes = 0;
+  const costs = [];
+  const env = {
+    RECORDS: bucket,
+    DB: {
+      prepare(sql) {
+        const statement = db.prepare(sql);
+        return {
+          bind(...values) {
+            const bound = statement.bind(...values);
+            const all = async () => {
+              const result = await bound.all();
+              reads += result.meta.rows_read;
+              writes += result.meta.rows_written;
+              costs.push({
+                sql,
+                reads: result.meta.rows_read,
+                writes: result.meta.rows_written,
+              });
+              return result;
+            };
+            return { all, first: async () => (await all()).results[0] || null };
+          },
+        };
+      },
+    },
+  };
+  let index = await activityIndex(env, id);
+  const bootstrapReads = reads;
+  const first = index;
+  for (let i = 0; i < 20; i++) {
+    index = await activityIndex(env, id);
+    assert.deepEqual(
+      activityProjects(index.rows),
+      activityProjects(first.rows),
+    );
+    assert.equal(activitySessions(index.rows).length, 100);
+    assert.equal(activityRelationships(index.rows).length, 100);
+  }
+  const warmReads = reads - bootstrapReads;
+  assert.ok(
+    warmReads <= 40,
+    "twenty warm aggregate loads must not scale with 15,000 history rows",
+  );
+  assert.equal(writes, 0);
+  const auth = { accountId: id, projects: [] };
+  const beforeHistory = reads;
+  const page = await listEvents(
+    env,
+    auth,
+    new URLSearchParams({ category: "work", limit: "30" }),
+  );
+  const historyReads = reads - beforeHistory;
+  assert.equal(page.events.length, 30);
+  assert.ok(page.events.every((r) => r.kind === "Stop"));
+  assert.ok(
+    historyReads <= 64,
+    "work pagination must skip low-level tool evidence in the index",
+  );
+  const old = await db
+    .prepare(
+      "WITH memberships AS (SELECT DISTINCT agent,session,project FROM events WHERE account_id=? AND project IS NOT NULL) SELECT a.project AS source,b.project AS target,COUNT(*) AS sessions FROM memberships a JOIN memberships b ON a.agent=b.agent AND a.session=b.session AND a.project<b.project GROUP BY a.project,b.project ORDER BY a.project,b.project LIMIT 100",
+    )
+    .bind(id)
+    .all();
+  assert.deepEqual(activityRelationships(index.rows), old.results);
+  assert.ok(old.meta.rows_read > warmReads * 100);
+  const before = reads;
+  await db
+    .prepare(
+      "INSERT INTO events(account_id,id,at,agent,session,kind,project,summary,data,sha256,object_key,device_id,received_at) VALUES(?, 'budget-new', ?, 'codex', 'session-new', 'result', 'project-new', 'New work', '{}', 'fixture', 'fixture', 'fixture', ?)",
+    )
+    .bind(id, source.at, source.at)
+    .run();
+  index = await activityIndex(env, id);
+  const tailReads = reads - before;
+  assert.ok(
+    tailReads <= 5,
+    "one new record must have constant incremental row cost",
+  );
+  assert.equal(
+    activityProjects(index.rows).find((p) => p.id === "project-new").events,
+    1,
+  );
+  console.info(
+    "D1 activity read budget:",
+    JSON.stringify({
+      records: 15000,
+      bootstrapReads,
+      twentyWarmLoads: warmReads,
+      workPageReads: historyReads,
+      singleRecordTailReads: tailReads,
+      oldRelationshipReads: old.meta.rows_read,
+      writes,
+      costs,
+    }),
+  );
+});
+
+test("relationship expansion stays bounded while preserving exact selected pair counts", () => {
+  const rows = [];
+  for (let session = 0; session < 4; session++)
+    for (let project = session; project < 200; project++)
+      rows.push({
+        project: "project-" + String(project).padStart(3, "0"),
+        agent: "codex",
+        session: String(session),
+        events: 1,
+        startedAt: source.at,
+        lastActivity: source.at,
+      });
+  const result = activityRelationships(rows);
+  assert.equal(result.length, 100);
+  assert.deepEqual(result[0], {
+    source: "project-000",
+    target: "project-001",
+    sessions: 1,
+  });
+  assert.deepEqual(result.at(-1), {
+    source: "project-000",
+    target: "project-100",
+    sessions: 1,
+  });
+  assert.equal(activityRelationships(rows.slice().reverse()).length, 100);
+  assert.deepEqual(activityRelationships(rows.slice().reverse()), result);
+});
+
 test("unchanged metadata and authenticated reads consume no D1 writes", async () => {
   const c = await credential();
   const auth = { accountId, credential: { id: c.id, kind: "device" } };
