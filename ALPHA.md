@@ -1,6 +1,6 @@
 # ASIP alpha test
 
-Download an installer from [Releases](https://github.com/M-o-liver/asip-linux/releases). Choose the Windows Setup EXE, the arm64 DMG for Apple Silicon, the x64 DMG for Intel Mac, or the Linux AppImage/DEB/RPM. The application version is 0.4.1. Installers are unsigned; macOS builds are not notarized.
+Download an installer from [Releases](https://github.com/M-o-liver/asip-linux/releases). Choose the Windows Setup EXE, the arm64 DMG for Apple Silicon, the x64 DMG for Intel Mac, or the Linux AppImage/DEB/RPM. The application version is 0.5.0. Installers are unsigned; macOS builds are not notarized.
 
 ## Connect an agent
 
@@ -33,7 +33,7 @@ For APIs, open **API connections**, add a named connection, select the projects 
 
 The [qualification report](QUALIFICATION.md) identifies which workflows were observed in the desktop applications and which have automated coverage only. A working MCP connection does not by itself verify automatic hook capture. ChatGPT desktop and Codex CLI require native hook review. After enabling hooks, start a fresh chat and check that its tool activity appears in ASIP.
 
-Activity is first stored on the computer running Beacon. The 0.5 cloud preview adds opt-in synchronization to a private asip.ca account. In a cloud-enabled build, choose **Connect cloud**, enter the preview gate, and approve the computer. Repeat on another computer using the same cloud workspace. Project records, evidence, session details, project metadata and named API metadata synchronize. Provider credentials and repository files remain local. Recovery retains up to ten ASIP history checkpoints; restoring one does not delete cloud records or back up repository files. See [cloud setup and limits](cloud/README.md) and the qualification report for what has actually been deployed and verified.
+Activity is first stored on the computer running Beacon. The 0.5 cloud preview adds opt-in synchronization to a private asip.ca account. In a cloud-enabled build, choose **Connect cloud**, enter the preview gate, and approve the computer. Repeat on another computer using the same cloud workspace. Project records, evidence, session details, project metadata and named API metadata synchronize. Provider credentials stay local. Repository working trees and full transcripts are not copied; captured input/output and excerpts already in a record synchronize as evidence. Recovery retains up to ten ASIP history checkpoints; restoring one does not delete cloud records or back up repository files. See [cloud setup and limits](cloud/README.md) and the qualification report for what has actually been deployed and verified.
 
 ## Send feedback
 

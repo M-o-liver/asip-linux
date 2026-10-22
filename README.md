@@ -1,10 +1,10 @@
 # ASIP
 
-ASIP keeps project history across Codex, Claude Code, and Antigravity.
+ASIP remembers what your AI agents have done, across projects, computers, and agent platforms.
 
 Beacon runs on your computer. Its native plugins record agent activity and let agents recall project work and use named API connections. Open ASIP from Beacon to browse that history.
 
-[Download ASIP](https://github.com/M-o-liver/asip-linux/releases) · [Installation and test guide](ALPHA.md).
+[ASIP website](https://asip.ca) · [Download ASIP](https://asip.ca/download) · [Installation and test guide](ALPHA.md).
 
 ## Install and connect
 
@@ -25,6 +25,9 @@ ASIP's Google desktop client and GitHub OAuth app are registered. Public client 
 
 ## What is implemented
 
+- The private `asip.ca` website, durable cloud accounts, hosted project workspaces, and administrator-managed preview admission.
+- Offline local recording plus resumable synchronization across connected computers, with immutable source records in private R2 and owner/project indexes in D1.
+- Scoped, revocable HTTP and MCP connections for remote project history and evidence; provider credentials remain in their owning computer's keychain.
 - A full Linux desktop Beacon and anchored Windows/macOS panels, with SVG controls, recent work, managed plugin installation, API connections, recovery, and account settings.
 - A browser workspace with projects, a project map, sessions, intent/result filters, searchable history, API connections, and an evidence inspector. Older sessions are paginated and the displayed total includes all recorded sessions. Map links represent actual sessions shared across projects; focusing a project highlights its relationships.
 - Starts at login by default using each platform's startup mechanism. You can turn this off in Beacon settings.
@@ -77,7 +80,7 @@ If you used the earlier ASIP workspace, choose **Import previous history** in Be
 
 The CI workflow runs connection and OAuth fixture tests, installs the Codex and Claude plugins into disposable runner profiles, and builds native installers on Windows, Linux, and both Apple Silicon and Intel Macs. These checks do not verify a real provider login.
 
-Alpha tags matching the application version, such as `v0.4.1-alpha.3`, also publish the installers, native qualification records, and SHA-256 checksums after all four native jobs pass. Release publishing uses the build's repository token; it does not require a personal API credential.
+Alpha tags matching the application version, such as `v0.5.0-alpha.1`, also publish the installers, native qualification records, and SHA-256 checksums after all four native jobs pass. Release publishing uses the build's repository token; it does not require a personal API credential.
 
 ## Qualification and current limits
 

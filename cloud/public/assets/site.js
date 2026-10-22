@@ -1,18 +1,18 @@
 const proof = {
   intent: {
     kind: "Intent / ASIP release qualification",
-    title: "Capture the work without asking twice.",
-    text: "Verify that an ordinary Antigravity reply is automatically preserved and can be recalled by Codex, with its original session and source evidence.",
+    title: "Carry the handoff to the next computer.",
+    text: "Record a project handoff in Linux Codex. Retrieve the original work, native session and evidence in Windows Antigravity. Then bring the next agent’s response back with you.",
   },
   result: {
     kind: "Result / Native agent response",
-    title: "“Automatic turn summary verified.”",
-    text: "The ordinary reply appeared automatically in Beacon and its project workspace on Linux, Windows and Intel macOS. Codex then recalled the recorded response.",
+    title: "Recorded on Linux. Recalled on Windows.",
+    text: "Windows Antigravity retrieved the original Codex record. Its response was captured automatically, synchronized through ASIP cloud, and recalled back on Linux.",
   },
   evidence: {
     kind: "Evidence / Source record",
-    title: "A response with a source you can inspect.",
-    text: "The recorded evidence preserves the transcript reference, native timestamp, step number and SHA-256. Alpha 3 qualification independently recomputed the Linux source-row hash and matched the recorded value.",
+    title: "A handoff with its history intact.",
+    text: "Original record IDs, native sessions, timestamps, project associations and source hashes stay with the work. The published qualification follows both directions of the handoff and verifies the original Windows record’s hash on Linux.",
   },
 };
 const tabs = [...document.querySelectorAll("[data-proof]")];
