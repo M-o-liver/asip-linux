@@ -1,0 +1,1 @@
+CREATE INDEX events_work_history ON events(account_id,julianday(at) DESC,seq DESC) WHERE (kind IN ('intent','result','evidence','failed','unresolved','api_failed','api_unresolved','StopFailure') OR kind LIKE 'intent.%' OR kind LIKE 'verification.%' OR (kind='Stop' AND trim(summary) NOT IN ('','Stop')));

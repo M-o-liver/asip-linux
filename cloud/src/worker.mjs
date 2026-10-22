@@ -31,10 +31,14 @@ import {
   pull,
   catalogue,
   readCatalogue,
-  scope,
-  decoded,
 } from "./memory.mjs";
 import { oauth } from "./oauth.mjs";
+import {
+  activityIndex,
+  scopedActivity,
+  activitySessions,
+  activityRelationships,
+} from "./activity.mjs";
 
 async function deviceRoutes(request, env, url, auth) {
   if (
@@ -247,30 +251,15 @@ async function api(request, env, url) {
   if (url.pathname === "/api/v1/sync/catalogue" && request.method === "GET")
     return json(await readCatalogue(env, auth));
   if (url.pathname === "/api/v1/sessions" && request.method === "GET") {
-    const { where, values } = scope(auth, url.searchParams);
+    const index = await activityIndex(env, auth.accountId);
     return json({
-      sessions: (
-        await env.DB.prepare(
-          "SELECT agent,session,COUNT(*) AS events,MIN(at) AS startedAt,MAX(at) AS lastActivity FROM events WHERE " +
-            where +
-            " GROUP BY agent,session ORDER BY MAX(at) DESC LIMIT 100",
-        )
-          .bind(...values)
-          .all()
-      ).results,
+      sessions: activitySessions(scopedActivity(index, auth, url.searchParams)),
+      indexedAt: new Date(index.updatedAt).toISOString(),
     });
   }
   if (url.pathname === "/api/v1/relationships" && request.method === "GET") {
-    const { where, values } = scope(auth, new URLSearchParams());
-    const relationships = (
-      await env.DB.prepare(
-        "WITH memberships AS (SELECT DISTINCT agent,session,project FROM events WHERE " +
-          where +
-          " AND project IS NOT NULL) SELECT a.project AS source,b.project AS target,COUNT(*) AS sessions FROM memberships a JOIN memberships b ON a.agent=b.agent AND a.session=b.session AND a.project<b.project GROUP BY a.project,b.project LIMIT 100",
-      )
-        .bind(...values)
-        .all()
-    ).results;
+    const index = await activityIndex(env, auth.accountId);
+    const relationships = activityRelationships(scopedActivity(index, auth));
     const links = (
       await env.DB.prepare(
         "SELECT source,target,relation FROM project_links WHERE account_id=?",
@@ -282,7 +271,10 @@ async function api(request, env, url) {
         !auth.projects.length ||
         (auth.projects.includes(l.source) && auth.projects.includes(l.target)),
     );
-    return json({ relationships: [...relationships, ...links] });
+    return json({
+      relationships: [...relationships, ...links],
+      indexedAt: new Date(index.updatedAt).toISOString(),
+    });
   }
   if (url.pathname === "/api/v1/connections" && request.method === "GET") {
     const connections = (

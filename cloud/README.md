@@ -199,6 +199,53 @@ writes zero rows, changing one session writes one row, and an idle native pass
 makes only its cursor request. Metadata acknowledgments and quota pauses both
 survive restart.
 
+### Workspace read budget
+
+On October 22 the owner reported another fast increase. Live query insights
+identified the relationship self-join at an average **308,426 rows read per
+request**, plus repeated full-history project/session aggregates. Daily reads
+had reached 4,486,106 even though writes were 20,356. A low write count alone
+was not sufficient qualification.
+
+Projects, session counts and inferred relationships now share an incremental
+activity index in the **existing private R2 bucket**, under
+`<account>/indexes/activity-v1.json`. Authentication and project scopes are
+checked on every request; this object is never exposed directly. It contains
+counts and original time bounds by project/agent/session, not record payloads
+or provider credentials. D1 remains the authoritative append-only record store.
+
+The first request builds one checkpoint. Later requests check the indexed
+account sequence (one D1 row) and aggregate only records beyond that checkpoint.
+Counts include out-of-order historical uploads correctly. An unchanged account
+does not rewrite either D1 or R2. Conditional R2 writes prevent concurrent
+Workers from overwriting a newer cursor or counting a delta twice. A missing
+or unavailable bucket never falls back to repeated full-history scans. A
+malformed checkpoint fails closed; history retrieval and synchronization use
+their independent paths. Snapshot bounds are 50,000 membership groups and 8 MiB;
+the service returns 503 rather than publishing truncated counts. Relationship
+expansion is bounded to the requested first 100 pairs with exact session counts.
+
+Migration `0004_work_history.sql` adds a partial chronological index for the
+default Work view. It excludes low-level tool rows, adding index writes only
+for qualifying work records. Neither this migration nor the R2 checkpoint
+rewrites existing record contents. Existing Beacon installations need no update.
+
+The 15,000-record emulator fixture meters 30,001 reads for the one-time
+checkpoint, **20 reads for 20 warm aggregate loads**, **3 reads to include one
+new record**, and **31 reads for a 30-record Work page**, with zero D1 writes
+from the aggregate operations. Tests also compare counts/relationships against
+SQL and cover duplicate uploads, older backfill, account and project scopes,
+concurrent checkpoint races, corrupt checkpoints and R2 failures.
+
+Operational recovery: keep the previous Worker version for rollback; the new
+SQL index is compatible with it. An activity checkpoint can be explicitly
+rebuilt by removing only that account's derived `indexes/activity-v1.json`
+object. This incurs a one-time history scan. Never remove canonical `events/`
+objects or database history as a quota workaround. Future record deletion or
+editing must also invalidate/version this append-only derived index. Search,
+explicit history filters and device metadata still have measurable D1 costs;
+monitor actual row deltas rather than assuming all traffic is free.
+
 History can contain paths and sensitive work. Existing trace redaction remains
 in Beacon; it is a best-effort filter, not end-to-end encryption. Cloudflare
 infrastructure encryption protects storage in transit and at rest. The account

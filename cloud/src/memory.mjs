@@ -1,6 +1,11 @@
 import { canonical, cloudEvent, sha256 } from "../../beacon/cloud-protocol.mjs";
 import { fail, now } from "./http.mjs";
 import { projectAllowed } from "./auth.mjs";
+import {
+  activityIndex,
+  scopedActivity,
+  activityProjects,
+} from "./activity.mjs";
 
 export async function ingest(env, auth, inputs) {
   if (!Array.isArray(inputs) || !inputs.length || inputs.length > 40)
@@ -179,7 +184,11 @@ export async function listEvents(env, auth, params) {
   }
   const limit = Math.max(1, Math.min(100, Number(params.get("limit")) || 50));
   const { results } = await env.DB.prepare(
-    "SELECT * FROM events WHERE " +
+    "SELECT * FROM " +
+      (category === "work"
+        ? "events INDEXED BY events_work_history"
+        : "events") +
+      " WHERE " +
       conditions.join(" AND ") +
       " ORDER BY julianday(at) DESC,seq DESC LIMIT ?",
   )
@@ -197,14 +206,9 @@ export async function listEvents(env, auth, params) {
   };
 }
 export async function projects(env, auth) {
-  const { where, values } = scope(auth, new URLSearchParams());
-  const { results } = await env.DB.prepare(
-    "SELECT project AS id,count(*) AS events,count(DISTINCT agent||char(0)||session) AS sessions,group_concat(DISTINCT agent) AS agents,MAX(at) AS lastActivity FROM events WHERE " +
-      where +
-      " AND project IS NOT NULL GROUP BY project ORDER BY MAX(at) DESC LIMIT 1000",
-  )
-    .bind(...values)
-    .all();
+  const results = activityProjects(
+    scopedActivity(await activityIndex(env, auth.accountId), auth),
+  );
   const catalogue = (
     await env.DB.prepare(
       "SELECT id,name,description,repository,roots FROM project_catalogue WHERE account_id=? ORDER BY device_id",
@@ -227,7 +231,7 @@ export async function projects(env, auth) {
       ...row,
       name:
         map.get(row.id)?.name || row.id.split(/[\\/]/).filter(Boolean).at(-1),
-      agents: row.agents?.split(",") || [],
+      agents: row.agents,
     });
   return [...map.values()];
 }
