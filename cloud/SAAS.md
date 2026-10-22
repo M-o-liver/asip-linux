@@ -17,10 +17,12 @@ active subscription. Account information, subscription management, device listin
 and credential revocation remain reachable. Records are retained. Beacon keeps
 recording locally. A subscription does not change source hashes or local history.
 
-The full-domain private preview gate is lifted for launch. The separate restricted
-Access application at `/auth/access` remains for existing preview owners, with
-its independent audience and original admission policy. Public sign-in uses the
-provider OAuth routes, not a public Everyone rule on this owner fallback.
+The apex `asip.ca` is public. The Access application named **ASIP private
+subdomains** still covers `*.asip.ca` with its original allowlist. The separate
+restricted Access application at `/auth/access` remains for existing preview
+owners, with its independent audience and original admission policy. Public
+sign-in uses the provider OAuth routes, not a public Everyone rule on this owner
+fallback.
 
 ## Identity configuration
 
@@ -37,6 +39,11 @@ the web client. The web origin is `https://asip.ca`; its authorized domain is
 single-use state and PKCE for both providers. Google also verifies nonce and the
 signed ID token. Explicit linking requires the same owner browser session at
 both ends. Provider access tokens are used for identity lookup and not retained.
+Provider requests use `redirect: "manual"` and reject non-success status codes.
+Workers does not support `redirect: "error"`; the runtime integration test
+exercises a full GitHub callback and Stripe price request, including redirected
+provider responses. Unexpected OAuth errors log only the provider, error class,
+and stack frames, excluding credentials, codes, response bodies, and messages.
 
 Wrangler `keep_vars` preserves dashboard-managed configuration. Do not copy
 Beacon's connection vault or local sign-in files into deployment scripts.
@@ -71,6 +78,11 @@ current customer, account metadata, price, live/test mode, status, and period en
 must match. Reading current state avoids out-of-order cancellation/update events
 overwriting a newer subscription. Webhooks verify HMAC-SHA-256 over the original
 body with a five-minute timestamp tolerance and persist processed event IDs.
+
+The launch qualification opened live Checkout and the portal from a real new
+trial account. The unpaid Checkout was expired without creating a subscription
+or charging a card. See `QUALIFICATION.md` for the distinction between those live
+observations and automated paid-state/webhook fixtures.
 
 ## Interface
 
