@@ -325,7 +325,7 @@ async function loadDevices() {
       d.label,
       "Connected " +
         date(d.created_at) +
-        " · Last synchronized " +
+        " · Upload last reported " +
         date(d.last_seen) +
         " · Expires " +
         date(d.expires_at),

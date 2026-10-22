@@ -120,6 +120,11 @@ an actionable reconnection message and keeps recording locally. Reconnect in
 the browser to renew admission. API clients need their scoped ASIP token and,
 during private preview, a valid Access cookie.
 
+The hosted computers list shows approximate upload activity, updated at most
+every 15 minutes when work is sent. Downloads do not change that timestamp.
+Beacon shows the computer's current synchronization status. Idle reads remain
+free of database writes.
+
 ## Synchronization and integrity
 
 - Local SQLite recording remains the first durable write. It works offline.
