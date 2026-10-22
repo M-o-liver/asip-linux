@@ -1,0 +1,144 @@
+@import url("/assets/interface.css");
+body {
+  font-size: 14px;
+  line-height: 1.7;
+}
+body > .nav {
+  height: 85px;
+  border-bottom: 1px solid var(--line);
+}
+.nav .wordmark {
+  color: var(--ink);
+  font-family: Georgia, serif;
+}
+.nav .wordmark img {
+  border-radius: 8px;
+}
+.wrap {
+  width: min(1250px, calc(100% - 48px));
+}
+.nav-action {
+  background: linear-gradient(100deg, #cfe0ba, #b6cca5);
+  border: 1px solid #d1e1be;
+  color: #162210;
+  border-radius: 7px;
+  padding: 9px 17px;
+}
+.page-intro {
+  padding: 55px 0 25px;
+}
+.page-intro h1,
+.auth-card h1 {
+  font-family: Georgia, serif;
+  font-weight: 400;
+  color: var(--ink);
+}
+.lede,
+.prose p,
+.prose li,
+.download-card .muted,
+.muted {
+  color: #b6c2a8;
+}
+.download-card,
+.auth-card {
+  background: linear-gradient(115deg, #202719db, #10170fe8);
+  border: 1px solid var(--line);
+  box-shadow: inset 0 1px 0 #e1ce951a;
+}
+.download-card h2,
+.prose h2 {
+  font-family: Georgia, serif;
+  font-weight: 400;
+}
+.button {
+  border-radius: 7px;
+  color: #e3e9d4;
+  border-color: #b5c18f40;
+  background: #1d2817;
+}
+.button.primary {
+  background: linear-gradient(100deg, #d1e3bd, #b9cfaa);
+  color: #16210f;
+  border-color: #d2e3c2;
+}
+.button.primary:hover {
+  background: #deedcc;
+}
+.prose pre {
+  background: #081106be;
+  border: 1px solid #b2c38b35;
+  color: #ccdcb7;
+  border-radius: 8px;
+}
+.notice {
+  background: #aeb57712;
+  border-left: 2px solid #bcaa70;
+  color: #c5d0b6;
+}
+.auth-card dt,
+.prose th {
+  color: #aab997;
+}
+.error {
+  color: #edb88e;
+}
+.success {
+  color: #b1d294;
+}
+.footer {
+  border-color: var(--line);
+  color: #a6b495;
+}
+.footer .wordmark {
+  color: #d5dfc3;
+}
+.prose code {
+  color: #d7d9b2;
+}
+.prose td,
+.prose th {
+  border-color: var(--line);
+}
+.privacy-content {
+  max-width: 800px;
+}
+.privacy-content h1 {
+  font:
+    48px Georgia,
+    serif;
+  line-height: 1.1;
+}
+.privacy-content h2 {
+  font:
+    25px Georgia,
+    serif;
+}
+.privacy-content p {
+  color: #b8c6a8;
+}
+.privacy-content a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+@media (max-width: 780px) {
+  .wrap {
+    width: calc(100% - 32px);
+  }
+  .page-intro h1 {
+    font-size: 40px;
+  }
+  .download-grid {
+    grid-template-columns: 1fr;
+  }
+  .auth-card {
+    padding: 24px;
+    margin: 30px auto;
+  }
+  .nav nav {
+    display: none;
+  }
+  .privacy-content h1 {
+    font-size: 36px;
+  }
+}

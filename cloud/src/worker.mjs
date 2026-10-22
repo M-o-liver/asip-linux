@@ -34,6 +34,14 @@ import {
 } from "./memory.mjs";
 import { oauth } from "./oauth.mjs";
 import {
+  billingRoute,
+  webhook,
+  ensureTrial,
+  entitlement,
+  billingConfigured,
+  requireAccess,
+} from "./billing.mjs";
+import {
   activityIndex,
   scopedActivity,
   activitySessions,
@@ -167,6 +175,23 @@ async function api(request, env, url) {
       ? "memory:write"
       : "memory:read";
   const auth = await authenticate(request, env, permission);
+  if (
+    url.pathname === "/api/v1/billing" ||
+    url.pathname.startsWith("/api/v1/billing/")
+  ) {
+    owner(auth);
+    return billingRoute(request, env, url, auth);
+  }
+  const accountManagement =
+    [
+      "/api/v1/me",
+      "/api/v1/account",
+      "/api/v1/devices",
+      "/api/v1/devices/self/revoke",
+    ].includes(url.pathname) ||
+    (request.method === "DELETE" &&
+      /^\/api\/v1\/(devices|tokens)\/[^/]+$/.test(url.pathname));
+  if (!accountManagement) await requireAccess(env, auth.accountId);
   if (url.pathname.startsWith("/api/v1/devices")) {
     const response = await deviceRoutes(request, env, url, auth);
     if (response) return response;
@@ -175,6 +200,7 @@ async function api(request, env, url) {
     return json({
       account: { id: auth.accountId, handle: auth.handle, name: auth.name },
       workspace: "/users/" + auth.handle,
+      access: entitlement(await ensureTrial(env, auth.accountId)),
       providers: {
         google: Boolean(
           env.GOOGLE_WEB_CLIENT_ID && env.GOOGLE_WEB_CLIENT_SECRET,
@@ -230,6 +256,37 @@ async function api(request, env, url) {
   }
   if (url.pathname === "/api/v1/projects" && request.method === "GET")
     return json({ projects: await projects(env, auth) });
+  if (url.pathname === "/api/v1/overview" && request.method === "GET") {
+    const index = await activityIndex(env, auth.accountId);
+    const rows = scopedActivity(index, auth);
+    const agents = new Map(),
+      sessions = new Set();
+    let recordCount = 0,
+      lastActivity = "";
+    for (const row of rows) {
+      recordCount += row.events;
+      if (row.lastActivity > lastActivity) lastActivity = row.lastActivity;
+      sessions.add(JSON.stringify([row.agent, row.session]));
+      const agent = agents.get(row.agent) || {
+        id: row.agent,
+        events: 0,
+        lastActivity: "",
+      };
+      agent.events += row.events;
+      if (row.lastActivity > agent.lastActivity)
+        agent.lastActivity = row.lastActivity;
+      agents.set(row.agent, agent);
+    }
+    return json({
+      recordCount,
+      sessionCount: sessions.size,
+      lastActivity,
+      agents: [...agents.values()].sort((a, b) =>
+        b.lastActivity.localeCompare(a.lastActivity),
+      ),
+      indexedAt: new Date(index.updatedAt).toISOString(),
+    });
+  }
   if (url.pathname === "/api/v1/events" && request.method === "GET")
     return json(await listEvents(env, auth, url.searchParams));
   if (url.pathname === "/api/v1/events" && request.method === "POST") {
@@ -413,6 +470,7 @@ const toolSchemas = {
 async function mcp(request, env) {
   const auth = await authenticate(request, env),
     input = await body(request, 131072);
+  await requireAccess(env, auth.accountId);
   if (input.jsonrpc !== "2.0" || Array.isArray(input))
     fail(400, "Send one JSON-RPC 2.0 message.");
   if (input.id === undefined) return new Response(null, { status: 202 });
@@ -524,6 +582,30 @@ async function handle(request, env) {
   if (url.origin !== env.ORIGIN) fail(404, "Use asip.ca.");
   if (url.pathname === "/health")
     return json({ service: "asip-cloud", schema: 1 });
+  if (url.pathname === "/api/config" && request.method === "GET")
+    return json({
+      providers: {
+        github: Boolean(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET),
+        google: Boolean(
+          env.GOOGLE_WEB_CLIENT_ID && env.GOOGLE_WEB_CLIENT_SECRET,
+        ),
+      },
+      billing: billingConfigured(env),
+      trialDays: 7,
+      price: { amount: 1200, currency: "cad", interval: "month" },
+    });
+  if (url.pathname === "/api/billing/webhook") return webhook(request, env);
+  if (url.pathname === "/app") {
+    const account = await browserAccount(request, env);
+    return new Response(null, {
+      status: 303,
+      headers: {
+        Location: account
+          ? "/users/" + account.handle + url.search + url.hash
+          : "/" + url.search,
+      },
+    });
+  }
   if (url.pathname === "/auth/access") {
     const claims = await signinClaims(request, env);
     const account = await accountForIdentity(
@@ -573,7 +655,7 @@ async function handle(request, env) {
     if (!account)
       return new Response(null, {
         status: 303,
-        headers: { Location: "/auth/access" },
+        headers: { Location: "/" },
       });
     if (url.pathname !== "/users/" + account.handle)
       fail(404, "Workspace not found.");
@@ -581,6 +663,7 @@ async function handle(request, env) {
   } else if (url.pathname === "/connect") asset.pathname = "/connect.html";
   else if (url.pathname === "/download") asset.pathname = "/download.html";
   else if (url.pathname === "/api") asset.pathname = "/api.html";
+  else if (url.pathname === "/privacy") asset.pathname = "/privacy.html";
   return env.ASSETS.fetch(
     new Request(asset, { method: request.method, headers: request.headers }),
   );
@@ -590,6 +673,29 @@ export default {
     try {
       return secure(await handle(request, env));
     } catch (error) {
+      if (
+        /^\/auth\/(google|github)(?:\/callback)?$/.test(
+          new URL(request.url).pathname,
+        ) &&
+        request.headers.get("Accept")?.includes("text/html")
+      ) {
+        return secure(
+          new Response(null, {
+            status: 303,
+            headers: {
+              Location:
+                "/?auth_error=" +
+                encodeURIComponent(
+                  error instanceof HttpError
+                    ? error.message
+                    : "Sign-in could not be completed. Please try again.",
+                ),
+              "Set-Cookie":
+                "asip_oauth=; Secure; HttpOnly; SameSite=Lax; Path=/auth/; Max-Age=0",
+            },
+          }),
+        );
+      }
       return secure(serviceError(error));
     }
   },

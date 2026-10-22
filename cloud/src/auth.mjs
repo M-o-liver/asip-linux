@@ -1,5 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { sha256 } from "../../beacon/cloud-protocol.mjs";
+import { ensureTrial } from "./billing.mjs";
 import {
   fail,
   random,
@@ -101,7 +102,11 @@ export async function accountForIdentity(env, provider, subject, profile) {
       profile.email || null,
     ),
   ]);
-  return env.DB.prepare("SELECT * FROM accounts WHERE id=?").bind(id).first();
+  const account = await env.DB.prepare("SELECT * FROM accounts WHERE id=?")
+    .bind(id)
+    .first();
+  await ensureTrial(env, account.id);
+  return account;
 }
 export async function browserAccount(request, env) {
   const session = cookie(request, "__Host-asip");

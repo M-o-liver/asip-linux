@@ -1,6 +1,6 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { sha256 } from "../../beacon/cloud-protocol.mjs";
-import { fail, random, expires } from "./http.mjs";
+import { fail, random, expires, throttle } from "./http.mjs";
 import {
   accountForIdentity,
   browserAccount,
@@ -22,6 +22,12 @@ async function providerJSON(url, options) {
   return response.json();
 }
 export async function oauth(request, env, url) {
+  if (request.method !== "GET") fail(405, "Use GET to sign in.");
+  await throttle(
+    env,
+    "oauth:" + (request.headers.get("CF-Connecting-IP") || "unknown"),
+    30,
+  );
   const provider = url.pathname.split("/")[2];
   if (!["google", "github"].includes(provider))
     fail(404, "Unknown identity provider.");
@@ -36,7 +42,7 @@ export async function oauth(request, env, url) {
   if (!clientId || !secret)
     fail(
       503,
-      "Use preview sign-in. This provider is not configured for the website yet.",
+      "This sign-in provider is being connected. Please try again shortly.",
     );
   const callback = env.ORIGIN + "/auth/" + provider + "/callback";
   if (!url.pathname.endsWith("/callback")) {
@@ -49,7 +55,10 @@ export async function oauth(request, env, url) {
         : null;
     if (url.searchParams.get("link") === "1" && !account)
       fail(401, "Sign in before linking an identity.");
-    await env.DB.prepare("INSERT INTO oauth_states VALUES(?,?,?,?,?,?)")
+    const next = url.searchParams.get("return");
+    await env.DB.prepare(
+      "INSERT INTO oauth_states(hash,provider,verifier,nonce,account_id,expires_at,return_path) VALUES(?,?,?,?,?,?,?)",
+    )
       .bind(
         await sha256(state),
         provider,
@@ -57,6 +66,7 @@ export async function oauth(request, env, url) {
         nonce,
         account?.id || null,
         expires(300),
+        next?.startsWith("/connect?") && next.length < 8192 ? next : "/app",
       )
       .run();
     const target = new URL(
@@ -68,6 +78,20 @@ export async function oauth(request, env, url) {
       client_id: clientId,
       redirect_uri: callback,
       state,
+      code_challenge: btoa(
+        String.fromCharCode(
+          ...new Uint8Array(
+            await crypto.subtle.digest(
+              "SHA-256",
+              new TextEncoder().encode(verifier),
+            ),
+          ),
+        ),
+      )
+        .replace(/=/g, "")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_"),
+      code_challenge_method: "S256",
       scope:
         provider === "google" ? "openid email profile" : "read:user user:email",
       ...(provider === "google"
@@ -126,6 +150,7 @@ export async function oauth(request, env, url) {
         client_id: clientId,
         client_secret: secret,
         code: url.searchParams.get("code"),
+        code_verifier: saved.verifier,
         redirect_uri: callback,
         ...(provider === "google"
           ? { grant_type: "authorization_code", code_verifier: saved.verifier }
@@ -188,7 +213,9 @@ export async function oauth(request, env, url) {
   return new Response(null, {
     status: 303,
     headers: {
-      Location: "/users/" + account.handle,
+      Location: saved.return_path?.startsWith("/connect?")
+        ? saved.return_path
+        : "/users/" + account.handle,
       "Set-Cookie": await sessionFor(env, account),
     },
   });

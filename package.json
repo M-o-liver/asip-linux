@@ -12,7 +12,7 @@
     "start": "electron .",
     "format": "prettier --write beacon scripts tests cloud/src cloud/public cloud/*.md cloud/*.jsonc package.json README.md .github",
     "check:format": "prettier --check beacon scripts tests cloud/src cloud/public cloud/*.md cloud/*.jsonc package.json README.md .github",
-    "test:cloud": "node --test tests/cloud.test.mjs",
+    "test:cloud": "node --test tests/cloud.test.mjs tests/billing.test.mjs",
     "cloud:dev": "wrangler dev --config cloud/wrangler.jsonc",
     "cloud:build": "wrangler deploy --dry-run --config cloud/wrangler.jsonc --outdir build/cloud",
     "test": "npm run build:helper && node --test tests/*.test.mjs",

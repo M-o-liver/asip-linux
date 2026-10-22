@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Privacy — ASIP</title>
+    <link rel="icon" href="/assets/mark.svg" />
+    <link rel="stylesheet" href="/assets/site.css" />
+    <link rel="stylesheet" href="/assets/legacy.css" />
+  </head>
+  <body>
+    <header class="nav wrap">
+      <a class="wordmark" href="/"
+        ><img src="/assets/mark.svg" width="34" height="34" alt="" />ASIP</a
+      ><a class="nav-action" href="/app">Your workspace →</a>
+    </header>
+    <main class="wrap privacy-content">
+      <section class="page-intro">
+        <p class="eyebrow">YOUR PRIVATE PROJECT MEMORY</p>
+        <h1>Privacy at ASIP.</h1>
+        <p class="muted">Effective October 22, 2026</p>
+      </section>
+      <article class="prose">
+        <p>
+          ASIP keeps project history connected across your agents and devices.
+          This notice describes the information the current service uses and
+          where it goes.
+        </p>
+        <h2>Your account</h2>
+        <p>
+          GitHub or Google sign-in provides your provider identity, display
+          name, and verified email address. ASIP uses these to create and
+          authenticate your account. Website sign-in requests basic identity
+          access; it does not request access to your repositories, Google Drive,
+          or email messages. Identity linking is an explicit account action.
+        </p>
+        <h2>Your project memory</h2>
+        <p>
+          Beacon records work locally first. When you connect cloud and approve
+          synchronization, ASIP stores project and session metadata, agent
+          records, relationships, named connection metadata, and recorded
+          evidence. Evidence can include paths, tool input and output, and text
+          excerpts already captured in records. Full working trees, transcript
+          files, and arbitrary referenced attachments are not automatically
+          uploaded. Provider API credentials and local plugin grants stay on the
+          device.
+        </p>
+        <h2>How the service runs</h2>
+        <p>
+          ASIP uses Cloudflare Workers, D1, and private R2 storage to operate
+          its website and cloud memory. Connections use HTTPS. Stored cloud
+          information is protected by Cloudflare infrastructure encryption and
+          account authorization. This is not end-to-end encrypted storage.
+          Beacon’s trace redaction is a best-effort filter; review what your
+          agents record before synchronizing sensitive work.
+        </p>
+        <h2>Payments</h2>
+        <p>
+          Stripe handles subscription checkout, payment details, invoices, and
+          billing management. ASIP stores Stripe customer and subscription
+          identifiers, access status, and trial and subscription dates. ASIP
+          does not store your card number. The free trial does not require a
+          card.
+        </p>
+        <h2>Cookies and service data</h2>
+        <p>
+          ASIP uses necessary authentication cookies and browser storage for
+          preferences such as pinned projects. Cloudflare and identity providers
+          process information needed for security and sign-in. ASIP’s current
+          application has no advertising trackers or product analytics scripts.
+        </p>
+        <h2>Your controls and retention</h2>
+        <p>
+          You can sign out, revoke device and API credentials, and manage your
+          subscription from your workspace. Recorded history is retained after a
+          trial or subscription ends. Local recovery does not delete cloud
+          history. Automated account deletion is not yet available; contact ASIP
+          for account access, export, correction, or deletion requests. ASIP
+          does not sell your project memory.
+        </p>
+        <h2>Contact</h2>
+        <p>
+          For privacy or account requests, email
+          <a href="mailto:bosslikedat@gmail.com">bosslikedat@gmail.com</a>. Do
+          not include API keys, passwords, payment details, or sensitive project
+          evidence in an initial request.
+        </p>
+        <p>
+          Provider information:
+          <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare</a> ·
+          <a href="https://stripe.com/privacy">Stripe</a> ·
+          <a href="https://policies.google.com/privacy">Google</a> ·
+          <a
+            href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement"
+            >GitHub</a
+          >.
+        </p>
+      </article>
+    </main>
+  </body>
+</html>
