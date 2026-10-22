@@ -71,36 +71,46 @@ test("identical native tool receipts are idempotent across deliveries and restar
   assert.equal(runtime.status().records, 1);
   await runtime.close();
   const restarted = new Runtime(home);
-  t.after(() => restarted.close());
-  restarted.signIn(account);
-  const token = connect(restarted);
-  assert.deepEqual(restarted.record(token, hook), saved);
-  assert.equal(restarted.status().records, 1);
-  const changes = [
-    { ...hook, session: "another-native-session" },
-    { ...hook, kind: "PreToolUse" },
-    { ...hook, project: "github.com/example/another-project" },
-    {
+  try {
+    restarted.signIn(account);
+    const token = connect(restarted);
+    assert.deepEqual(restarted.record(token, hook), saved);
+    assert.equal(restarted.status().records, 1);
+    const changes = [
+      { ...hook, session: "another-native-session" },
+      { ...hook, kind: "PreToolUse" },
+      { ...hook, project: "github.com/example/another-project" },
+      {
+        ...hook,
+        data: { ...hook.data, tool_response: { output: "new evidence" } },
+      },
+      {
+        ...hook,
+        data: { ...hook.data, tool_use_id: "a-separate-native-call" },
+      },
+    ];
+    for (const change of changes)
+      assert.notEqual(restarted.record(token, change).id, saved.id);
+    assert.equal(restarted.status().records, 1 + changes.length);
+    const otherAgent = connect(restarted, "antigravity");
+    assert.notEqual(restarted.record(otherAgent, hook).id, saved.id);
+    // Explicit records and receipts without a source identity remain separate.
+    assert.notEqual(
+      restarted.record(token, event).id,
+      restarted.record(token, event).id,
+    );
+    const incomplete = {
       ...hook,
-      data: { ...hook.data, tool_response: { output: "new evidence" } },
-    },
-    { ...hook, data: { ...hook.data, tool_use_id: "a-separate-native-call" } },
-  ];
-  for (const change of changes)
-    assert.notEqual(restarted.record(token, change).id, saved.id);
-  assert.equal(restarted.status().records, 1 + changes.length);
-  const otherAgent = connect(restarted, "antigravity");
-  assert.notEqual(restarted.record(otherAgent, hook).id, saved.id);
-  // Explicit records and receipts without a source identity remain separate.
-  assert.notEqual(
-    restarted.record(token, event).id,
-    restarted.record(token, event).id,
-  );
-  const incomplete = { ...hook, data: { tool_use_id: "without-source-hash" } };
-  assert.notEqual(
-    restarted.record(token, incomplete).id,
-    restarted.record(token, incomplete).id,
-  );
+      data: { tool_use_id: "without-source-hash" },
+    };
+    assert.notEqual(
+      restarted.record(token, incomplete).id,
+      restarted.record(token, incomplete).id,
+    );
+  } finally {
+    // Close before setup's cleanup removes the directory: Windows locks open DBs.
+    await restarted.close();
+  }
 });
 test("Windows folder variants share history, catalogue, links, and workspace filters", (t) => {
   const { runtime } = setup(t);
