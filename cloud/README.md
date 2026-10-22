@@ -132,6 +132,10 @@ during private preview, a valid Access cookie.
 - Identical retries are idempotent. A different record using the same account
   and ID returns 409. A D1 trigger also protects concurrent conflicting writes;
   the D1 event batch is atomic.
+- Identical native tool-hook deliveries with the same call ID, source hash and
+  complete recorded payload use a durable receipt identity. Repeated delivery
+  does not create another local or cloud record. Different observations and
+  explicit records remain separate; existing history is preserved.
 - R2 writes precede D1. Failed batches may leave unreferenced private objects;
   they do not expose a partially committed batch. A later maintenance process
   can collect these objects after proving they are unreferenced.

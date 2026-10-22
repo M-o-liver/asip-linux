@@ -43,6 +43,65 @@ const event = {
   summary: "Fix the failing build",
   data: { evidence: "build log" },
 };
+test("identical native tool receipts are idempotent across deliveries and restart", async (t) => {
+  const { home, runtime } = setup(t);
+  runtime.signIn(account);
+  const firstToken = connect(runtime);
+  const secondToken = connect(runtime);
+  const hook = {
+    ...event,
+    kind: "PostToolUse",
+    summary: "PostToolUse Bash",
+    data: {
+      tool_use_id: "native-call-42",
+      trace_sha256: hash("original native receipt"),
+      tool: "Bash",
+      tool_response: { output: "verified", exit_code: 0 },
+    },
+  };
+  const saved = runtime.record(firstToken, hook);
+  // Object key order and the delivering plugin credential are not identity.
+  assert.deepEqual(
+    runtime.record(secondToken, {
+      ...hook,
+      data: Object.fromEntries(Object.entries(hook.data).reverse()),
+    }),
+    saved,
+  );
+  assert.equal(runtime.status().records, 1);
+  await runtime.close();
+  const restarted = new Runtime(home);
+  t.after(() => restarted.close());
+  restarted.signIn(account);
+  const token = connect(restarted);
+  assert.deepEqual(restarted.record(token, hook), saved);
+  assert.equal(restarted.status().records, 1);
+  const changes = [
+    { ...hook, session: "another-native-session" },
+    { ...hook, kind: "PreToolUse" },
+    { ...hook, project: "github.com/example/another-project" },
+    {
+      ...hook,
+      data: { ...hook.data, tool_response: { output: "new evidence" } },
+    },
+    { ...hook, data: { ...hook.data, tool_use_id: "a-separate-native-call" } },
+  ];
+  for (const change of changes)
+    assert.notEqual(restarted.record(token, change).id, saved.id);
+  assert.equal(restarted.status().records, 1 + changes.length);
+  const otherAgent = connect(restarted, "antigravity");
+  assert.notEqual(restarted.record(otherAgent, hook).id, saved.id);
+  // Explicit records and receipts without a source identity remain separate.
+  assert.notEqual(
+    restarted.record(token, event).id,
+    restarted.record(token, event).id,
+  );
+  const incomplete = { ...hook, data: { tool_use_id: "without-source-hash" } };
+  assert.notEqual(
+    restarted.record(token, incomplete).id,
+    restarted.record(token, incomplete).id,
+  );
+});
 test("Windows folder variants share history, catalogue, links, and workspace filters", (t) => {
   const { runtime } = setup(t);
   runtime.signIn(account);

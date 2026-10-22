@@ -5,6 +5,7 @@ import http from "node:http";
 import { DatabaseSync } from "node:sqlite";
 import { redactTrace } from "./trace.mjs";
 import { projectKey, reconcileWindowsProjects } from "./project.mjs";
+import { canonical } from "./cloud-protocol.mjs";
 
 const hash = (value) => crypto.createHash("sha256").update(value).digest("hex");
 const agents = new Set(["codex", "claude-code", "antigravity"]);
@@ -295,27 +296,48 @@ export class Runtime {
       (typeof project !== "string" || project.length > 2000)
     )
       throw new Error("Invalid project.");
-    const id = crypto.randomUUID(),
-      at = new Date().toISOString();
-    const data = JSON.stringify(redactTrace(event.data || {}, token));
-    if (data.length > 65536) throw new Error("Event is too large.");
-    this.storage()
-      .prepare("INSERT INTO events VALUES(?,?,?,?,?,?,?,?)")
-      .run(
-        id,
-        at,
-        client.agent,
-        session,
-        event.kind,
-        project,
-        redactTrace(String(event.summary || event.kind), token).slice(0, 2000),
-        data,
+    const at = new Date().toISOString(),
+      evidence = redactTrace(event.data || {}, token),
+      summary = redactTrace(String(event.summary || event.kind), token).slice(
+        0,
+        2000,
       );
+    const data = JSON.stringify(evidence);
+    if (data.length > 65536) throw new Error("Event is too large.");
+    // Native hook delivery can repeat across plugin installations or retries.
+    // Only a tool receipt with its native call ID and source hash qualifies.
+    // Include the full recorded payload so distinct observations are preserved.
+    const nativeReceipt =
+      ["PreToolUse", "PostToolUse", "tool_succeeded", "failed"].includes(
+        event.kind,
+      ) &&
+      typeof evidence.tool_use_id === "string" &&
+      evidence.tool_use_id.length > 0 &&
+      /^[a-f0-9]{64}$/.test(evidence.trace_sha256 || "");
+    const id = nativeReceipt
+      ? hash(
+          "asip-native-receipt-v1:" +
+            canonical({
+              agent: client.agent,
+              session,
+              kind: event.kind,
+              project,
+              summary,
+              data: evidence,
+            }),
+        )
+      : crypto.randomUUID();
+    const db = this.storage();
+    const inserted = db
+      .prepare("INSERT OR IGNORE INTO events VALUES(?,?,?,?,?,?,?,?)")
+      .run(id, at, client.agent, session, event.kind, project, summary, data);
     client.lastActivity = at;
-    this.recordCount++;
+    if (inserted.changes) this.recordCount++;
     client.lastSession = session;
     client.lastProject = project;
-    return { id, at };
+    return inserted.changes
+      ? { id, at }
+      : { id, at: db.prepare("SELECT at FROM events WHERE id=?").get(id).at };
   }
 
   projectForSession(agent, session) {
