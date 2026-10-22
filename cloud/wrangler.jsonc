@@ -6,6 +6,7 @@
   "account_id": "fd3003b1fc128cb091196b3358400844",
   "workers_dev": false,
   "preview_urls": false,
+  "keep_vars": true,
   "routes": [{ "pattern": "asip.ca", "custom_domain": true }],
   "assets": {
     "directory": "./public",
@@ -32,11 +33,17 @@
   ],
   "vars": {
     "ORIGIN": "https://asip.ca",
-    "PRIVATE_PREVIEW": "true",
+    "PRIVATE_PREVIEW": "false",
+    "BILLING_ENFORCED": "true",
+    "STRIPE_PRICE_ID": "price_1UTSI8KdcVQu3gvV4Hk3WBja",
+    "STRIPE_LIVEMODE": "true",
+    "STRIPE_PORTAL_CONFIGURATION": "bpc_1UTSVlKdcVQu3gvVLnMDJ4K8",
     "ACCESS_TEAM_DOMAIN": "damp-pond-2f61.cloudflareaccess.com",
     "ACCESS_AUD": "0728185fe661997d31b239987483e5d0bfd781786e931293294d3c314cd07231",
     "ACCESS_SIGNIN_AUD": "793e8b38309cd1e498dff35eae8ae98d135fc01b04cfe61755d72ab08c192f23",
     "GOOGLE_DESKTOP_CLIENT_ID": "950143412142-1h4lm2jn47tq72snkrdt40tdvsisl2ij.apps.googleusercontent.com",
+    "GOOGLE_WEB_CLIENT_ID": "950143412142-e1hcnn3dfj931qcf4r1k8v19kqug9q98.apps.googleusercontent.com",
+    "GITHUB_CLIENT_ID": "Ov23licGLCUVcOxiCrfu",
     "RELEASE_TAG": "v0.5.0-alpha.1",
   },
   "d1_databases": [

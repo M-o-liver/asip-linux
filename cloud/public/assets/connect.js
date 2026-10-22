@@ -17,8 +17,7 @@ async function init() {
     const r = await fetch("/api/v1/me");
     if (r.status === 401) {
       location.replace(
-        "/auth/access?return=" +
-          encodeURIComponent(location.pathname + location.search),
+        "/?return=" + encodeURIComponent(location.pathname + location.search),
       );
       return;
     }

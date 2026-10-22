@@ -6,6 +6,7 @@
     <title>Cloud API & agent connections — ASIP</title>
     <link rel="icon" href="/assets/mark.svg" />
     <link rel="stylesheet" href="/assets/site.css" />
+    <link rel="stylesheet" href="/assets/legacy.css" />
   </head>
   <body>
     <header class="nav wrap">
@@ -15,7 +16,7 @@
       <nav aria-label="Main navigation">
         <a href="/">Home</a><a href="/download">Download</a>
       </nav>
-      <a class="nav-action" href="/auth/access">Your workspace ↗</a>
+      <a class="nav-action" href="/app">Your workspace ↗</a>
     </header>
     <main class="wrap">
       <header class="page-intro">
@@ -38,19 +39,15 @@
     ?project=github.com/owner/project&query=deployment
 Authorization: Bearer &lt;your ASIP token&gt;</code></pre>
         <p>
-          During private preview, also send the preview authorization cookie
-          shown when creating a connection. This is Cloudflare Access admission;
-          your ASIP token independently controls which account and projects the
-          agent can read. The preview cookie expires with the browser’s Access
-          session.
+          Your ASIP token controls which account and projects the agent can
+          read. Cloud access requires an active trial or subscription. Existing
+          founder accounts retain access.
         </p>
-        <pre><code>Cookie: CF_Authorization=&lt;your preview session&gt;</code></pre>
         <h2>Or connect through MCP.</h2>
         <p>
           The cloud endpoint is <code>https://asip.ca/mcp</code>. It accepts
           authenticated Streamable HTTP JSON requests. Configure the
-          Authorization header and, during preview, the Cookie header in your
-          client’s supported connection settings.
+          Authorization header in your client’s supported connection settings.
         </p>
         <pre><code>{
   "jsonrpc": "2.0",
@@ -141,7 +138,7 @@ Authorization: Bearer &lt;your ASIP token&gt;</code></pre>
     <footer class="footer wrap">
       <a class="wordmark" href="/">ASIP</a>
       <p>Memory that moves with your work.</p>
-      <a href="/auth/access">Your workspace ↗</a>
+      <a href="/app">Your workspace ↗</a>
     </footer>
   </body>
 </html>
