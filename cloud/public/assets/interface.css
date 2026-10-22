@@ -1424,7 +1424,8 @@ summary:focus-visible {
   padding: 16px 12px 6px 15px;
 }
 .login-surface .hero-grid {
-  height: 345px;
+  height: auto;
+  min-height: 345px;
 }
 .login-surface .orb-art {
   inset: -20px -30px -10px;
