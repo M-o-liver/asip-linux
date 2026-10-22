@@ -287,12 +287,16 @@ $("clear-session").onclick = () => {
   loadHistory().catch(report);
 };
 $("refresh").onclick = async () => {
+  if ($("refresh").disabled) return;
+  $("refresh").disabled = true;
   aggregates.clear();
   try {
     await loadProjects();
     await loadHistory();
   } catch (error) {
     report(error);
+  } finally {
+    $("refresh").disabled = false;
   }
 };
 function management(container, title, description, id, revoked, kind) {
