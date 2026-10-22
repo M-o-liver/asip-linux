@@ -1,4 +1,4 @@
-import { fail, json, now, expires } from "./http.mjs";
+import { fail, json, now } from "./http.mjs";
 
 const activeStatuses = new Set(["active", "trialing"]);
 export async function ensureTrial(env, accountId) {
@@ -9,7 +9,7 @@ export async function ensureTrial(env, accountId) {
     .first();
   if (existing) return existing;
   const started = now(),
-    ends = expires(7 * 86400);
+    ends = new Date(Date.parse(started) + 7 * 86400000).toISOString();
   await env.DB.prepare(
     "INSERT OR IGNORE INTO billing_accounts(account_id,trial_started_at,trial_ends_at,updated_at) VALUES(?,?,?,?)",
   )
@@ -137,14 +137,37 @@ async function updateSubscription(env, billing) {
     .run();
   return ensureTrial(env, billing.account_id);
 }
+async function verifyPlan(env) {
+  const price = await stripe(
+    env,
+    "prices/" + encodeURIComponent(env.STRIPE_PRICE_ID),
+  );
+  if (
+    !price.active ||
+    price.livemode !== (env.STRIPE_LIVEMODE === "true") ||
+    price.currency !== "cad" ||
+    price.unit_amount !== 1200 ||
+    price.recurring?.interval !== "month" ||
+    price.recurring?.interval_count !== 1
+  )
+    fail(
+      503,
+      "The subscription plan needs administrator attention. Please try again shortly.",
+    );
+}
 export async function billingRoute(request, env, url, auth) {
   let billing = await ensureTrial(env, auth.accountId);
   if (request.method === "GET" && url.pathname === "/api/v1/billing") {
-    if (url.searchParams.get("refresh") === "1" && billingConfigured(env))
+    const verify =
+      url.searchParams.get("refresh") === "1" && billingConfigured(env);
+    if (verify) {
+      await verifyPlan(env);
       billing = await updateSubscription(env, billing);
+    }
     return json({
       ...entitlement(billing),
       configured: billingConfigured(env),
+      providerVerified: verify,
       plan: {
         name: "ASIP Cloud",
         amount: 1200,
@@ -175,6 +198,7 @@ export async function billingRoute(request, env, url, auth) {
   }
   if (url.pathname !== "/api/v1/billing/checkout")
     fail(404, "Billing action not found.");
+  await verifyPlan(env);
   if (!billing.stripe_customer_id) {
     const customer = await stripe(
       env,

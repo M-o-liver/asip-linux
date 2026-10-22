@@ -691,7 +691,7 @@ export default {
                     : "Sign-in could not be completed. Please try again.",
                 ),
               "Set-Cookie":
-                "asip_oauth=; Secure; HttpOnly; SameSite=Lax; Path=/auth/; Max-Age=0",
+                "__Host-asip_oauth=; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=0",
             },
           }),
         );

@@ -120,14 +120,14 @@ export async function oauth(request, env, url) {
       headers: {
         Location: target.href,
         "Set-Cookie":
-          "asip_oauth=" +
+          "__Host-asip_oauth=" +
           state +
-          "; Secure; HttpOnly; SameSite=Lax; Path=/auth/; Max-Age=300",
+          "; Secure; HttpOnly; SameSite=Lax; Path=/; Max-Age=300",
       },
     });
   }
   const state = url.searchParams.get("state");
-  if (!state || cookie(request, "asip_oauth") !== state)
+  if (!state || cookie(request, "__Host-asip_oauth") !== state)
     fail(400, "Sign-in expired. Start again.");
   const saved = await env.DB.prepare(
     "DELETE FROM oauth_states WHERE hash=? AND provider=? AND expires_at>? RETURNING *",

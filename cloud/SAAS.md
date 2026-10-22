@@ -56,6 +56,8 @@ The approved plan is **CA$12/month** (`1200` minor units, CAD).
 - Stripe request version: `2025-08-27.basil`.
 
 Checkout uses only the configured server-side price and account-bound customer.
+Before checkout, ASIP verifies the live price is exactly CAD 1200 per month.
+An explicit billing refresh also checks the upstream connection and plan.
 Pending Checkout sessions are reused, customer creation is idempotent, and an
 existing live subscription must be managed in the portal. Trial time carries
 into an early subscription checkout; Stripe's minimum Checkout trial duration
@@ -110,8 +112,10 @@ Checkout, duplicate session reuse, current subscription reconciliation, and
 webhook forgery, mutation, mode, and replay handling. Existing isolation, evidence,
 device continuity, and D1 read-budget tests remain required.
 
-Keep the prior Worker version for rollback. The additive migration is compatible
-with the prior app. Do not roll back by deleting account, billing, event, or R2
-history. Check actual provider sign-ins, a real Checkout destination, and public
+Keep prior Worker versions for rollback within this SaaS series. A rollback to
+the legacy preview app needs a separate review: its positional OAuth state insert
+predates the added return column, and it does not enforce subscription access.
+Pause new public signups and Checkout before such a downgrade. Do not roll back
+by deleting account, billing, event, or R2 history. Check actual provider sign-ins, a real Checkout destination, and public
 anonymous reachability separately from emulator and dry-run results. Never claim
 a live payment was charged when only Checkout and test fixtures were exercised.

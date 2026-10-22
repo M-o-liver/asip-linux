@@ -225,7 +225,21 @@ document.addEventListener("keydown", (event) => {
 $("global-search").onsubmit = (e) => {
   e.preventDefault();
   if (login) return showView("evidence");
-  $("query").value = $("global-query").value;
+  const term = $("global-query").value.trim();
+  const project = state.projects.find(
+    (p) =>
+      (p.name || "").toLowerCase() === term.toLowerCase() ||
+      p.id.toLowerCase() === term.toLowerCase(),
+  );
+  if (project) return selectProject(project.id);
+  const agent = ["codex", "claude-code", "antigravity"].find(
+    (id) =>
+      id === term.toLowerCase() ||
+      names[id].toLowerCase() === term.toLowerCase(),
+  );
+  state.project = state.session = state.sessionAgent = "";
+  $("agent").value = agent || "";
+  $("query").value = agent ? "" : term;
   resetHistory();
   showView("evidence");
 };
@@ -233,11 +247,13 @@ function resetHistory() {
   state.pages = [null];
   state.page = 0;
 }
-function selectProject(id) {
+function selectProject(id, category = "work") {
   state.project = id;
   state.session = "";
   state.sessionAgent = "";
   $("query").value = "";
+  $("agent").value = "";
+  $("kind").value = category;
   resetHistory();
   showView("evidence");
 }
@@ -659,7 +675,9 @@ function renderSpotlight() {
   const actions = n("div", undefined, "actions");
   actions.append(
     action("Open project →", () => selectProject(p.id), "btn primary compact"),
-    action("View evidence  " + number(p.events), () => selectProject(p.id)),
+    action("View evidence  " + number(p.events), () =>
+      selectProject(p.id, "results"),
+    ),
   );
   parent.append(actions);
 }

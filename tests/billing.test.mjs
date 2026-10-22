@@ -200,6 +200,10 @@ test("both OAuth providers bind PKCE and single-use state; redirects remain loca
       { redirect: "manual" },
     );
     assert.equal(response.status, 303);
+    assert.match(
+      response.headers.get("Set-Cookie"),
+      /^__Host-asip_oauth=.*Secure; HttpOnly; SameSite=Lax; Path=\/; Max-Age=300$/,
+    );
     const url = new URL(response.headers.get("Location"));
     assert.equal(
       url.searchParams.get("redirect_uri"),
@@ -245,13 +249,22 @@ test("Stripe checkout is server-priced, account-bound and reused; only verified 
   };
   const auth = { accountId: account.id, name: account.name, browser: true };
   const requests = [];
-  let subscriptions = [];
+  let subscriptions = [],
+    priceAmount = 1200;
   const savedFetch = globalThis.fetch;
   globalThis.fetch = async (input, options) => {
     const url = new URL(input),
       params = new URLSearchParams(options?.body);
     requests.push({ url, options, params });
     assert.equal(options.headers.Authorization, "Bearer sk_test_fixture");
+    if (url.pathname === "/v1/prices/price_fixture")
+      return Response.json({
+        active: true,
+        livemode: false,
+        currency: "cad",
+        unit_amount: priceAmount,
+        recurring: { interval: "month", interval_count: 1 },
+      });
     if (url.pathname === "/v1/customers")
       return Response.json({ id: "cus_fixture" });
     if (url.pathname === "/v1/subscriptions")
@@ -271,6 +284,15 @@ test("Stripe checkout is server-priced, account-bound and reused; only verified 
   try {
     const checkout = new URL(origin + "/api/v1/billing/checkout"),
       req = new Request(checkout, { method: "POST" });
+    priceAmount = 1300;
+    await assert.rejects(billingRoute(req, env, checkout, auth), {
+      status: 503,
+    });
+    assert.equal(
+      requests.some((r) => r.url.pathname === "/v1/customers"),
+      false,
+    );
+    priceAmount = 1200;
     assert.equal(
       (await (await billingRoute(req, env, checkout, auth)).json()).url,
       "https://checkout.stripe.com/c/pay/cs_fixture",
