@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { writePluginArchive } from "../beacon/plugin-archive.mjs";
 const version = JSON.parse(
   fs.readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 ).version;
@@ -53,9 +54,12 @@ export function buildPlugin({ root, target, agent, binary }) {
     "asip-" + agent,
   );
   fs.rmSync(directory, { recursive: true, force: true });
-  fs.mkdirSync(path.join(directory, "bin"), { recursive: true });
+  // Claude's upload validator rejects top-level bin/ executables. Keep the
+  // helper outside PATH and declare it explicitly in MCP and lifecycle hooks.
+  const helperDirectory = agent === "claude-code" ? "libexec" : "bin";
+  fs.mkdirSync(path.join(directory, helperDirectory), { recursive: true });
   const name = path.basename(binary),
-    executable = path.join(directory, "bin", name);
+    executable = path.join(directory, helperDirectory, name);
   fs.copyFileSync(binary, executable);
   fs.chmodSync(executable, 0o755);
   const write = (file, data) => {
@@ -77,7 +81,7 @@ export function buildPlugin({ root, target, agent, binary }) {
   );
   const variable =
     agent === "claude-code" ? "${CLAUDE_PLUGIN_ROOT}" : "${PLUGIN_ROOT}";
-  const command = variable + "/bin/" + name;
+  const command = variable + "/" + helperDirectory + "/" + name;
   const server = { command, args: ["mcp", "--agent", agent] };
   const events =
     agent === "antigravity"
@@ -194,8 +198,9 @@ export function buildPlugin({ root, target, agent, binary }) {
   }
   write(
     "README.md",
-    `# ASIP plugin\n\nInstall this folder using your agent's plugin manager. When the plugin first starts, Beacon opens the ASIP connection. Sign in with Google or GitHub, or click Connect if already signed in.\n\n${agent === "codex" ? "In ChatGPT desktop, open Plugins → Add → Add a marketplace, enter this folder, then install ASIP from Personal. Open ASIP's Hooks → Review to enable automatic recording. For Codex CLI, review ASIP in /hooks.\n" : ""}${agent === "antigravity" ? "Beacon maintains this folder; installed commands use its location.\n" : ""}`,
+    `# ASIP plugin\n\n${agent === "claude-code" ? "For Claude's upload picker, use the sibling asip-claude-code.zip file, not this folder. In Claude, open Customize → Plugins → Upload a plugin. Keep the archive zipped. Claude Code CLI can also add this folder through its native plugin marketplace commands. Re-upload the ZIP after Beacon updates; Claude owns its installed copy.\n\n" : "Install this folder using your agent's plugin manager. "}When the plugin first starts, Beacon opens the ASIP connection. Sign in with Google or GitHub, or click Connect if already signed in.\n\n${agent === "codex" ? "In ChatGPT desktop, open Plugins → Add → Add a marketplace, enter this folder, then install ASIP from Personal. Open ASIP's Hooks → Review to enable automatic recording. For Codex CLI, review ASIP in /hooks.\n" : ""}${agent === "antigravity" ? "Beacon maintains this folder; installed commands use its location.\n" : ""}`,
   );
+  writePluginArchive(directory);
   return directory;
 }
 

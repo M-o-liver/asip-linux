@@ -698,9 +698,14 @@ if (
     ipcMain.handle("asip:show-full", () => show({ full: true }));
     ipcMain.handle("asip:hide-window", () => window?.hide());
     ipcMain.handle("asip:quit", () => app.quit());
-    ipcMain.handle("asip:plugin-folder", (_event, agent) =>
-      shell.openPath(pluginBundles.directory(agent)),
-    );
+    ipcMain.handle("asip:plugin-folder", (_event, agent) => {
+      const directory = pluginBundles.directory(agent);
+      if (agent === "claude-code") {
+        shell.showItemInFolder(directory + ".zip");
+        return;
+      }
+      return shell.openPath(directory);
+    });
     ipcMain.handle("asip:install-plugin", async (_event, agent) => {
       if (agent === "codex" && !pluginBundles.find(agent)) {
         const { codexDesktopURL } = await import("./agent-plugins.mjs");

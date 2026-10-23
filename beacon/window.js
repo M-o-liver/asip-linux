@@ -73,12 +73,19 @@ $("cloud-sync").onclick = async () => {
 };
 function openPluginFolder(plugin) {
   selectedPlugin = plugin;
+  const upload = plugin.id === "claude-code";
   $("agent-setup-title").textContent = plugin.name + " plugin";
-  $("setup-description").textContent =
-    "ASIP keeps this folder up to date. You can use it as a source in " +
-    plugin.name +
-    "’s plugin manager.";
-  $("plugin-directory").textContent = plugin.directory;
+  $("setup-description").textContent = upload
+    ? "In Claude, open Customize → Plugins → Upload a plugin and select this ZIP. Keep it zipped. Approve the plugin in Claude, then connect it to Beacon when prompted. Re-upload after a Beacon update to update Claude’s copy."
+    : "ASIP keeps this folder up to date. You can use it as a source in " +
+      plugin.name +
+      "’s plugin manager.";
+  $("plugin-directory").textContent = upload
+    ? plugin.archive
+    : plugin.directory;
+  $("show-plugin-folder").lastChild.textContent = upload
+    ? " Show ZIP"
+    : " Show folder";
   $("setup-error").textContent = "";
   $("agent-setup").showModal();
 }
@@ -86,7 +93,11 @@ $("close-agent-setup").onclick = () => $("agent-setup").close();
 $("show-plugin-folder").onclick = () =>
   window.asip.pluginFolder(selectedPlugin.id);
 $("copy-plugin-folder").onclick = async () => {
-  await window.asip.copyText(selectedPlugin.directory);
+  await window.asip.copyText(
+    selectedPlugin.id === "claude-code"
+      ? selectedPlugin.archive
+      : selectedPlugin.directory,
+  );
 };
 function renderAgents(state) {
   const key = JSON.stringify([state.plugins, state.clients]);
@@ -122,16 +133,18 @@ function renderAgents(state) {
     install.className = connected ? "secondary" : "primary";
     install.textContent = plugin.installing
       ? "Installing…"
-      : plugin.desktop
-        ? "Open in ChatGPT"
-        : !plugin.available
-          ? "Use plugin folder"
-          : plugin.addedAt || connected
-            ? "Update"
-            : "Install";
+      : plugin.id === "claude-code"
+        ? "Get plugin ZIP"
+        : plugin.desktop
+          ? "Open in ChatGPT"
+          : !plugin.available
+            ? "Use plugin folder"
+            : plugin.addedAt || connected
+              ? "Update"
+              : "Install";
     install.disabled = plugin.installing;
     install.onclick = async () => {
-      if (!plugin.available) {
+      if (plugin.id === "claude-code" || !plugin.available) {
         openPluginFolder(plugin);
         return;
       }
@@ -151,7 +164,10 @@ function renderAgents(state) {
     };
     const folder = document.createElement("button");
     folder.className = "icon-button";
-    folder.title = "Show " + plugin.name + " plugin folder";
+    folder.title =
+      "Show " +
+      plugin.name +
+      (plugin.id === "claude-code" ? " plugin ZIP" : " plugin folder");
     folder.setAttribute("aria-label", folder.title);
     folder.append(icon("folder"));
     folder.onclick = () => openPluginFolder(plugin);
