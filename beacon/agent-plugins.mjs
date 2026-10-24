@@ -5,6 +5,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { randomUUID } from "node:crypto";
 import { rebindAntigravity } from "../scripts/plugins.mjs";
+import { writePluginArchive } from "./plugin-archive.mjs";
 
 const execute = promisify(execFile);
 
@@ -209,6 +210,7 @@ export class AgentPlugins {
         throw error;
       }
       removeRetired(previous, this.platform);
+      writePluginArchive(destination);
     }
     if (this.platform === "win32" && this.saved().antigravity)
       this.registerAntigravityDesktop();
@@ -226,6 +228,7 @@ export class AgentPlugins {
       id,
       name: agent.name,
       directory: this.directory(id),
+      archive: this.directory(id) + ".zip",
       available:
         id === "antigravity" || id === "codex" || Boolean(this.find(id)),
       desktop: id === "codex" && !this.find(id),

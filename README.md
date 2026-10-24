@@ -9,11 +9,11 @@ Beacon runs on your computer. Its native plugins record agent activity and let a
 ## Install and connect
 
 1. Install **ASIP Beacon** for your operating system.
-2. Open **Agents**. Choose **Open in ChatGPT** for its desktop app, or **Install** for an available agent CLI and Antigravity.
+2. Open **Agents**. For Claude, choose **Get plugin ZIP**, then upload that file through **Customize → Plugins → Upload a plugin**. Keep it zipped. Choose **Open in ChatGPT** for its desktop app, or **Install** for Codex CLI and Antigravity.
 3. Open a new agent session. ASIP opens its sign-in window automatically. Choose Google or GitHub, or click **Connect** if Beacon is already signed in.
 4. In ChatGPT, open **Plugins → ASIP → Hooks → Review** and enable ASIP’s hooks. In Codex CLI, review ASIP in **/hooks**. Restart Antigravity after installation.
 
-Beacon keeps all three plugin bundles in its own application-data folder. **Show plugin folder** opens the relevant bundle if you prefer installing through your agent’s plugin manager. ChatGPT opens its native ASIP installation page directly. Claude Code uses its native plugin manager; **Show plugin folder** is available when its CLI is not found. Antigravity can be installed for its desktop app without a CLI. There is no export destination to choose.
+Beacon keeps all three plugin bundles and ZIP archives in its own application-data folder. Claude's **Show ZIP** reveals `asip-claude-code.zip`, and **Copy path** copies the file path. Its manifest is at `.claude-plugin/plugin.json` inside the archive; `.claude-plugin` is not the upload file. Claude's helper lives in `libexec/`, explicitly declared in MCP and hooks, because its hosted-plugin validator rejects top-level `bin/` executables. Re-upload the archive after Beacon updates to update Claude's copy. Archive generation is verified separately from real Cowork connection and capture. Other agents retain their native installation paths; **Show plugin folder** opens their bundle. There is no export destination to choose.
 
 On Windows, the Install button runs the same native commands as on macOS and Linux, with arguments passed directly to the provider’s executable. Claude Code uses `claude plugin marketplace add <managed-folder>` followed by `claude plugin install asip@asip`. Codex uses `codex plugin marketplace add <managed-folder>` and `codex plugin add asip@asip`. Antigravity uses `agy plugin install <managed-folder>` when available and verifies the native desktop registration at `~/.gemini/config/plugins/asip`. Without the CLI, Beacon registers its managed bundle there directly. Windows uses a real plugin directory because Antigravity’s desktop discovery skips junctions; Beacon refreshes that directory on upgrades.
 

@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { unzipSync } from "fflate";
 import {
   AgentPlugins,
   findAgentCommand,
@@ -12,6 +13,51 @@ import {
   codexDesktopURL,
 } from "../beacon/agent-plugins.mjs";
 import desktop from "../beacon/desktop.cjs";
+
+test("Claude upload ZIP declares its helper outside top-level bin and refreshes with Beacon bundles", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "asip-upload-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const target = process.platform + "-" + process.arch;
+  const source = path.join(root, "source");
+  fs.cpSync(path.resolve("build/plugins", target), path.join(source, target), {
+    recursive: true,
+  });
+  const manager = new AgentPlugins({ home: path.join(root, "beacon"), source });
+  manager.prepare();
+  const plugin = manager.list().find((p) => p.id === "claude-code");
+  assert.equal(plugin.archive, plugin.directory + ".zip");
+  const before = fs.readFileSync(plugin.archive);
+  const files = unzipSync(before);
+  assert.ok(!Object.keys(files).some((name) => name.startsWith("bin/")));
+  assert.equal(
+    JSON.parse(Buffer.from(files[".claude-plugin/plugin.json"]).toString())
+      .name,
+    "asip",
+  );
+  const mcp = JSON.parse(Buffer.from(files[".mcp.json"]).toString()).mcpServers
+    .asip;
+  const helper = mcp.command.replace("${CLAUDE_PLUGIN_ROOT}/", "");
+  assert.match(helper, /^libexec\/asip-plugin(?:\.exe)?$/);
+  assert.deepEqual(
+    Buffer.from(files[helper]),
+    fs.readFileSync(path.join(plugin.directory, helper)),
+  );
+  const hooks = JSON.parse(
+    Buffer.from(files["hooks/hooks.json"]).toString(),
+  ).hooks;
+  for (const groups of Object.values(hooks))
+    for (const group of groups)
+      for (const hook of group.hooks) assert.equal(hook.command, mcp.command);
+  manager.prepare();
+  assert.deepEqual(fs.readFileSync(plugin.archive), before);
+  fs.writeFileSync(
+    path.join(source, target, "asip-claude-code", helper),
+    "updated helper",
+  );
+  manager.prepare();
+  const updated = unzipSync(fs.readFileSync(plugin.archive));
+  assert.equal(Buffer.from(updated[helper]).toString(), "updated helper");
+});
 
 test("managed bundles keep stable paths, update their source, and preserve native Antigravity command paths", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "asip-managed-"));
