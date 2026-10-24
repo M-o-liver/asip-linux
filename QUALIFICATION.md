@@ -1,6 +1,16 @@
-# ASIP 0.5.0 qualification
+# ASIP 0.5.1 qualification
 
 This report records deployed behavior, installed-device observations, and automated checks separately. Earlier Beacon and native plugin evidence is preserved in [the 0.4.1 report](docs/qualification-v0.4.1.md).
+
+## Plugin archive update — October 24, 2026
+
+Beacon 0.5.1 packages native plugin ZIPs and reveals the actual upload file in Claude’s setup flow. Claude’s helper is declared under `libexec/` in MCP and hooks; its hosted uploader rejects top-level `bin/` executables. ZIP manifests stay at the archive root, executable permissions are retained, and managed archives refresh after source updates. Codex and Antigravity keep their existing native installation paths.
+
+The actual Windows Claude application accepted the corrected archive, completed Upload, and displayed **“Asip is installed and ready to use.”** The installed plugin is enabled with two skills, one connector and ten hooks. The artifact remains in the test user’s Windows Downloads folder. The temporary read-only transfer CD was restored to its original media after copying. This interactive installation check used the 0.5.0 packaging fix merged in [PR #11](https://github.com/M-o-liver/asip-linux/pull/11); 0.5.1 gives the new installer and plugin manifests a distinct update version.
+
+The packaging fix passed all four native platform builds and cloud CI. Its complete local suite passed 87 tests with two platform skips and zero failures. Independent ZIP CRC, root-manifest, Windows PE helper and no-top-level-bin checks passed. Each tagged release separately rebuilds and qualifies the current version, and publishes platform qualification receipts and SHA256SUMS alongside installers.
+
+Cowork model-turn connection and automatic recording remain pending at the owner’s request; their friend will test separately. Installation acceptance is not substituted for runtime evidence. Existing native CLI/MCP fixture qualification remains part of every platform build.
 
 ## Public SaaS launch — October 22, 2026
 

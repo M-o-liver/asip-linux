@@ -44,7 +44,7 @@
     "GOOGLE_DESKTOP_CLIENT_ID": "950143412142-1h4lm2jn47tq72snkrdt40tdvsisl2ij.apps.googleusercontent.com",
     "GOOGLE_WEB_CLIENT_ID": "950143412142-e1hcnn3dfj931qcf4r1k8v19kqug9q98.apps.googleusercontent.com",
     "GITHUB_CLIENT_ID": "Ov23licGLCUVcOxiCrfu",
-    "RELEASE_TAG": "v0.5.0-alpha.1",
+    "RELEASE_TAG": "v0.5.1-alpha.1",
   },
   "d1_databases": [
     {
