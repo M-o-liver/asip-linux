@@ -25,7 +25,7 @@ ASIP's Google desktop client and GitHub OAuth app are registered. Public client 
 
 ## What is implemented
 
-- The private `asip.ca` website, durable cloud accounts, hosted project workspaces, and administrator-managed preview admission.
+- The public `asip.ca` website, GitHub/Google web sign-in, seven-day cloud trials, CA$12/month subscriptions, and hosted project workspaces. The separate owner fallback and private subdomains retain restricted admission.
 - Offline local recording plus resumable synchronization across connected computers, with immutable source records in private R2 and owner/project indexes in D1.
 - Scoped, revocable HTTP and MCP connections for remote project history and evidence; provider credentials remain in their owning computer's keychain.
 - A full Linux desktop Beacon and anchored Windows/macOS panels, with SVG controls, recent work, managed plugin installation, API connections, recovery, and account settings.

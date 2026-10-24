@@ -1,6 +1,6 @@
 # ASIP alpha test
 
-Download an installer from [Releases](https://github.com/M-o-liver/asip-linux/releases). Choose the Windows Setup EXE, the arm64 DMG for Apple Silicon, the x64 DMG for Intel Mac, or the Linux AppImage/DEB/RPM. The application version is 0.5.0. Installers are unsigned; macOS builds are not notarized.
+Download an installer from [Releases](https://github.com/M-o-liver/asip-linux/releases). Choose the Windows Setup EXE, the arm64 DMG for Apple Silicon, the x64 DMG for Intel Mac, or the Linux AppImage/DEB/RPM. The application version is 0.5.1. Installers are unsigned; macOS builds are not notarized.
 
 ## Connect an agent
 
@@ -10,10 +10,13 @@ Install Beacon and sign in with Google or GitHub. Open **Agents** in Beacon, the
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | ChatGPT desktop | Click **Open in ChatGPT**, then install ASIP on the native plugin page. Open **ASIP → Hooks → Review** and enable its hooks.                                  |
 | Codex CLI       | Click **Install**. Review ASIP in the CLI's **/hooks**, then start a new session.                                                                             |
-| Claude Code     | Click **Install**. If the CLI is unavailable to Beacon, choose **Use plugin folder** and add that managed folder through Claude Code's native plugin manager. |
+| Claude desktop / Cowork | Click **Get plugin ZIP**, then upload the archive through **Customize → Plugins → Upload a plugin**. Keep it zipped. |
+| Claude Code CLI | Add the managed `asip-claude-code` folder through Claude Code’s native plugin manager. It is beside the ZIP that Beacon reveals. |
 | Antigravity     | Click **Install**, restart Antigravity, then open a new conversation.                                                                                         |
 
-Beacon stores all three managed bundles in its application-data folder. The folder button opens the appropriate bundle when a native manager needs its path. ASIP does not ask you to choose an export directory.
+Beacon stores all three managed bundles and their ZIPs in its application-data folder. For Claude, **Show ZIP** reveals the uploadable file and **Copy path** copies that file path. Other agents retain their native folder/marketplace flows. ASIP does not ask you to choose an export directory. Re-upload the Claude ZIP after a Beacon update to update the harness’s installed copy.
+
+Claude’s local MCP connector runs in Cowork and Claude Code, rather than ordinary chat. Cowork requires a paid Claude plan. A successful plugin upload does not by itself connect Beacon or establish recording. See [Anthropic’s connector guidance](https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors) and [Cowork availability](https://support.claude.com/en/articles/10065433-install-claude-desktop).
 
 When the plugin starts, Beacon presents its connection request. Click **Connect** if already signed in. Start a fresh conversation after installing or updating a plugin; an existing conversation may retain its previous tool list.
 
