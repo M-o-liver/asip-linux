@@ -8,7 +8,7 @@
     />
     <title>ASIP Beacon</title>
     <link rel="stylesheet" href="window.css" />
-    <script defer src="window.js"></script>
+    <script type="module" src="window.js"></script>
   </head>
   <body>
     <svg class="symbols" aria-hidden="true">
@@ -142,7 +142,8 @@
         </section>
         <section class="page" data-page="overview" id="overview">
           <div class="page-heading">
-            <h1 id="overview-title">Beacon</h1>
+            <div class="continuity-indicator" aria-hidden="true">↗</div>
+            <h1 id="overview-title">Give your work a memory.</h1>
             <p id="overview-caption">Connect your agents to ASIP.</p>
           </div>
           <section id="signed-out" class="surface">
@@ -154,6 +155,10 @@
             <p id="preview" hidden>Sign-in is not configured in this build.</p>
           </section>
           <section id="account" hidden>
+            <div class="continuity-next">
+              <button id="next-action" class="primary">Connect an agent</button>
+              <p id="continuity-proof" class="help"></p>
+            </div>
             <div class="surface settings-group" id="cloud-card">
               <div class="setting-row">
                 <div>
@@ -186,7 +191,7 @@
                 <svg aria-hidden="true"><use href="#i-overview" /></svg>
               </div>
               <div>
-                <h2>Your projects</h2>
+                <h2>Your saved work</h2>
                 <p id="project-count">Project history and agent activity</p>
               </div>
               <button id="open-workspace" class="primary">
@@ -207,7 +212,7 @@
             <div class="section-heading">
               <h2>Recent work</h2>
               <button class="text-button" id="view-agents">
-                Manage agents
+                Connect an agent
                 <svg aria-hidden="true"><use href="#i-arrow" /></svg>
               </button>
             </div>

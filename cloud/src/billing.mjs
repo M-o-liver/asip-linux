@@ -109,7 +109,12 @@ async function updateSubscription(env, billing) {
       s.customer === billing.stripe_customer_id &&
       s.livemode === (env.STRIPE_LIVEMODE === "true") &&
       s.metadata?.asip_account === billing.account_id &&
-      s.items?.data?.some((i) => i.price?.id === env.STRIPE_PRICE_ID),
+      s.items?.data?.some((i) =>
+        [
+          env.STRIPE_PRICE_ID,
+          ...(env.STRIPE_LEGACY_PRICE_IDS || "").split(",").filter(Boolean),
+        ].includes(i.price?.id),
+      ),
   );
   subscriptions.sort(
     (a, b) =>

@@ -21,10 +21,10 @@
     <main class="wrap">
       <header class="page-intro">
         <p class="eyebrow">Your local connection to lasting memory</p>
-        <h1>Meet Beacon.</h1>
+        <h1>Your agents. Connected.</h1>
         <p class="lede">
-          Connect your agents, keep recording locally, and bring your project
-          history to every computer you use.
+          Beacon is the ASIP app for your computer. Install it, connect an
+          agent, and give your next session the story so far.
         </p>
       </header>
       <div class="notice">
@@ -97,8 +97,8 @@
           >
         </article>
       </section>
-      <section class="prose">
-        <h2>From install to your next handoff.</h2>
+      <section class="prose" id="connect-agent">
+        <h2>Make your first memory.</h2>
         <ol>
           <li>Install Beacon and sign in with Google or GitHub.</li>
           <li>
@@ -111,10 +111,59 @@
             computer in your browser.
           </li>
           <li>
-            Connect your other computers to the same workspace. Your existing
-            and future records synchronize.
+            Ask your agent:
+            <strong
+              >“Use ASIP to save what we decided and what to do next for this
+              project.”</strong
+            >
+            Open your cloud workspace and refresh to see the saved memory.
+          </li>
+          <li>
+            Open a new session in the same project. Ask:
+            <strong
+              >“Use ASIP to recall this project. What did we decide, and what is
+              next?”</strong
+            >
           </li>
         </ol>
+        <h2>Choose your agent.</h2>
+        <details>
+          <summary>Codex</summary>
+          <p>
+            In Beacon → Agents, choose Codex. Use Open in ChatGPT when
+            available, or Install for the CLI. Follow the native plugin manager,
+            open a new session, and approve the connection in Beacon. Review
+            ASIP’s recording hooks in the agent’s hook manager.
+          </p>
+        </details>
+        <details>
+          <summary>Claude Code / Claude plugin</summary>
+          <p>
+            In Beacon → Agents, choose Get plugin ZIP. In Claude, open Customize
+            → Plugins → Upload a plugin and select that ZIP. Keep it zipped.
+            Approve the plugin, start a session, and confirm its connection in
+            Beacon. Review recording hooks in your agent. Re-upload after a
+            Beacon update to update Claude’s copy.
+          </p>
+        </details>
+        <details>
+          <summary>Antigravity</summary>
+          <p>
+            In Beacon → Agents, choose Install for Antigravity. Restart
+            Antigravity, open a project, and approve the ASIP connection when
+            prompted. If installation is unavailable, Beacon provides the plugin
+            folder for the agent’s native manager.
+          </p>
+        </details>
+        <h2>Nothing appeared yet?</h2>
+        <p>
+          Check that your agent shows Connected in Beacon, that its recording
+          hooks are approved, and that Beacon’s cloud connection has finished
+          syncing. A plugin being installed is not the same as an active
+          connection. Try the explicit save prompt above, then refresh your
+          cloud memory.
+        </p>
+        <p><a class="button primary" href="/app">Open your memory ↗</a></p>
         <p>
           Project memory includes intent, results, session identities, and
           recorded evidence, including captured tool input and output.

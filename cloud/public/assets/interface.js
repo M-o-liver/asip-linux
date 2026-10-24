@@ -1,9 +1,10 @@
+import { setupState, recallPrompt } from "./continuity.js";
 import { shell } from "./shell.js";
 import { icon } from "./icons.js";
 import { queryCache } from "./query-cache.js";
 import { checkConnection } from "./api-check.js";
 
-const login = document.body.dataset.surface === "login";
+const login = false;
 document.body.classList.toggle("login-surface", login);
 document.querySelector("#app").innerHTML = shell(login);
 const $ = (id) => document.getElementById(id);
@@ -102,6 +103,20 @@ function toast(message) {
     $("toast").hidden = true;
   }, 6000);
 }
+async function copyPrompt(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Prompt copied. Paste it into your connected agent.");
+  } catch {
+    toast("Clipboard unavailable. Select the prompt below to copy it.");
+    $("setup-prompt").textContent = text;
+    $("setup-path").hidden = false;
+  }
+}
+$("copy-first-prompt").onclick = () =>
+  copyPrompt(
+    "Use ASIP to save what we decided and what to do next for this project.",
+  );
 function report(error) {
   $("error").textContent = error.message || String(error);
 }
@@ -409,7 +424,7 @@ function renderAgents() {
   const agents = knownAgents();
   $("agent-previews").replaceChildren();
   $("agent-directory").replaceChildren();
-  $("active-agents").textContent = agents.length + " CONNECTED";
+  $("active-agents").textContent = agents.length + " WITH HISTORY";
   if (!agents.length)
     empty(
       $("agent-previews"),
@@ -497,7 +512,7 @@ function renderAgents() {
       symbol("device", "card-device"),
       n(
         "span",
-        d.revoked_at ? "Revoked" : expired ? "Expired" : "Connected",
+        d.revoked_at ? "Revoked" : expired ? "Expired" : "Authorized",
         "pill" + (d.revoked_at || expired ? " offline" : ""),
       ),
     );
@@ -511,6 +526,7 @@ function renderAgents() {
           });
           d.revoked_at = new Date().toISOString();
           renderAgents();
+          renderSummary();
           toast("Device access revoked.");
         } catch (e) {
           revoke.disabled = false;
@@ -674,6 +690,7 @@ function renderSpotlight() {
     );
   const actions = n("div", undefined, "actions");
   actions.append(
+    action("Copy continuation prompt", () => copyPrompt(recallPrompt(p.id))),
     action("Open project →", () => selectProject(p.id), "btn primary compact"),
     action("View evidence  " + number(p.events), () =>
       selectProject(p.id, "results"),
@@ -695,43 +712,41 @@ function renderSummary() {
   $("connection-total").textContent = new Set(
     state.connections.map((c) => c.name),
   ).size;
-  $("system-status").textContent = "ALL SYSTEMS OPERATIONAL";
-  $("system-description").textContent =
-    "Synced across " +
-    agents.length +
-    " agents · " +
-    devices.length +
-    " devices · " +
-    new Set(state.connections.map((c) => c.name)).size +
-    " APIs";
-  $("last-sync").textContent = date(new Date());
-  $("sync-note").textContent = "Cloud memory up to date";
-  $("orb-count").textContent = number(state.recordCount) + " records";
-  $("orb-meta").textContent =
-    projects.length +
-    " projects · " +
-    agents.length +
-    " agents · " +
-    devices.length +
-    " devices";
-  $("orb-title").textContent = state.recordCount
-    ? "SYNCHRONIZED"
-    : "READY TO CONNECT";
-  $("map-cloud-records").textContent = number(state.recordCount) + " records";
-  $("map-apis").textContent =
-    new Set(state.connections.map((c) => c.name)).size + " connected";
-  for (const [index, suffix] of [
-    [0, "one"],
-    [1, "two"],
-  ]) {
-    const d = devices[index];
-    if (d) {
-      $("map-device-" + suffix).textContent = d.label.split(" · ")[0];
-      $("map-agent-" + suffix).textContent =
-        d.label.split(" · ").slice(1).join(" · ") || "Beacon";
-      $("map-time-" + suffix).textContent = "Upload " + ago(d.last_seen);
+  const setup = setupState(state);
+  $("system-status").textContent = setup.title;
+  $("system-description").textContent = setup.description;
+  $("last-sync").textContent = "Refreshed " + date(state.loadedAt);
+  $("sync-note").textContent = "Live recording and sync status are in Beacon.";
+  for (const section of document.querySelectorAll(
+    ".consumer-home-grid, .recent-memory, .memory-details",
+  ))
+    section.hidden = !setup.recorded;
+  $("home-description").textContent = setup.recorded
+    ? "The story so far, ready for your next session."
+    : "A few steps now. Less starting over later.";
+  $("setup-path").hidden =
+    setup.connected && setup.recorded && setup.observedAgent;
+  $("home-title").textContent = setup.recorded
+    ? "Continue your work."
+    : "Let’s make your first memory.";
+  $("setup-progress").textContent =
+    setup.steps.filter((s) => s.done).length + " of 3 confirmed";
+  $("setup-steps").replaceChildren();
+  for (const step of setup.steps) {
+    const row = n("li", undefined, step.done ? "complete" : "");
+    row.append(
+      n("strong", (step.done ? "✓ " : "") + step.title),
+      n("p", step.text),
+    );
+    if (!step.done && step.href) {
+      const link = n("a", step.action + " ↗", "btn compact");
+      link.href = step.href;
+      row.append(link);
     }
+    $("setup-steps").append(row);
   }
+  $("setup-help").textContent =
+    "After saving, refresh this page. Then open a new agent session in the same project and ask ASIP what it remembers. Setup is confirmed from cloud activity, not from clicks.";
   $("recovery-summary").textContent =
     number(state.recordCount) +
     " records across " +
@@ -810,13 +825,14 @@ async function loadHistory() {
   ]);
   if (generation !== state.generation) return;
   state.history = result.events;
+  $("copy-handoff").disabled = !result.events.length;
   state.next = result.next;
   $("history-title").textContent = state.project
     ? shortName(state.project)
-    : "Evidence & memory";
+    : "Your memory";
   $("history-description").textContent = state.project
     ? state.project
-    : "Return to the original record, agent session, and supporting evidence.";
+    : "Find a decision, a result, or the next step. Open a memory to see its source.";
   $("events").replaceChildren();
   for (const e of result.events) {
     const b = action("", () => inspect(e), "event-row"),
@@ -876,6 +892,39 @@ async function loadHistory() {
       "Project relationships appear as your sessions connect work.",
     );
 }
+$("copy-handoff").onclick = async () => {
+  const records = state.history.slice(0, 8);
+  if (!records.length) {
+    toast("No records on this page to copy.");
+    return;
+  }
+  const text = [
+    "ASIP handoff notes — " + (state.project || "selected memory"),
+    "Recorded excerpts, newest first. These are historical notes, not a verified current project status. Check the evidence before acting.",
+    ...records.map(
+      (e) =>
+        "\n" +
+        date(e.at) +
+        " · " +
+        (names[e.agent] || e.agent) +
+        " · " +
+        e.kind +
+        "\n" +
+        e.summary +
+        "\nProject: " +
+        (e.project || "Unassigned") +
+        "\nSource record: " +
+        e.id,
+    ),
+    "\nUse ASIP to recall the project for more context and check what remains unfinished.",
+  ].join("\n");
+  try {
+    await navigator.clipboard.writeText(text);
+    toast("Handoff notes copied. Paste them into your next session.");
+  } catch {
+    toast("Clipboard unavailable. Open a record to select and copy its text.");
+  }
+};
 $("history-search").onsubmit = (e) => {
   e.preventDefault();
   resetHistory();
@@ -1164,64 +1213,6 @@ if (!login)
       document.body.classList.remove("busy");
     }
   };
-async function initLogin() {
-  const config = await fetch("/api/config").then((r) => r.json());
-  const returnPath = new URLSearchParams(location.search).get("return");
-  for (const link of document.querySelectorAll("[data-provider]")) {
-    if (returnPath?.startsWith("/connect?"))
-      link.href += "?return=" + encodeURIComponent(returnPath);
-    link.onclick = (e) => {
-      if (!config.providers[link.dataset.provider]) {
-        e.preventDefault();
-        $("signin-status").textContent =
-          "This sign-in provider is being connected. Please try again shortly.";
-      }
-    };
-  }
-  $("start-trial").onclick = () => {
-    const provider = config.providers.github
-      ? "github"
-      : config.providers.google
-        ? "google"
-        : null;
-    if (provider)
-      document.querySelector('[data-provider="' + provider + '"]').click();
-    else
-      $("signin-status").textContent =
-        "Sign-in is being connected. Please return shortly.";
-  };
-  const activities = [
-    [
-      "network",
-      "Capture the intention",
-      "Your native agent plugin",
-      "Every project",
-    ],
-    ["file", "Keep the evidence", "Original source records", "Full provenance"],
-    [
-      "cloud",
-      "Synchronize context",
-      "Your private workspace",
-      "Across devices",
-    ],
-    ["sync", "Continue the work", "Your next agent session", "Nothing lost"],
-  ];
-  for (const [i, t, p, s] of activities) {
-    const el = n("div", undefined, "activity-item"),
-      content = n("div", undefined, "activity-content");
-    content.append(n("strong", t), n("span", p), n("p", s));
-    el.append(symbol(i, "activity-symbol green"), content);
-    $("activity-items").append(el);
-  }
-  const me = await fetch("/api/v1/me");
-  if (me.ok) {
-    const data = await me.json();
-    $("start-trial").textContent = "Open your workspace →";
-    $("start-trial").onclick = () => location.assign(data.workspace);
-  }
-  const error = new URLSearchParams(location.search).get("auth_error");
-  if (error) $("signin-status").textContent = error;
-}
 async function initWorkspace() {
   const me = await api("me");
   state.account = me.account;
@@ -1266,4 +1257,4 @@ async function initWorkspace() {
   if (initial) selectProject(initial);
   else showView(location.hash.slice(1) || "overview", true);
 }
-(login ? initLogin() : initWorkspace()).catch(report);
+initWorkspace().catch(report);

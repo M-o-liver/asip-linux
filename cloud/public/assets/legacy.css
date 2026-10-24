@@ -1,101 +1,106 @@
-@import url("/assets/interface.css");
+@import url("/assets/consumer.css");
 body {
   color: var(--ink);
-  font-size: 14px;
+  background: var(--paper);
+  font-size: 15px;
   line-height: 1.7;
 }
+.wrap {
+  width: min(1160px, calc(100% - 48px));
+}
 body > .nav {
-  height: 85px;
+  height: 90px;
   border-bottom: 1px solid var(--line);
 }
 .nav .wordmark {
   color: var(--ink);
-  font-family: Georgia, serif;
-}
-.nav .wordmark img {
-  border-radius: 8px;
-}
-.wrap {
-  width: min(1250px, calc(100% - 48px));
+  font:
+    750 25px Inter,
+    "Segoe UI",
+    sans-serif;
+  letter-spacing: -1px;
 }
 .nav-action {
-  background: linear-gradient(100deg, #cfe0ba, #b6cca5);
-  border: 1px solid #d1e1be;
-  color: #162210;
-  border-radius: 7px;
-  padding: 9px 17px;
+  background: var(--accent);
+  color: white;
+  padding: 10px 18px;
+  border-radius: 8px;
 }
 .page-intro {
-  padding: 55px 0 25px;
+  padding: 60px 0 25px;
 }
 .page-intro h1,
 .auth-card h1 {
-  font-family: Georgia, serif;
-  font-weight: 400;
   color: var(--ink);
+  font-family: inherit;
+  font-weight: 550;
+  letter-spacing: -2px;
 }
 .lede,
 .prose p,
 .prose li,
 .download-card .muted,
 .muted {
-  color: #b6c2a8;
+  color: var(--muted);
 }
 .download-card,
 .auth-card {
-  background: linear-gradient(115deg, #202719db, #10170fe8);
+  background: white;
   border: 1px solid var(--line);
-  box-shadow: inset 0 1px 0 #e1ce951a;
+  box-shadow: none;
+  border-radius: 12px;
 }
 .download-card h2,
 .prose h2 {
-  font-family: Georgia, serif;
-  font-weight: 400;
+  color: var(--ink);
+  font-family: inherit;
+  font-weight: 550;
+  letter-spacing: -1px;
 }
 .button {
-  border-radius: 7px;
-  color: #e3e9d4;
-  border-color: #b5c18f40;
-  background: #1d2817;
+  background: white;
+  color: var(--ink);
+  border-color: var(--line);
+  border-radius: 8px;
 }
 .button.primary {
-  background: linear-gradient(100deg, #d1e3bd, #b9cfaa);
-  color: #16210f;
-  border-color: #d2e3c2;
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
 }
 .button.primary:hover {
-  background: #deedcc;
+  background: #174c3b;
 }
 .prose pre {
-  background: #081106be;
-  border: 1px solid #b2c38b35;
-  color: #ccdcb7;
+  color: var(--ink);
+  background: #edf2e8;
+  border: 1px solid var(--line);
   border-radius: 8px;
 }
 .notice {
-  background: #aeb57712;
-  border-left: 2px solid #bcaa70;
-  color: #c5d0b6;
+  color: #705218;
+  background: #f7efde;
+  border-left: 2px solid #b88d39;
 }
 .auth-card dt,
 .prose th {
-  color: #aab997;
+  color: var(--muted);
 }
 .error {
-  color: #edb88e;
+  color: #9e362d;
 }
 .success {
-  color: #b1d294;
+  color: var(--accent);
 }
 .footer {
   border-color: var(--line);
-  color: #a6b495;
+  color: var(--muted);
 }
 .footer .wordmark {
-  color: #d5dfc3;
+  color: var(--ink);
 }
 .prose code {
-  color: #d7d9b2;
+  color: var(--ink);
 }
 .prose td,
 .prose th {
@@ -106,17 +111,20 @@ body > .nav {
 }
 .privacy-content h1 {
   font:
-    48px Georgia,
-    serif;
-  line-height: 1.1;
+    550 46px/1.1 Inter,
+    "Segoe UI",
+    sans-serif;
+  letter-spacing: -2px;
 }
 .privacy-content h2 {
   font:
-    25px Georgia,
-    serif;
+    550 25px/1.2 Inter,
+    "Segoe UI",
+    sans-serif;
+  letter-spacing: -0.7px;
 }
 .privacy-content p {
-  color: #b8c6a8;
+  color: var(--muted);
 }
 .privacy-content a {
   text-decoration: underline;
