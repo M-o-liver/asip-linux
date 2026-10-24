@@ -1,5 +1,6 @@
 @import url("/assets/interface.css");
 body {
+  color: var(--ink);
   font-size: 14px;
   line-height: 1.7;
 }
