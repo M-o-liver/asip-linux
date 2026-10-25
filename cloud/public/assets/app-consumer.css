@@ -585,3 +585,12 @@ pre {
     display: none;
   }
 }
+.detail-dialog h2 {
+  font-family: inherit;
+  font-size: 24px;
+  line-height: 1.5;
+  letter-spacing: -0.4px;
+}
+.detail-dialog summary {
+  color: var(--muted);
+}
