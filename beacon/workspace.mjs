@@ -7,7 +7,7 @@ export function recentWork(runtime, limit = 4) {
   return runtime
     .storage()
     .prepare(
-      "SELECT id,at,agent,kind,summary,project FROM events WHERE kind IN ('result','evidence','unresolved','failed','api_failed','api_unresolved','intent.finished','intent.failed','intent.held','StopFailure') OR (kind='Stop' AND trim(summary) NOT IN ('','Stop')) ORDER BY at DESC,rowid DESC LIMIT ?",
+      "SELECT id,at,agent,kind,summary,project FROM events WHERE kind IN ('decision','result','evidence','unresolved','failed','api_failed','api_unresolved','intent.finished','intent.failed','intent.held','StopFailure') OR (kind='Stop' AND trim(summary) NOT IN ('','Stop')) ORDER BY at DESC,rowid DESC LIMIT ?",
     )
     .all(limit);
 }
@@ -269,11 +269,11 @@ export class Workspace {
     );
     const category =
       kind === "work"
-        ? " AND (kind IN ('intent','result','evidence','Stop','tool_succeeded','api_result','api_failed','failed','unresolved','api_unresolved','PostToolUseFailure','StopFailure') OR kind LIKE 'intent.%' OR kind LIKE 'system.%' OR kind LIKE 'verification.%')"
+        ? " AND (kind IN ('intent','decision','result','evidence','Stop','tool_succeeded','api_result','api_failed','failed','unresolved','api_unresolved','PostToolUseFailure','StopFailure') OR kind LIKE 'intent.%' OR kind LIKE 'system.%' OR kind LIKE 'verification.%')"
         : kind === "intent"
           ? " AND (kind='intent' OR kind='intent.started')"
           : kind === "results"
-            ? " AND kind IN ('result','evidence','Stop','tool_succeeded','api_result','api_failed','failed','intent.finished','intent.failed','system.verify','verification.passed')"
+            ? " AND kind IN ('decision','result','evidence','Stop','tool_succeeded','api_result','api_failed','failed','intent.finished','intent.failed','system.verify','verification.passed')"
             : kind === "unresolved"
               ? " AND kind IN ('unresolved','api_unresolved','intent.held')"
               : "";

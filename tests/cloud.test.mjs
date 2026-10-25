@@ -1488,3 +1488,36 @@ test("Linux and Windows local stores exchange original native records and Codex 
     original,
   );
 });
+
+test("explicit decisions appear in default work history through its bounded index", async () => {
+  await db
+    .prepare(
+      "INSERT INTO events(account_id,id,at,agent,session,kind,project,summary,data,sha256,object_key,device_id,received_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+    )
+    .bind(
+      accountId,
+      "decision-visible",
+      new Date().toISOString(),
+      "codex",
+      "decision-session",
+      "decision",
+      "decision-project",
+      "Use a shared project memory.",
+      "{}",
+      "a".repeat(64),
+      "fixture",
+      "fixture-device",
+      new Date().toISOString(),
+    )
+    .run();
+  const result = await listEvents(
+    { DB: db },
+    { accountId, projects: [] },
+    new URLSearchParams({
+      category: "work",
+      project: "decision-project",
+      limit: "5",
+    }),
+  );
+  assert.equal(result.events[0].id, "decision-visible");
+});

@@ -154,7 +154,7 @@ export async function listEvents(env, auth, params) {
     );
   if (category === "work")
     conditions.push(
-      "(kind IN ('intent','result','evidence','failed','unresolved','api_failed','api_unresolved','StopFailure') OR kind LIKE 'intent.%' OR kind LIKE 'verification.%' OR (kind='Stop' AND trim(summary) NOT IN ('','Stop')))",
+      "(kind IN ('intent','decision','result','evidence','failed','unresolved','api_failed','api_unresolved','StopFailure') OR kind LIKE 'intent.%' OR kind LIKE 'verification.%' OR (kind='Stop' AND trim(summary) NOT IN ('','Stop')))",
     );
   if (query) {
     conditions.push(
@@ -186,7 +186,7 @@ export async function listEvents(env, auth, params) {
   const { results } = await env.DB.prepare(
     "SELECT * FROM " +
       (category === "work"
-        ? "events INDEXED BY events_work_history"
+        ? "events INDEXED BY events_work_history_v2"
         : "events") +
       " WHERE " +
       conditions.join(" AND ") +
