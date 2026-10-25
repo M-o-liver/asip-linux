@@ -14,6 +14,36 @@
   --surface: #191e22;
   --radius: 12px;
 }
+/* Shared identity with ASIP's cloud memory, with native dark-mode contrast. */
+.continuity-indicator {
+  display: grid;
+  place-items: center;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: #244a39;
+  color: #c6e2bf;
+  font-size: 30px;
+  margin-bottom: 18px;
+}
+body[data-continuity="attention"] .continuity-indicator {
+  background: #4d3820;
+  color: #f1d09c;
+}
+body[data-continuity="setup"] .continuity-indicator {
+  background: #28312e;
+  color: #becdc4;
+}
+.continuity-next {
+  margin-bottom: 20px;
+}
+.continuity-next .help {
+  margin-top: 12px;
+}
+#overview-caption {
+  max-width: 620px;
+  line-height: 1.65;
+}
 * {
   box-sizing: border-box;
 }

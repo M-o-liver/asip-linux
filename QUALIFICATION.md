@@ -1,5 +1,38 @@
 # ASIP 0.5.1 qualification
 
+## Consumer continuity release — 2026-10-25
+
+The consumer website and authenticated workspace are deployed at `https://asip.ca`.
+Initial Worker `4f611527-70ed-4daa-a7f7-08363b48566b` served source `d5735b9`.
+Worker `dd064c8a-2634-4f78-bfac-4beadaadf9c9` serves source `1ea3a21`, including
+saved decisions in default Work history. Additive migration
+`0006_decision_history.sql` is applied; the preceding index remains for rollback.
+No record contents or account credentials were migrated.
+
+Full local qualification: 89 passed, two platform skips, zero failures. After the
+live workflow exposed missing decision rows, cloud regression qualification passed
+26 tests and local workspace/continuity qualification passed six tests. Formatting
+passed and the Linux unpacked desktop candidate built successfully.
+
+Browser qualification covered the real public landing at phone width, empty-account
+setup with disposable fixtures, populated home, native mobile navigation, and prompt
+copying. In the production owner account, search found decision
+`8b9e747a-6530-4681-ab97-6cfae19c3904`, Copy handoff notes succeeded, and Verify source
+reported that SHA-256 matched the original cloud record. The same decision was
+retrieved through the native ASIP recall tool. This is not a claim of a newly
+performed cross-device installation or paid transaction.
+
+[PR #14](https://github.com/M-o-liver/asip-linux/pull/14) contains the implementation.
+The `v0.6.0-alpha.1` tag identifies source `1ea3a21`; its
+[native release workflow](https://github.com/M-o-liver/asip-linux/actions/runs/40147974447)
+is the authority for installer publication. At this entry's creation, that workflow
+was still running and the website retained the verified 0.5.1 download links.
+Production pricing remains CA$12/month. Creating the proposed CA$20 live price was
+blocked by automatic approval review and is awaiting explicit owner approval.
+The design rationale and remaining product limits are in
+[consumer-product.md](docs/consumer-product.md).
+
+
 This report records deployed behavior, installed-device observations, and automated checks separately. Earlier Beacon and native plugin evidence is preserved in [the 0.4.1 report](docs/qualification-v0.4.1.md).
 
 ## Plugin archive update — October 24, 2026

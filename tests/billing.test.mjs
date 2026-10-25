@@ -424,6 +424,26 @@ test("Stripe checkout is server-priced, account-bound and reused; only verified 
       (await ensureTrial(env, account.id)).stripe_subscription_id,
       null,
     );
+    // Existing customers retain access on the explicitly recognized legacy price.
+    env.STRIPE_LEGACY_PRICE_IDS = "price_legacy";
+    const legacy = {
+      ...subscription,
+      items: {
+        data: [
+          { ...subscription.items.data[0], price: { id: "price_legacy" } },
+        ],
+      },
+    };
+    subscriptions = [legacy];
+    await billingRoute(new Request(refresh), env, refresh, auth);
+    assert.equal(
+      (await ensureTrial(env, account.id)).stripe_subscription_id,
+      "sub_fixture",
+    );
+    assert.equal(
+      entitlement(await ensureTrial(env, account.id)).status,
+      "active",
+    );
     subscriptions = [subscription];
     const raw = JSON.stringify({
         id: "evt_fixture",

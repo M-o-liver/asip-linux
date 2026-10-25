@@ -1,3 +1,4 @@
+import { continuityState } from "./continuity.js";
 const $ = (id) => document.getElementById(id);
 const names = {
   codex: "Codex",
@@ -291,14 +292,30 @@ function render(state) {
     ? "Service running"
     : "Service unavailable";
   document.body.classList.toggle("offline", !state.online);
-  $("overview-caption").textContent = !state.online
-    ? "Service unavailable"
-    : state.clients.length
-      ? state.clients.length +
-        " agent" +
-        (state.clients.length === 1 ? "" : "s") +
-        " connected"
-      : "Service running";
+  const continuity = continuityState(state);
+  document.body.dataset.continuity = continuity.tone;
+  $("overview-title").textContent = continuity.title;
+  $("overview-caption").textContent = continuity.detail;
+  $("next-action").textContent =
+    continuity.action === "agents"
+      ? "Connect an agent"
+      : continuity.action === "cloud"
+        ? state.cloud?.connected
+          ? "Review cloud connection"
+          : "Connect cloud"
+        : "Open your memory";
+  $("next-action").onclick = () => {
+    if (continuity.action === "agents") navigate("agents");
+    else if (continuity.action === "cloud") {
+      if (!state.cloud?.connected || state.cloud?.reconnectRequired)
+        $("cloud-connect").click();
+      else $("cloud-card").scrollIntoView({ behavior: "smooth" });
+    } else window.asip.openWorkspace();
+  };
+  const latest = state.workspace?.recent?.[0];
+  $("continuity-proof").textContent = latest
+    ? "Last saved work: " + new Date(latest.at).toLocaleString()
+    : "Try it: ask your agent to save a decision, then recall it in a new session. Recording hooks are reviewed in your agent.";
   $("account-name").textContent = state.account?.name || "ASIP account";
   $("account-handle").textContent = state.account?.handle || "Signed out";
   $("build-version").textContent =
