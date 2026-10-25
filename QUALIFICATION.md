@@ -27,6 +27,23 @@ The `v0.6.0-alpha.1` tag identifies source `1ea3a21`; its
 [native release workflow](https://github.com/M-o-liver/asip-linux/actions/runs/40147974447)
 is the authority for installer publication. At this entry's creation, that workflow
 was still running and the website retained the verified 0.5.1 download links.
+The tagged native workflow subsequently passed Windows, Linux, Apple Silicon and
+Intel Mac, including native plugin qualification, packaging and startup checks.
+The prerelease was published at 2026-10-25T00:52:45Z. All four qualification
+receipts identify source `1ea3a21`, tree `4dc7d70aa0213e43202bbc711b47d798b2d97a4f`,
+and a clean build. Freshly downloaded Windows and Linux payloads were independently
+verified against both SHA256SUMS and GitHub's asset digests:
+
+- Windows EXE: `325e0eb07f7a47fd07942356ac1db7f642716cc7cf977db1ec43712192d82cd0`
+- Linux AppImage: `e7e7829fda8228fe4a1682fc0e31dd34280f52f2bf817d62e0cfe11e42abb547`
+
+The website download links now identify this release. A separate Ubuntu PR run
+hit `write EPIPE` in the helper test process; only its failed job was retried.
+The successful tagged native build remains the published binary qualification.
+This session did not replace the user's installed Beacon or re-run a new-device
+OAuth approval. Final visual-contrast Worker `d4324101-ee42-47b2-a217-b005de322fe8`
+served website source `2e10d19` before the download-link update.
+
 Production pricing remains CA$12/month. Creating the proposed CA$20 live price was
 blocked by automatic approval review and is awaiting explicit owner approval.
 The design rationale and remaining product limits are in
