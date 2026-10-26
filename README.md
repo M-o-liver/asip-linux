@@ -81,7 +81,25 @@ Cloud tests exercise the Worker in an emulator with disposable D1/R2 data.
 `cloud:build` is a dry run. Deployment is a separate operation described in the
 [cloud guide](cloud/README.md).
 
+## Beacon updates
+
+Installed Beacon checks this repository's published releases on startup and daily.
+Settings provides **Check for updates**, **Download update**, and **Open installer**.
+The first updater-capable build must be installed normally; earlier versions
+cannot receive a feature they do not yet contain.
+
+Downloads use the current OS/architecture, verified release asset size and SHA-256,
+and are rechecked before opening. Windows opens the NSIS installer, Mac opens the
+DMG, and Linux uses its native package or reveals the downloaded AppImage for
+replacement. Installation remains an explicit user action; this is not silent
+self-installation. Plugins retain their providers' installation/update flows.
+See [updates.mjs](beacon/updates.mjs) and [update regressions](tests/updates.test.mjs).
+
 ## Package and release
+
+Deploy the hosted `beacon-connected.html` completion page before distributing a
+Beacon build that redirects there. The website addition is backward compatible
+and requires no database migration.
 
 [package.json](package.json) owns the desktop version, build commands, and native
 installer targets. [cloud/wrangler.jsonc](cloud/wrangler.jsonc) owns the configured

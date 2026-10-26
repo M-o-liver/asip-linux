@@ -83,12 +83,19 @@ up to ten checkpoints and verifies the selected history before restoration.
 Cloud history is retained. See [architecture](ARCHITECTURE.md) for API limits and
 recovery boundaries.
 
+## Update Beacon
+
+In **Settings → Beacon updates**, check for a newer release, download it, then
+open the verified installer. Complete your platform's installation flow. On Mac,
+replace Beacon in Applications; for a Linux AppImage, replace the existing file.
+Plugin uploads and native-manager updates remain separate.
+
 ## Diagnose a missing record
 
 1. Confirm Beacon is signed in and the agent is connected.
 2. Confirm the plugin is installed in the agent surface being used.
 3. Review and enable required native hooks, then start a new conversation.
-4. Check the local workspace first; then check cloud connection, pending records,
+4. Check Beacon’s recent work first; then check cloud connection, pending records,
    and any authorization, entitlement, network, or quota message.
 5. Compare the installed version and agent surface with the dated qualification
    observations before assuming the same capture coverage.

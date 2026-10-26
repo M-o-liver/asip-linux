@@ -28,6 +28,7 @@ let runtime,
   identity,
   connections,
   cloud,
+  updater,
   recovery,
   window,
   tray,
@@ -109,6 +110,7 @@ function snapshot() {
     cloud: cloud?.status(),
     launchAtLogin: loginStartup.enabled(),
     installed: app.isPackaged,
+    update: updater?.status(),
   };
 }
 function send() {
@@ -172,7 +174,14 @@ function updateTray(state) {
               : state.recording
                 ? "Ready"
                 : "No plugins connected";
-  const key = JSON.stringify([icon, label, state.clients, state.records]);
+  const key = JSON.stringify([
+    icon,
+    label,
+    state.clients,
+    state.records,
+    state.update?.phase,
+    state.update?.version,
+  ]);
   if (key === trayState) return;
   trayState = key;
   if (process.platform !== "darwin")
@@ -198,6 +207,15 @@ function updateTray(state) {
     { type: "separator" },
     { label: "Open ASIP", click: openWorkspace },
     { label: "Open Beacon", click: () => show({ full: true }) },
+    {
+      label: ["available", "ready"].includes(state.update?.phase)
+        ? "Beacon update available"
+        : "Check for updates",
+      click: async () => {
+        show({ full: true, page: "settings" });
+        await updater?.check();
+      },
+    },
     { label: "Quit", click: () => app.quit() },
   ]);
   if (process.platform === "linux") tray.setContextMenu(menu);
@@ -256,7 +274,7 @@ function show({
           minHeight: Math.min(560, area.height - 48),
         }),
     show: false,
-    backgroundColor: "#111417",
+    backgroundColor: "#f6f7f2",
     title: "ASIP Beacon",
     autoHideMenuBar: true,
     webPreferences: {
@@ -309,16 +327,9 @@ async function nativeDialog(method, options) {
 }
 
 async function openWorkspace(project) {
-  if (!runtime?.server?.listening || !runtime?.workspace) {
-    show();
-    return;
-  }
   try {
-    await shell.openExternal(
-      runtime.account
-        ? runtime.workspace.openURL(project)
-        : "http://" + runtime.host + "/workspace/",
-    );
+    const { hostedWorkspace } = await import("./hosted-workspace.mjs");
+    await shell.openExternal(hostedWorkspace(cloud?.status(), project));
   } catch (error) {
     lastError = error.message;
     show();
@@ -364,7 +375,6 @@ if (
     const { Connections } = await import("./connections.mjs");
     const { Recovery } = await import("./recovery.mjs");
     const workspaceModule = await import("./workspace.mjs");
-    const { Workspace } = workspaceModule;
     recentWork = workspaceModule.recentWork;
     const { importHistory, previousHistoryPath } =
       await import("./import-history.mjs");
@@ -409,12 +419,7 @@ if (
       },
     });
     recovery = new Recovery(runtime);
-    new Workspace(runtime, {
-      // A browser request cannot reliably focus a transient Windows panel.
-      // Keep the requested view open as a normal taskbar window instead.
-      openBeacon: (page) => show({ page, full: process.platform !== "darwin" }),
-      openWorkspace,
-    });
+
     identity = new Identity(config, {
       openBrowser: (url) => shell.openExternal(url),
       onCode: (code) => {
@@ -443,6 +448,32 @@ if (
       openBrowser: (url) => shell.openExternal(url),
       onChange: () => send(),
     });
+    const { BeaconUpdates } = await import("./updates.mjs");
+    updater = new BeaconUpdates({
+      home: app.getPath("userData"),
+      version: build.releaseTag || app.getVersion(),
+      installed: app.isPackaged,
+      format: process.env.APPIMAGE
+        ? "AppImage"
+        : fs.existsSync("/etc/debian_version")
+          ? "deb"
+          : fs.existsSync("/etc/redhat-release")
+            ? "rpm"
+            : "AppImage",
+      onChange: send,
+      openInstaller: async (file) => {
+        if (file.endsWith(".AppImage")) {
+          shell.showItemInFolder(file);
+          return;
+        }
+        const error = await shell.openPath(file);
+        if (error)
+          throw new Error(
+            "Could not open the installer. Find it in Beacon's update folder.",
+          );
+      },
+    });
+    updater.start();
     try {
       if (fs.existsSync(sessionPath()) && safeStorage.isEncryptionAvailable()) {
         const state = JSON.parse(
@@ -481,14 +512,14 @@ if (
     ipcMain.handle("asip:open-workspace", (_event, project) =>
       openWorkspace(project),
     );
+    ipcMain.handle("asip:update-check", () => updater.check());
+    ipcMain.handle("asip:update-download", () => updater.download());
+    ipcMain.handle("asip:update-install", () => updater.install());
     ipcMain.handle("asip:status", () => snapshot());
     ipcMain.handle("asip:cloud-connect", () => cloud.connect());
     ipcMain.handle("asip:cloud-sync", () => cloud.sync());
     ipcMain.handle("asip:cloud-disconnect", () => cloud.disconnect());
-    ipcMain.handle("asip:cloud-open", () => {
-      const url = cloud.status().workspace;
-      if (url) return shell.openExternal(url);
-    });
+    ipcMain.handle("asip:cloud-open", () => openWorkspace());
     ipcMain.handle("asip:copy-text", (_event, text) => {
       if (typeof text !== "string" || text.length > 12000)
         throw new Error("Could not copy these commands.");
@@ -747,6 +778,7 @@ if (
 app.on("window-all-closed", () => {});
 app.on("before-quit", () => {
   abort?.abort();
+  updater?.stop();
   persist();
   runtime?.signOut();
   runtime?.server?.close();

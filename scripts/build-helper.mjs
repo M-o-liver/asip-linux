@@ -67,6 +67,10 @@ fs.rmSync(packaged, { recursive: true, force: true });
 fs.mkdirSync(packaged, { recursive: true });
 const identity = {
   version,
+  releaseTag:
+    process.env.GITHUB_REF_TYPE === "tag"
+      ? process.env.GITHUB_REF_NAME
+      : undefined,
   revision,
   tree,
   dirty,

@@ -538,3 +538,28 @@ details p {
     scroll-behavior: auto !important;
   }
 }
+
+.beacon-complete {
+  max-width: 680px;
+  margin: 10vh auto;
+  padding: 40px;
+  background: white;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+}
+.beacon-complete h1 {
+  font-size: clamp(32px, 5vw, 52px);
+}
+.beacon-complete > p:not(.eyebrow) {
+  color: var(--muted);
+}
+@media (max-width: 600px) {
+  .beacon-complete {
+    padding: 24px;
+    margin: 40px auto;
+  }
+}
+
+.beacon-complete .button + p {
+  margin-top: 20px;
+}

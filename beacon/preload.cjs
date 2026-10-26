@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("asip", {
+  updateCheck: () => ipcRenderer.invoke("asip:update-check"),
+  updateDownload: () => ipcRenderer.invoke("asip:update-download"),
+  updateInstall: () => ipcRenderer.invoke("asip:update-install"),
   status: () => ipcRenderer.invoke("asip:status"),
   cloudConnect: () => ipcRenderer.invoke("asip:cloud-connect"),
   cloudSync: () => ipcRenderer.invoke("asip:cloud-sync"),
