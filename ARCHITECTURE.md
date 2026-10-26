@@ -1,59 +1,128 @@
-# Implementation notes
+# Local architecture
 
-## Beacon and installed plugins
+This guide describes the current Beacon implementation. [Setup](ALPHA.md) owns
+installation steps; [cloud architecture](cloud/README.md) owns hosted behavior.
 
-Beacon owns the local account, connection approvals, API credentials, and activity database. The same application and service code run on Windows, macOS, and Linux. The Go executable in each native plugin talks to Beacon over loopback. There is no dependency on the previous Linux administration daemon.
+## Code map
 
-An installed plugin has no project memory or API access until the user signs into Beacon and connects it. Beacon attributes requests to that connection's agent and account. Disconnect and sign-out stop new recording and cancel outstanding API requests.
+| Component            | Source                                                                                                             | Responsibility                                                               |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| Desktop process      | [main.cjs](beacon/main.cjs), [desktop.cjs](beacon/desktop.cjs), [startup.cjs](beacon/startup.cjs)                  | Electron lifecycle, encrypted storage, native windows, login startup         |
+| Local service        | [runtime.mjs](beacon/runtime.mjs)                                                                                  | Account storage, plugin grants, record/recall, local HTTP service, API audit |
+| Native plugins       | [plugins.mjs](scripts/plugins.mjs), [main.go](plugin-helper/main.go), [transcript.go](plugin-helper/transcript.go) | Bundles, MCP tools, lifecycle hooks, native conversation evidence            |
+| Managed installation | [agent-plugins.mjs](beacon/agent-plugins.mjs), [plugin-archive.mjs](beacon/plugin-archive.mjs)                     | Provider installation and ZIP generation                                     |
+| Records              | [trace.mjs](beacon/trace.mjs), [project.mjs](beacon/project.mjs)                                                   | Trace redaction, project identity                                            |
+| API connections      | [connections.mjs](beacon/connections.mjs)                                                                          | Encrypted credentials, provider requests, connection checks                  |
+| History              | [recovery.mjs](beacon/recovery.mjs), [import-history.mjs](beacon/import-history.mjs)                               | Checkpoints and previous-history import                                      |
+| Local workspace      | [workspace.mjs](beacon/workspace.mjs), [workspace.js](beacon/workspace/workspace.js)                               | Browser workspace and local history views                                    |
 
-The provider's stable subject identifies the local ASIP account. Google email addresses and GitHub handles are display fields. Cloud-enabled Beacon connects that local store to a persistent hosted account through browser approval and a one-time proof exchange. The local account is permanently bound to its first cloud owner; account switches cannot export another owner's synchronized history. [Cloud architecture](cloud/README.md) describes admission, durable identities, D1/R2 storage, synchronization integrity, and scoped HTTP/MCP access.
+## Accounts and connection
 
-## Records
+Beacon's local account uses the provider's stable subject; email and handles are
+display fields. Its account-specific activity database is SQLite with WAL and
+full synchronous writes. Credential and sign-in persistence use Electron
+`safeStorage`; the desktop rejects unavailable encryption and Linux's
+`basic_text` backend for protected credential storage.
 
-Each event has an immutable ID, timestamp, agent, native conversation ID, project, kind, summary, and structured evidence. SQLite uses WAL and full synchronous writes. Tool traces retain native identifiers, bounded input/output, explicit outcomes, Git revision/worktree state, and a transcript reference and hash when supplied. A trace reference is not a copied transcript.
+The compiled Go helper talks to Beacon over loopback. First MCP startup starts a
+bounded background connection flow. Per-agent leases coordinate concurrent
+discovery processes. An existing signed-in account requires approval in Beacon;
+a pending request can also complete after sign-in. Disconnect revokes the
+agent's connections and pending approval. A disconnected plugin reconnects through
+its setup flow or `asip_connect`.
 
-Codex supplies conversation metadata on MCP calls. The calling thread takes precedence over the root session, which is retained as evidence. Other clients receive their native context through lifecycle hook output. ASIP never borrows a different conversation's most recent session or project.
+Beacon maintains stable managed plugin paths. Native plugin managers own their
+installed copies and hook-review state. Antigravity also has native desktop
+registration; Windows uses a real directory and refreshes owned files during
+upgrades. Claude's ZIP has its manifest under `.claude-plugin/` and helper under
+`libexec/`. See the setup guide for the corresponding user actions.
 
-Native hook discovery, MCP startup, and complete turn capture are separate checks. CI installs plugins with the actual managers. Codex hook trust remains in its native hook manager. Complete turn capture must be qualified on each supported agent surface; a working MCP connection alone does not establish that.
+## Records and project identity
 
-## Project association
+Records contain an immutable ID, native timestamp, agent, session, project,
+kind, summary, and structured evidence. Trace processing bounds and redacts
+captured input/output. Redaction is a best-effort filter; captured work can
+still contain private information.
 
-Hooks resolve the working directory to a Git root and canonical origin repository. SSH and HTTPS origins resolve to the same repository identity. Repositories without a usable origin retain their local root; other work retains its working directory. Multi-workspace activity without a specific directory remains unassigned. Each hook record includes the association method and original directory evidence.
+Hooks retain native call IDs, observed results, Git revision/worktree evidence,
+and transcript references or source hashes where available. Antigravity's Stop
+handling can capture a completed final reply from its supported native JSONL
+transcript. Missing or unsupported transcripts retain available metadata.
 
-This keeps the evidence needed to reconsider associations later. A project correction should append a decision referring to the original events, rather than rewriting the tool trace.
+Codex MCP metadata supplies the native session and calling thread. The calling
+thread takes precedence; root-session details remain evidence. Other clients
+receive native context through hooks. Requests use that context rather than
+another conversation's most recent session.
 
-### Jev investigation — 2026-10-14
+Project association uses the working directory, Git root, and normalized origin
+repository. SSH and HTTPS forms normalize to one identity. Other work retains
+local path evidence; ambiguous observations remain available for later review.
+Probabilistic project classification is outside the implemented association path.
 
-[TypeSafe's Choice primitive](https://docs.typesafe.ai/primitives/choice) returns a selected option, option probabilities, and confidence. The [HTTP API](https://docs.typesafe.ai/api) accepts structured state and typed questions at `POST /v1/systemone`. Its [confidence documentation](https://docs.typesafe.ai/confidence) distinguishes confidence from the probabilities assigned to options. The vendor also documents [known limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13), including irrelevant context and indirect descriptions.
+## Native MCP tools
 
-For ASIP, the useful experiment is classification of otherwise unassigned activity among a small set of recorded projects, with an explicit unresolved option. Input should contain the native directory evidence, repository candidates, and a bounded activity excerpt. Store the input hash, candidate set, model version, returned distribution, and subsequent user correction. Measure accuracy on labelled ASIP traces before choosing an automatic assignment threshold. A suggestion must not replace a direct repository observation or invent an outcome.
+The schemas and dispatch live in [main.go](plugin-helper/main.go).
 
-No live Jev calls have been made, and no probabilistic assignments are currently applied. It can use a named custom API connection without introducing another credential mechanism or making recording depend on a remote model.
+| Tool               | Behavior                                               |
+| ------------------ | ------------------------------------------------------ |
+| `asip_status`      | Inspect Beacon connection/account state                |
+| `asip_connect`     | Open the account-connection flow                       |
+| `asip_projects`    | List recorded projects                                 |
+| `asip_recall`      | Search recorded project work                           |
+| `asip_record`      | Append intent, result, evidence, or other work records |
+| `asip_connections` | List available named API metadata                      |
+| `asip_api_request` | Call a named provider connection through Beacon        |
 
-## API requests
+Connection and native hook capture are independent checks. Qualification must
+exercise actual agent turns on the relevant application surface.
 
-Connection names are stable within an account. Each connection specifies a provider origin, authentication method, credential, and optional project assignments. OS keychain encryption protects the stored connection file. Plugins receive connection metadata and responses, rather than a credential lookup capability.
+## Named API requests
 
-Beacon records the request before dispatch, then records its HTTP result with the provider request ID and response hash. It does not put response bodies, query strings, authentication headers, or request bodies into API audit rows. Network interruption is unresolved because the provider may already have performed the operation. Clients must inspect the audit or provider state before retrying writes.
+Connection names are account-local. Each entry specifies a provider origin,
+authentication, credential, and optional project restrictions. The helper receives
+metadata and request results; Beacon supplies the stored credential to the
+provider. Import refuses duplicate names and verifies encrypted round trips.
+Stored signing secrets are retained separately from usable HTTP connections.
 
-Requests currently use JSON with bounded bodies and responses. HTTP errors are returned with their status and recorded as failed results. Responses too large to return are marked truncated. Streaming, uploads, provider-specific SDK wrappers, and Google API OAuth scopes are future work.
+`connections.mjs` accepts GET, HEAD, POST, PUT, PATCH, and DELETE. Paths stay on
+the configured origin, redirects are rejected, and requests time out after
+60 seconds. JSON request bodies and returned responses are each bounded to
+64 KiB. An oversized response returns `truncated: true` with no body. Streaming
+and file uploads are outside this request interface.
 
-## Platform qualification
+`runtime.mjs` records the request before dispatch and the result afterward,
+including HTTP status, provider request ID, and response hash. API audit records
+omit credential headers, query strings, and request/response bodies. Native tool
+capture is a separate path and may contain redacted tool arguments or returned
+content. An interrupted provider request remains unresolved: inspect the audit
+and provider state before retrying a write.
 
-CI builds and starts native installers on all three operating systems, and compiles x64/arm64 plugin executables. Codex and Claude versions and Antigravity release hashes are pinned for reproducible qualification. Provider login remains an interactive check. Unsigned installers do not establish publisher trust or macOS notarization.
+## Recovery and previous history
 
-Launch at login uses [Electron's native login-item APIs](https://www.electronjs.org/docs/latest/api/app#appsetloginitemsettingssettings-macos-windows) on Windows and macOS and the [XDG autostart specification](https://specifications.freedesktop.org/autostart/latest/) on Linux. It is enabled by default; an explicit opt-out is retained. A login launch keeps Beacon in the background. Unsigned macOS builds fall back to a per-user LaunchAgent if native login-item registration is unavailable.
+Recovery saves an account's SQLite history with a SHA-256 manifest, retaining at
+most ten checkpoints. Restore stages and verifies the selected checkpoint,
+checks SQLite integrity, saves the current history, then replaces the database.
+The desktop stops sync and waits for its current pass before restoring; the
+recovery class also rejects an in-flight pass. Afterward sync rescans cloud history.
+Cloud records are retained. These checkpoints cover ASIP history rather than
+repository files, operating-system state, or provider credentials.
 
-## Managed installations and desktop shell
+Previous-history import preserves the original database and saves current
+history before importing projects, relationships, events, and session metadata.
+Repeated imports deduplicate existing records. The UI owns file selection.
 
-Beacon stages all three platform-native bundles under its application-data `plugins` directory. Stable per-agent paths survive upgrades. Its Install action invokes the provider’s plugin manager; when Codex CLI is absent, **Open in ChatGPT** opens the documented local-marketplace installation link. Antigravity desktop registration uses its native global plugin directory and also works without the CLI. For CLI-managed copies, Beacon verifies that their manifest, MCP configuration, and hooks match its managed bundle; those managers own installed copies, enabled state, and hook review. No provider configuration or trust files are edited by Beacon. Installing the managed ASIP marketplace replaces only an earlier `asip@asip-local` plugin after the new installation succeeds. Windows npm wrappers receive argument data through a fixed PowerShell invocation; paths are not compiled into shell commands.
+## Desktop and release
 
-A fresh helper starts a bounded background account connection after MCP initialization. That helper survives a discovery transport closing while the user approves Beacon. Per-agent leases avoid duplicate prompts from concurrent discovery processes; stale leases expire. Disconnect cancels pending approvals as well as issued connections. Beacon can receive that request before an account is signed in; completing Google/GitHub sign-in completes the pending connection. Existing-account connections require Connect. Proof verification and account binding remain in the runtime. Multiple agents queue their requests. An existing token does not trigger automatic reauthorization after a disconnect.
+Linux opens a full desktop window. Windows and macOS use a tray/menu-bar panel
+with a full-window option and a fallback when tray placement is unavailable.
+**Open ASIP** opens the local browser workspace.
 
-Linux uses a full desktop window, independent of status-indicator extensions. Windows and macOS use tray bounds and display work areas to position a nearly square panel. Right-click retains the native menu. The panel hides on focus loss, stays present during sign-in or a native dialog, and can expand into the full window. Missing tray placement falls back to a full window. macOS uses a monochrome template icon with a retina asset.
+Startup is enabled by default with an explicit opt-out: native login-item APIs
+on Windows/macOS, XDG autostart on Linux, and a per-user LaunchAgent fallback for
+unsigned Mac builds. A login launch keeps Beacon in the background.
 
-## Build identity and release evidence
-
-Packaged Beacon includes its version, Git revision, source-tree hash, dirty flag, target platform, and build time. Plugin status reports its version and revision. PR builds may identify the generated merge commit; compare the source-tree hash with the branch when qualifying those installers. Native qualification reports accompany release checksums.
-
-Secondary-launch qualification verifies that the primary receives an import action and that the secondary process cannot erase saved sign-in. Linux AppImage verification selects the current application version explicitly, so old artifacts in a developer build directory cannot be mistaken for the candidate.
+Builds include version, Git revision, source-tree hash, dirty state, platform,
+and build time. [Native CI](.github/workflows/beacon.yml) builds on each target
+OS, checks plugin managers, packages installers, and performs startup smoke tests.
+[Qualification history](QUALIFICATION.md) records the separate interactive
+observations, artifact receipts, signing limits, and remaining checks.

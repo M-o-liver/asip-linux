@@ -1,50 +1,99 @@
-# ASIP alpha test
+# Install and verify ASIP
 
-Download an installer from [Releases](https://github.com/M-o-liver/asip-linux/releases). Choose the Windows Setup EXE, the arm64 DMG for Apple Silicon, the x64 DMG for Intel Mac, or the Linux AppImage/DEB/RPM. The application version is 0.5.1. Installers are unsigned; macOS builds are not notarized.
+Choose an installer from [Downloads](https://asip.ca/download): Windows Setup
+EXE, Apple Silicon arm64 DMG, Intel Mac x64 DMG, or Linux AppImage/DEB/RPM.
+The installer identifies its version; source development uses the version in
+[package.json](package.json). Published build observations and signing limits
+are recorded in [qualification history](QUALIFICATION.md).
 
 ## Connect an agent
 
-Install Beacon and sign in with Google or GitHub. Open **Agents** in Beacon, then use the matching flow:
+Install Beacon, sign in with Google or GitHub, and open **Agents**.
 
-| Agent           | Installation                                                                                                                                                  |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| ChatGPT desktop | Click **Open in ChatGPT**, then install ASIP on the native plugin page. Open **ASIP → Hooks → Review** and enable its hooks.                                  |
-| Codex CLI       | Click **Install**. Review ASIP in the CLI's **/hooks**, then start a new session.                                                                             |
-| Claude desktop / Cowork | Click **Get plugin ZIP**, then upload the archive through **Customize → Plugins → Upload a plugin**. Keep it zipped. |
-| Claude Code CLI | Add the managed `asip-claude-code` folder through Claude Code’s native plugin manager. It is beside the ZIP that Beacon reveals. |
-| Antigravity     | Click **Install**, restart Antigravity, then open a new conversation.                                                                                         |
+| Agent                   | Installation                                                                                                                      |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| ChatGPT desktop         | Choose **Open in ChatGPT**, install ASIP on its native plugin page, then open **ASIP → Hooks → Review** and enable the hooks.     |
+| Codex CLI               | Choose **Install**, review ASIP in **/hooks**, then open a new session.                                                           |
+| Claude desktop / Cowork | Choose **Get plugin ZIP**, then upload that ZIP through **Customize → Plugins → Upload a plugin**.                                |
+| Claude Code CLI         | Add the managed `asip-claude-code` folder through Claude Code's native plugin manager. Beacon reveals its ZIP beside that folder. |
+| Antigravity             | Choose **Install**, restart Antigravity, then open a new conversation. If the CLI is unavailable, use the managed plugin folder.  |
 
-Beacon stores all three managed bundles and their ZIPs in its application-data folder. For Claude, **Show ZIP** reveals the uploadable file and **Copy path** copies that file path. Other agents retain their native folder/marketplace flows. ASIP does not ask you to choose an export directory. Re-upload the Claude ZIP after a Beacon update to update the harness’s installed copy.
+Beacon owns the managed bundles and ZIPs in its application-data folder.
+**Show ZIP** and **Copy path** identify the Claude upload archive. Keep it zipped;
+re-upload it after a Beacon update to update the installed copy. Other providers
+use their native folder or marketplace flow. The setup UI and available actions
+are implemented in [window.js](beacon/window.js) and
+[agent-plugins.mjs](beacon/agent-plugins.mjs).
 
-Claude’s local MCP connector runs in Cowork and Claude Code, rather than ordinary chat. Cowork requires a paid Claude plan. A successful plugin upload does not by itself connect Beacon or establish recording. See [Anthropic’s connector guidance](https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors) and [Cowork availability](https://support.claude.com/en/articles/10065433-install-claude-desktop).
+Claude's local MCP connector is used through Cowork or Claude Code. Uploading a
+plugin alone establishes neither its connection nor automatic recording; check
+support and account requirements in the agent application.
 
-When the plugin starts, Beacon presents its connection request. Click **Connect** if already signed in. Start a fresh conversation after installing or updating a plugin; an existing conversation may retain its previous tool list.
+When the plugin starts, Beacon opens the connection request. Click **Connect**
+if already signed in. Start a fresh agent conversation after installation or an
+update so it loads the current tools. Review required hooks in the agent's
+native interface.
 
-## Check the complete workflow
+## Verify recording and recall
 
-Use an empty test folder or a small repository. After enabling the plugin's hooks, ask your agent to do an ordinary task:
+In an empty test folder or small repository, ask the agent:
 
 > Create hello-asip.txt containing "ASIP is connected". Read it back and report whether it matches.
 
-Approve the agent's normal tool prompts. Open **ASIP** from Beacon and check that the project, session, tool activity, and final response appeared. Start a different conversation in the same project and ask:
+Approve the agent's normal tool prompts. Choose **Open ASIP** in Beacon and check
+the project, native session, tool activity, and final response. A successful MCP
+connection alone establishes access to tools; inspect actual records to verify
+hook capture on that agent surface.
+
+Open another conversation in the same project and ask:
 
 > Use ASIP to recall the work in this project. What happened with hello-asip.txt?
 
-The answer should come from the saved history. Restart Beacon and check that the history remains. To try explicit intent and evidence records as well, ask the agent to record its next intended change and save the result after verification.
+Check the recalled record against the saved work. Restart Beacon and verify the
+history remains. Explicit intent/result/evidence records can supplement the
+native hooks.
 
-For APIs, open **API connections**, add a named connection, select the projects that may use it, and use **Check** where available. Ask your connected agent to list the project's connections and make a read-only request by name. HTTP failures should remain visible in the connection and activity records.
+## Connect another computer
 
-The [qualification report](QUALIFICATION.md) identifies which workflows were observed in the desktop applications and which have automated coverage only. A working MCP connection does not by itself verify automatic hook capture. ChatGPT desktop and Codex CLI require native hook review. After enabling hooks, start a fresh chat and check that its tool activity appears in ASIP.
+Local recording works without cloud. Choose **Connect cloud** in Beacon, sign
+into the hosted account in the browser, and approve the computer. Repeat on the
+other computer with the same hosted account. Local Google/GitHub sign-in and
+hosted account approval are separate steps.
 
-Activity is first stored on the computer running Beacon. The 0.5 cloud preview adds opt-in synchronization to a private asip.ca account. In a cloud-enabled build, choose **Connect cloud**, enter the preview gate, and approve the computer. Repeat on another computer using the same cloud workspace. Project records, evidence, session details, project metadata and named API metadata synchronize. Provider credentials stay local. Repository working trees and full transcripts are not copied; captured input/output and excerpts already in a record synchronize as evidence. Recovery retains up to ten ASIP history checkpoints; restoring one does not delete cloud records or back up repository files. See [cloud setup and limits](cloud/README.md) and the qualification report for what has actually been deployed and verified.
+Check a newly recorded item on the other computer. Records, captured evidence,
+session/project metadata, relationships, and named API metadata synchronize.
+Provider credentials remain on their owning computer. Full transcript files,
+repository working trees, and arbitrary referenced attachments are outside the
+sync protocol; excerpts already captured in records travel with those records.
 
-## Send feedback
+The [cloud guide](cloud/README.md) owns synchronization and admission behavior;
+[accounts and billing](cloud/SAAS.md) describes hosted access. **Reconnect cloud**
+renews expired authorization. Quota pauses and network failures preserve local
+recording and show their status in Beacon.
 
-[Report a problem](https://github.com/M-o-liver/asip-linux/issues/new?template=alpha-feedback.yml), or send the same details to the person who shared ASIP with you:
+## API connections and recovery
 
-- Your operating system, agent, and the ASIP version shown in **Settings**.
-- What you tried, what you expected, and what happened.
-- Any error message and a screenshot of the affected screen.
-- Whether restarting Beacon or starting a fresh agent conversation changed the result.
+In **API connections**, add a named provider connection and assign its projects.
+Use **Check** where supported. Ask the connected agent to list available
+connections and make a read-only request by name. Inspect its HTTP result and
+recorded audit. Credentials are entered in Beacon.
 
-Before posting a screenshot publicly, check it for credentials or private project content. Include a session or record ID when relevant; the full conversation is usually unnecessary.
+In **Recovery**, save or restore an activity-history checkpoint. Beacon retains
+up to ten checkpoints and verifies the selected history before restoration.
+Cloud history is retained. See [architecture](ARCHITECTURE.md) for API limits and
+recovery boundaries.
+
+## Diagnose a missing record
+
+1. Confirm Beacon is signed in and the agent is connected.
+2. Confirm the plugin is installed in the agent surface being used.
+3. Review and enable required native hooks, then start a new conversation.
+4. Check the local workspace first; then check cloud connection, pending records,
+   and any authorization, entitlement, network, or quota message.
+5. Compare the installed version and agent surface with the dated qualification
+   observations before assuming the same capture coverage.
+
+[Report a problem](https://github.com/M-o-liver/asip-linux/issues/new?template=alpha-feedback.yml)
+with your OS, agent, installed Beacon version, attempted action, expected result,
+and error message. Include a session/record ID when useful. Review screenshots
+for credentials and private project content before sharing them publicly.
