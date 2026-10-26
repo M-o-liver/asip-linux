@@ -1,299 +1,155 @@
-# ASIP cloud
+# Cloud architecture and operations
 
-ASIP's permanent website, private account workspaces, synchronization service,
-and agent API run in one Cloudflare Worker. The source lives beside Beacon so
-the local and hosted record protocol can be reviewed and released together.
+The `asip-cloud` Worker serves the website, hosted account workspace, device
+synchronization, HTTP API, and remote MCP endpoint. Local recording remains in
+Beacon. [Setup](../ALPHA.md) owns onboarding; [accounts and billing](SAAS.md) owns
+entitlements and provider configuration.
 
-## Resources
+## Code and configuration
 
-- Worker: `asip-cloud`; `workers.dev` and version preview URLs are disabled.
-- Website: `https://asip.ca`. The optional `www` alias is not attached.
-- D1: `asip-cloud`, ID `256ab73a-fef4-48e2-91a3-2f2b324fea07`.
-- Private R2 bucket: `asip-cloud-records`; no public bucket domain is required.
-- Existing publication Worker: `asip-publication`, retained for recovery.
-- Zero Trust organization: `damp-pond-2f61.cloudflareaccess.com`.
+| Component        | Source                                                                         | Responsibility                                                          |
+| ---------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| Routes           | [worker.mjs](src/worker.mjs)                                                   | Website, device approval, HTTP/MCP dispatch, authorization              |
+| Identity         | [auth.mjs](src/auth.mjs), [oauth.mjs](src/oauth.mjs)                           | Browser sessions, bearer credentials, Access fallback, provider linking |
+| Record storage   | [memory.mjs](src/memory.mjs), [activity.mjs](src/activity.mjs)                 | Record integrity, scoped queries, incremental aggregate index           |
+| Request controls | [http.mjs](src/http.mjs)                                                       | Origin checks, body limits, throttling, quota responses                 |
+| Native sync      | [cloud.mjs](../beacon/cloud.mjs), [device-link.mjs](../beacon/device-link.mjs) | Local/cloud binding, encrypted approval callback, retries               |
+| Shared protocol  | [cloud-protocol.mjs](../beacon/cloud-protocol.mjs)                             | Canonical event representation and hashing                              |
+| Web interface    | [public/](public/)                                                             | Static landing, authenticated workspace, download/privacy/API pages     |
+| Deployment       | [wrangler.jsonc](wrangler.jsonc), [migrations/](migrations/)                   | Worker bindings, flags, release tag, additive database schema           |
 
-Resource creation is recorded in Beacon. Deployment and admission status are
-reported separately in `QUALIFICATION.md`; a configuration file is not proof
-that a resource is serving traffic.
+The checked-in configuration attaches `asip.ca`, D1 `asip-cloud`, and private R2
+`asip-cloud-records`. It disables `workers.dev`, preview URLs, and Worker request
+logging. `PRIVATE_PREVIEW=false` selects public entry; `BILLING_ENFORCED=true`
+enables hosted entitlements. Dashboard-managed variables can be retained through
+`keep_vars`; inspect deployment configuration separately when operating the
+service. A checked-in setting establishes configuration intent, not live state.
 
-## Develop and qualify
+## Identity and admission
 
-```sh
-npm ci
-node --test tests/cloud.test.mjs
-npx wrangler d1 migrations apply asip-cloud --local --config cloud/wrangler.jsonc
-npx wrangler dev --config cloud/wrangler.jsonc --var ORIGIN:http://127.0.0.1:8787
-```
+Public sign-in uses Google or GitHub web OAuth. Browser-bound single-use state
+and PKCE protect both flows; Google also verifies nonce and the signed ID token.
+Provider subject identifies the account. Handles are editable addresses.
+Identity linking requires the original signed-in owner and rejects an identity
+already linked elsewhere. Matching email addresses do not merge accounts.
 
-The cloud tests bundle the actual Worker and run it in Cloudflare's emulator
-with D1 and R2. All account, credential, and event fixtures are disposable. They
-do not contact identity providers or use installed user credentials.
+Browser sessions are opaque tokens, hashed in D1, expire after 30 days, and use
+Secure, HttpOnly, host-only cookies. Browser mutations enforce Origin.
 
-`scripts/capture-product.cjs` captures the real local workspace using a separate
-sample account populated from public alpha 3 qualification evidence. It never
-reads the installed account. The image is illustrative release evidence in the
-actual product, rather than a live cloud synchronization claim.
+The optional private-preview path is controlled by `PRIVATE_PREVIEW` and an
+Access audience. `/auth/access` is a separate restricted owner fallback with
+`ACCESS_SIGNIN_AUD`; it must differ from `ACCESS_AUD`. Delegated preview admission
+cannot mint an owner browser session. Public provider sign-in works independently
+of this fallback. Cloudflare Access applications and allowlists are external
+configuration; verify them directly before changing admission.
 
-## Admission and account identity
+## Device approval
 
-The private preview uses a Cloudflare Access self-hosted application covering
-`asip.ca` and `*.asip.ca`. Its Allow policy contains administrator-selected
-email addresses. One-time PIN verifies those addresses. An unlisted visitor
-cannot enter. A second application, **ASIP account sign-in**, protects
-`asip.ca/auth/access` with a distinct audience and a path-scoped HttpOnly
-cookie. Both applications use the same reusable **Administrator-managed preview
-allowlist** policy, with the two owner-approved addresses and 24-hour sessions.
-Add and remove testers in that shared policy in Zero Trust → Access → Policies.
-Do not add an Everyone rule while the preview is private.
+Beacon opens `/connect` with a proof challenge, random state, ephemeral P-256
+public key, computer label, and temporary loopback callback. The owner approves
+the selected hosted account. The reply uses ephemeral ECDH, HKDF-SHA-256, and
+AES-256-GCM, bound to the challenge and state. Browser navigation returns
+ciphertext rather than plaintext credentials.
 
-The Worker verifies Access JWT signatures, issuer, audience, type, and expiry
-at `/auth/access`, requiring `ACCESS_SIGNIN_AUD` to differ from the preview
-`ACCESS_AUD`. A preview assertion delegated to a device or scoped API client
-cannot create an owner browser session. The sign-in assertion stays in its
-path-scoped browser cookie. The stable Access subject creates a durable ASIP account.
-Handles such as `/users/mikethirtythirty` are editable addresses, not database
-identities or authorization boundaries. Two accounts never share records on the
-basis of a matching handle or email address.
-
-ASIP browser sessions are opaque, hashed in D1, expire after 30 days, and use
-Secure, HttpOnly, host-only cookies. The Access gate independently governs
-whether a preview request can reach the service. Browser mutations verify
-Origin and reject cross-site requests.
-
-Google and GitHub web OAuth routes support explicit identity linking. They
-require separate web application registrations before those website buttons
-appear. Set Worker secrets `GOOGLE_WEB_CLIENT_SECRET` and
-`GITHUB_CLIENT_SECRET`, and configure `GOOGLE_WEB_CLIENT_ID` and
-`GITHUB_CLIENT_ID`. Register these exact callbacks:
-
-- `https://asip.ca/auth/google/callback`
-- `https://asip.ca/auth/github/callback`
-
-Google uses PKCE, state, nonce, and verified ID tokens. GitHub verifies the
-authenticated profile and primary verified email. Both consume one-time state
-bound to the browser. Linking requires the original signed-in account and
-rejects an identity already belonging to another account. No automatic account
-merge is performed. Existing Beacon Google/GitHub sign-in continues to own the
-local store; browser approval connects it to the selected hosted account.
-
-### Open the website for launch
-
-Remove or disable the **ASIP private preview** domain application, and set
-`PRIVATE_PREVIEW` to `false` when clients no longer need preview admission.
-Keep **ASIP account sign-in**, its distinct audience and its cookie protections.
-Set that application's admission policy to the intended public sign-in audience
-when public account creation is approved. Landing, downloads and ASIP token API
-then become publicly reachable; `/auth/access` remains the managed sign-in entry.
-Account authorization remains enforced by ASIP. Provider web OAuth is optional
-when continuing to use Access for sign-in. No website rewrite or data migration
-is required to lift the full-domain preview gate.
-
-## Device connection
-
-Beacon opens a browser approval page containing a SHA-256 proof challenge,
-random state, ephemeral P-256 public key, computer name, and a temporary loopback
-callback. The owner sees the cloud account and the local account, and explicitly
-approves synchronization of existing and future history. The Worker encrypts
-the reply using ephemeral ECDH, HKDF-SHA-256 and AES-256-GCM, bound to the proof
-challenge and state. A normal browser navigation returns only that ciphertext
-to the callback. Plaintext credentials never enter callback URLs or browser
-history. This avoids a cross-site form POST, which Chrome blocked during real
-qualification, without changing browser security settings.
-
-The browser returns a two-minute, single-use code and its preview Access
-assertion inside this encrypted reply to Beacon. The loopback callback checks
-Host, decrypts with its in-memory private key, and verifies the state. Forged
-or altered replies fail without consuming the pending connection. Redeeming
-the code requires the original proof verifier.
-The callback returns the browser to the hosted workspace.
-D1 consumes the code atomically. The resulting device token is random, hashed
-on the server, expires after 90 days, and is revocable in the workspace.
-
-Beacon encrypts the device token and Access session using the existing OS
-keychain mechanism. A permanently retained local account binding prevents a
-local store from subsequently uploading another cloud owner's downloaded
-history. The device's token never identifies an account using caller input.
-
-The preview Access session expires according to the gate policy. Beacon shows
-an actionable reconnection message and keeps recording locally. Reconnect in
-the browser to renew admission. API clients need their scoped ASIP token and,
-during private preview, a valid Access cookie.
-
-The hosted computers list shows approximate upload activity, updated at most
-every 15 minutes when work is sent. Downloads do not change that timestamp.
-Beacon shows the computer's current synchronization status. Idle reads remain
-free of database writes.
+Beacon verifies callback Host, decrypts the reply, checks state, and redeems a
+two-minute single-use code with the original proof verifier. D1 consumes the code
+atomically. Device credentials expire after 90 days and can be revoked. Beacon
+encrypts the connection with its OS-backed storage and permanently binds that
+local account's history to its first cloud owner. Another owner's history needs
+a separate local account.
 
 ## Synchronization and integrity
 
-- Local SQLite recording remains the first durable write. It works offline.
-- Pushes contain at most 40 records and 512 KiB. Server D1 work stays within
-  free-tier per-invocation query limits. Backlogs advance in bounded passes.
-- The canonical protocol hashes exactly `id`, `at`, `agent`, `session`, `kind`,
-  `project`, `summary`, and `data`, with sorted JSON object keys.
-- Private R2 stores the canonical source object under the owning account and
-  its content hash. D1 indexes the complete searchable record and source hash.
-- Identical retries are idempotent. A different record using the same account
-  and ID returns 409. A D1 trigger also protects concurrent conflicting writes;
-  the D1 event batch is atomic.
-- Identical native tool-hook deliveries with the same call ID, source hash and
-  complete recorded payload use a durable receipt identity. Repeated delivery
-  does not create another local or cloud record. Different observations and
-  explicit records remain separate; existing history is preserved.
-- R2 writes precede D1. Failed batches may leave unreferenced private objects;
-  they do not expose a partially committed batch. A later maintenance process
-  can collect these objects after proving they are unreferenced.
-- Pull uses a monotonically increasing server sequence, independent of device
-  clocks. Every record is checked against its hash before a local transaction
-  inserts it and advances the durable cursor. Original native times remain
-  unchanged. History is displayed by the original recorded time, with stable
-  pagination across equal timestamps. New work is uploaded before the older
-  backfill, so an existing history does not delay a fresh handoff.
-- Event IDs, agents, native session IDs, project associations, intent, results,
-  failures, and recorded evidence synchronize. Explicit project metadata,
-  paths, relationships, and session details also synchronize. Metadata uses
-  resumable 30-entry chunks and a conservative local merge. A partial metadata
-  refresh is repaired on the next successful pass.
-- Named connection metadata synchronizes. Provider credentials, local plugin
-  grants, full transcript files, repository working trees, OS files, and arbitrary
-  referenced attachments are not copied. Captured tool input, output and source
-  excerpts already present in a record synchronize as part of its evidence.
-- A local recovery operation does not delete cloud history. Restoring a local
-  checkpoint pauses synchronization and then rescans cloud records. Cloud
-  records cannot silently rewrite different local evidence.
+1. Beacon writes local SQLite history first. Offline recording continues.
+2. Upload passes send at most 40 records within a 512 KiB request. Recent pending
+   work precedes older backfill.
+3. Canonical hashing covers `id`, `at`, `agent`, `session`, `kind`, `project`,
+   `summary`, and `data`, with sorted JSON keys. Private R2 stores source objects;
+   D1 stores searchable records and source hashes within the owning account.
+4. Identical retries are idempotent. Conflicting content under the same account
+   and record ID returns 409. R2 writes precede the atomic D1 event batch; failed
+   batches can leave unreferenced private objects.
+5. Pull follows the server sequence, verifies each source hash, and advances the
+   local cursor transactionally. Display keeps original timestamps and stable
+   pagination. Native duplicate-delivery receipts preserve distinct observations.
+6. Project/session metadata, paths, relationships, and named connection metadata
+   synchronize in resumable 30-entry chunks. Credentials and plugin grants remain
+   local. Full transcript files, working trees, and referenced attachments are
+   outside sync; evidence already captured in a record synchronizes with it.
+7. Local recovery retains cloud history and resets the local sync scan. Different
+   local evidence cannot be silently overwritten by a cloud record.
 
-### Quotas and idle synchronization
+Trace redaction is best effort. Cloud storage uses infrastructure transport and
+at-rest encryption; this is not end-to-end encryption of synchronized evidence.
 
-The initial private rollout exposed a daily-write defect: the original sync
-pass replaced unchanged project, session and connection metadata every 30
-seconds, and the request limiter also wrote D1 for every authenticated request.
-The owner reported the resulting quota alert. At inspection, the database held
-12,258 records in 100,159,488 bytes; account analytics reported 118,192 row
-writes and 3,216,722 row reads that UTC day. This was a daily usage issue, not
-an exhausted 500 MB database. No account data was discarded.
+## Quotas and query cost
 
-Beacon now persists per-entry metadata hashes and sends only changed entries
-in resumable chunks. An idle event check uses the indexed server cursor;
-catalogue/account refreshes occur at most every five minutes. Reconnecting a
-device resends its metadata under the new revocable credential. Removing a
-named connection prunes only that device's cloud metadata.
+Native event checks normally run every 30 seconds. Metadata hashes suppress
+unchanged uploads; catalogue/account refreshes occur at most every five minutes.
+Conditional server upserts protect against unchanged writes from older clients.
+Workers rate-limit bindings avoid a database counter write on every request.
+Their limits are approximate per Cloudflare location.
 
-The server independently uses conditional metadata upserts so older clients
-cannot rewrite identical rows. Metadata downloads do not aggregate the event
-table. Workers rate-limit bindings replace the D1-backed request counter;
-authenticated reads require no database writes. Their limits are approximate
-per Cloudflare location, not a strict worldwide counter. The three namespaces
-in `wrangler.jsonc` are reserved for this service.
+Projects, session counts, and inferred relationships use an incremental R2
+checkpoint at `<account>/indexes/activity-v1.json`. D1 remains authoritative.
+Requests check the indexed sequence and fold in newer records. Conditional R2
+writes protect concurrent updates. Account/project scope applies to every view.
+The index bounds are 50,000 groups and 8 MiB; corrupt or unavailable checkpoints
+fail without repeatedly scanning full history or publishing truncated counts.
+Relationship expansion is limited to the first 100 ordered pairs.
 
-Quota failures return an explicit code and Retry-After. Daily quota pauses last
-until the next UTC reset, and persist in Beacon's encrypted connection across
-restarts. Other network failures back off from 30 seconds to 15 minutes.
-Local recording continues. Storage exhaustion returns a separate administrator
-message with an hourly retry. These mechanisms do not increase the Cloudflare
-plan or spending allowance. Monitor D1 daily rows, database bytes and R2 usage
-before admitting larger histories or additional testers.
+Daily D1 quota pauses persist across Beacon restarts until the UTC reset. Other
+network failures back off from 30 seconds to 15 minutes; storage exhaustion uses
+an hourly retry. Local recording continues. Monitor actual D1 row reads/writes,
+database bytes, and R2 usage; these controls preserve budgets rather than
+increasing the platform allowance. Metered fixtures live in
+[cloud.test.mjs](../tests/cloud.test.mjs); historical production observations
+remain in [qualification history](../QUALIFICATION.md).
 
-Regression checks meter the real emulator's D1 row writes: unchanged metadata
-writes zero rows, changing one session writes one row, and an idle native pass
-makes only its cursor request. Metadata acknowledgments and quota pauses both
-survive restart.
+## HTTP and MCP access
 
-### Workspace read budget
+`/api/v1/` exposes account-scoped history, projects, sessions, relationships,
+source evidence, device management, and named connection metadata. The
+[API page](public/api.html) owns request examples. Browser owners issue scoped,
+revocable API credentials; tokens are shown once, stored as hashes, and expire
+after 90 days. Credentials can restrict project access and bind appended records
+to an agent. Entitlements are enforced separately from token validity.
 
-On October 22 the owner reported another fast increase. Live query insights
-identified the relationship self-join at an average **308,426 rows read per
-request**, plus repeated full-history project/session aggregates. Daily reads
-had reached 4,486,106 even though writes were 20,356. A low write count alone
-was not sufficient qualification.
+`POST /mcp` serves stateless JSON-RPC tools for status, projects, recall,
+connection metadata, and append-only recording. GET/SSE is unsupported. The
+remote endpoint has no provider API execution tool: provider credentials remain
+with Beacon, whose native helper exposes `asip_api_request`.
 
-Projects, session counts and inferred relationships now share an incremental
-activity index in the **existing private R2 bucket**, under
-`<account>/indexes/activity-v1.json`. Authentication and project scopes are
-checked on every request; this object is never exposed directly. It contains
-counts and original time bounds by project/agent/session, not record payloads
-or provider credentials. D1 remains the authoritative append-only record store.
+## Develop, deploy, recover
 
-The first request builds one checkpoint. Later requests check the indexed
-account sequence (one D1 row) and aggregate only records beyond that checkpoint.
-Counts include out-of-order historical uploads correctly. An unchanged account
-does not rewrite either D1 or R2. Conditional R2 writes prevent concurrent
-Workers from overwriting a newer cursor or counting a delta twice. A missing
-or unavailable bucket never falls back to repeated full-history scans. A
-malformed checkpoint fails closed; history retrieval and synchronization use
-their independent paths. Snapshot bounds are 50,000 membership groups and 8 MiB;
-the service returns 503 rather than publishing truncated counts. Relationship
-expansion is bounded to the requested first 100 pairs with exact session counts.
+Run from the product root:
 
-Migration `0004_work_history.sql` adds a partial chronological index for the
-default Work view. It excludes low-level tool rows, adding index writes only
-for qualifying work records. Neither this migration nor the R2 checkpoint
-rewrites existing record contents. Existing Beacon installations need no update.
+```sh
+npm ci
+npm run test:cloud
+npx wrangler d1 migrations apply asip-cloud --local --config cloud/wrangler.jsonc
+npm run cloud:dev -- --var ORIGIN:http://127.0.0.1:8787
+npm run cloud:build
+```
 
-The 15,000-record emulator fixture meters 30,001 reads for the one-time
-checkpoint, **20 reads for 20 warm aggregate loads**, **3 reads to include one
-new record**, and **31 reads for a 30-record Work page**, with zero D1 writes
-from the aggregate operations. Tests also compare counts/relationships against
-SQL and cover duplicate uploads, older backfill, account and project scopes,
-concurrent checkpoint races, corrupt checkpoints and R2 failures.
+Tests run the actual bundled Worker against disposable emulator D1/R2 bindings.
+Fixtures establish protocol and isolation checks; real provider authorization,
+payments, and deployed-device behavior require separate observations.
 
-Operational recovery: keep the previous Worker version for rollback; the new
-SQL index is compatible with it. An activity checkpoint can be explicitly
-rebuilt by removing only that account's derived `indexes/activity-v1.json`
-object. This incurs a one-time history scan. Never remove canonical `events/`
-objects or database history as a quota workaround. Future record deletion or
-editing must also invalidate/version this append-only derived index. Search,
-explicit history filters and device metadata still have measurable D1 costs;
-monitor actual row deltas rather than assuming all traffic is free.
-
-History can contain paths and sensitive work. Existing trace redaction remains
-in Beacon; it is a best-effort filter, not end-to-end encryption. Cloudflare
-infrastructure encryption protects storage in transit and at rest. The account
-owner explicitly chooses to synchronize the existing store.
-
-## API and MCP
-
-See the website's `/api` page for request examples. `POST /mcp` implements
-stateless Streamable HTTP JSON-RPC with status, project listing, recall, named
-connection metadata, and append-only recording tools. GET/SSE is not required
-for these tools. Native plugins keep their existing recording and recall paths;
-downloaded cloud records become immediately available to their local recall.
-
-Only browser owners can issue or revoke device and API credentials. API
-credentials default to read access, can be restricted to a project list, bind
-new records to a named agent, and expire after 90 days. Every read endpoint,
-source download, relationship query, session query, and MCP call enforces that
-account and project scope. Tokens are shown once and stored only as hashes.
-After creating a connection, **Check connection** exercises bearer HTTP access,
-project restrictions, source SHA-256 integrity and MCP recall. The token stays
-in the owner's browser throughout this check.
-
-## Operations
-
-Apply migrations before the corresponding Worker deployment:
+Apply additive migrations before the corresponding deployment:
 
 ```sh
 npx wrangler d1 migrations apply asip-cloud --remote --config cloud/wrangler.jsonc
 npx wrangler deploy --config cloud/wrangler.jsonc
 ```
 
-Use a supported Wrangler login or CI credentials; do not export Beacon's vault.
-Worker request logging is disabled because callback and authentication requests
-are sensitive. No analytics or advertising tracker is enabled. The landing
-page's headline, proof panel and primary CTA are explicit components suitable
-for later controlled experiments; record conversion events only after defining
-the measurement and privacy policy.
+Use supported Wrangler or CI credentials. Secrets belong in Worker secret storage;
+local Beacon vault and sign-in files remain with Beacon. Keep a previous compatible
+Worker version for rollback. A pre-SaaS Worker predates current OAuth schema and
+entitlement enforcement; review that downgrade separately.
 
-Use D1 Time Travel for database recovery, and export D1 plus private R2 objects
-for independent backups. Never delete R2 objects before their D1 references
-have been verified. Account deletion, attachment uploads, a garbage collector,
-managed backup automation and multi-region database sharding are follow-up work.
-The current design uses one D1 database with indexed account boundaries.
-
-## Primary references
-
-- [Cloudflare Access JWT validation](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/)
-- [Access policies](https://developers.cloudflare.com/cloudflare-one/access-controls/policies/)
-- [D1 transactions through batch](https://developers.cloudflare.com/d1/worker-api/d1-database/)
-- [D1 limits](https://developers.cloudflare.com/d1/platform/limits/)
-- [R2 Worker API](https://developers.cloudflare.com/r2/api/workers/workers-api-reference/)
+Use D1 Time Travel and independent D1/R2 backups for recovery. Rebuilding an
+account's derived activity checkpoint incurs a one-time scan; remove only the
+derived index when explicitly rebuilding it. Preserve canonical event objects
+and database history. Account deletion, attachment uploads, automatic object
+garbage collection, and managed backup automation are outside this implementation.
