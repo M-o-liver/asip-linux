@@ -6,6 +6,20 @@ The installer identifies its version; source development uses the version in
 [package.json](package.json). Published build observations and signing limits
 are recorded in [qualification history](QUALIFICATION.md).
 
+## Mac installer checks
+
+Choose the arm64 download for an M-series Mac and x64 for Intel. A working Intel
+build on an M-series Mac can be running through Rosetta; it does not establish
+that the native ARM bundle works.
+
+The published `v0.6.0-alpha.1` Mac release predates explicit ad-hoc bundle signing.
+A reported ARM “damaged” failure is under investigation. The source now requests
+ad-hoc signing and checks the app copied from its DMG; a corrected installer
+still requires native qualification and a new release. Ad-hoc signatures provide
+local code integrity, not Developer ID identity or Apple notarization. Preserve
+security errors and compare the download checksum and bundle signature before
+trying an override.
+
 ## Connect an agent
 
 Install Beacon, sign in with Google or GitHub, and open **Agents**.

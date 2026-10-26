@@ -6,7 +6,13 @@ import { spawn, execFileSync } from "node:child_process";
 
 const artifacts = path.resolve("artifacts");
 let executable;
-if (process.platform === "darwin") {
+const appIndex = process.argv.indexOf("--app");
+if (appIndex !== -1) {
+  assert.equal(process.platform, "darwin", "--app is a macOS bundle path");
+  const app = process.argv[appIndex + 1];
+  assert.ok(app?.endsWith(".app"), "Provide an .app bundle after --app");
+  executable = path.join(path.resolve(app), "Contents", "MacOS", "ASIP Beacon");
+} else if (process.platform === "darwin") {
   const directory = fs
     .readdirSync(artifacts)
     .find((name) => /^mac(?:-|$)/.test(name));
