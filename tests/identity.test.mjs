@@ -77,7 +77,12 @@ test("Google browser flow sends PKCE and exchanges the returned code with its ve
           state: auth.searchParams.get("state"),
           code: "test-code",
         }).toString();
-        assert.equal((await fetch(callback)).status, 200);
+        const response = await fetch(callback, { redirect: "manual" });
+        assert.equal(response.status, 303);
+        assert.equal(
+          response.headers.get("location"),
+          "https://asip.ca/beacon-connected.html",
+        );
       },
       fetcher: async (url, options) => {
         assert.equal(url, "https://oauth2.googleapis.com/token");
@@ -167,4 +172,60 @@ test("GitHub API authorization requests repository scope and keeps its credentia
   });
   assert.equal(result.account.accountId, accountId("github", "42"));
   assert.equal(result.credential, "fixture-api-credential");
+});
+
+test("Google completion rejects invalid identity before redirecting and does not expose callback values", async () => {
+  let callbackResponse;
+  const identity = new Identity(
+    { googleClientId: "asip-client", googleClientSecret: "fixture" },
+    {
+      jwks: keys.publicKey,
+      openBrowser: async (value) => {
+        const auth = new URL(value),
+          callback = new URL(auth.searchParams.get("redirect_uri"));
+        callback.search = new URLSearchParams({
+          state: auth.searchParams.get("state"),
+          code: "private-callback-code",
+        });
+        callbackResponse = await fetch(callback, { redirect: "manual" });
+      },
+      fetcher: async () => Response.json({ id_token: "invalid-token" }),
+    },
+  );
+  await assert.rejects(identity.google());
+  assert.equal(callbackResponse.status, 400);
+  assert.equal(callbackResponse.headers.get("location"), null);
+  const html = await callbackResponse.text();
+  assert.match(html, /ASIP/);
+  assert.match(html, /could not be completed/);
+  assert.doesNotMatch(html, /private-callback-code|invalid-token/);
+  assert.equal(callbackResponse.headers.get("referrer-policy"), "no-referrer");
+});
+
+test("Google callback rejects browser POSTs without consuming the valid pending flow", async () => {
+  let auth;
+  const identity = new Identity(
+    { googleClientId: "asip-client", googleClientSecret: "fixture" },
+    {
+      jwks: keys.publicKey,
+      openBrowser: async (value) => {
+        auth = new URL(value);
+        const callback = new URL(auth.searchParams.get("redirect_uri"));
+        callback.search = new URLSearchParams({
+          state: auth.searchParams.get("state"),
+          code: "fixture",
+        });
+        assert.equal((await fetch(callback, { method: "POST" })).status, 400);
+        assert.equal(
+          (await fetch(callback, { redirect: "manual" })).status,
+          303,
+        );
+      },
+      fetcher: async () =>
+        Response.json({
+          id_token: await signed({ nonce: auth.searchParams.get("nonce") }),
+        }),
+    },
+  );
+  assert.equal((await identity.google()).subject, "123");
 });

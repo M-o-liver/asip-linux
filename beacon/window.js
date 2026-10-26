@@ -72,6 +72,23 @@ $("cloud-sync").onclick = async () => {
     $("cloud-error").textContent = error.message;
   }
 };
+$("update-view").onclick = () => navigate("settings");
+for (const [id, method] of [
+  ["update-check", "updateCheck"],
+  ["update-download", "updateDownload"],
+  ["update-install", "updateInstall"],
+]) {
+  $(id).onclick = async () => {
+    $(id).disabled = true;
+    try {
+      await window.asip[method]();
+    } catch (error) {
+      $("update-status").textContent = error.message;
+    } finally {
+      $(id).disabled = false;
+    }
+  };
+}
 function openPluginFolder(plugin) {
   selectedPlugin = plugin;
   const upload = plugin.id === "claude-code";
@@ -279,6 +296,25 @@ function render(state) {
   $("connection-details").hidden = !state.account;
   $("recovery-details").hidden = !state.account;
   $("error").textContent = state.error || formError;
+  const update = state.update || {};
+  $("update-status").textContent = !state.installed
+    ? "Updates are available in installed Beacon builds."
+    : update.message || "Updates are checked automatically each day.";
+  $("update-check").disabled =
+    !state.installed ||
+    ["checking", "downloading", "ready"].includes(update.phase);
+  $("update-download").hidden =
+    !["available", "error"].includes(update.phase) || !update.version;
+  $("update-install").hidden = update.phase !== "ready";
+  $("update-install").textContent =
+    state.platform === "linux" ? "Open downloaded update" : "Open installer";
+  $("update-notice").hidden = !["available", "downloading", "ready"].includes(
+    update.phase,
+  );
+  $("update-notice-text").textContent =
+    update.phase === "downloading"
+      ? "Downloading Beacon update · " + update.progress + "%"
+      : update.message || "";
   $("launch-at-login").checked = state.launchAtLogin;
   $("launch-at-login").disabled = !state.installed;
   $("progress").textContent = state.signingIn ? "Waiting for sign-in…" : "";

@@ -14,7 +14,6 @@ installation steps; [cloud architecture](cloud/README.md) owns hosted behavior.
 | Records              | [trace.mjs](beacon/trace.mjs), [project.mjs](beacon/project.mjs)                                                   | Trace redaction, project identity                                            |
 | API connections      | [connections.mjs](beacon/connections.mjs)                                                                          | Encrypted credentials, provider requests, connection checks                  |
 | History              | [recovery.mjs](beacon/recovery.mjs), [import-history.mjs](beacon/import-history.mjs)                               | Checkpoints and previous-history import                                      |
-| Local workspace      | [workspace.mjs](beacon/workspace.mjs), [workspace.js](beacon/workspace/workspace.js)                               | Browser workspace and local history views                                    |
 
 ## Accounts and connection
 
@@ -115,7 +114,21 @@ Repeated imports deduplicate existing records. The UI owns file selection.
 
 Linux opens a full desktop window. Windows and macOS use a tray/menu-bar panel
 with a full-window option and a fallback when tray placement is unavailable.
-**Open ASIP** opens the local browser workspace.
+**Open ASIP** opens the linked hosted workspace at `https://asip.ca/users/<handle>`.
+Without a linked hosted identity it opens `https://asip.ca/app`, which resolves the
+browser's signed-in account or offers sign-in. Project links retain their scope.
+Local Google email addresses are never guessed as cloud workspace handles.
+Beacon no longer registers the local browser workspace. Plugin communication
+and temporary desktop OAuth/device callbacks still use loopback internally.
+Google completion verifies the provider response before redirecting to the
+branded hosted completion page. Cloud approval returns to `/app` rather than the
+restricted preview fallback.
+
+[updates.mjs](beacon/updates.mjs) checks public release metadata without sending
+account information. It selects supported native assets, enforces a trusted HTTPS
+download origin, verifies size/SHA-256, and rechecks before opening the installer.
+The renderer has check/download/install actions, not arbitrary URL or file access.
+Updates preserve the normal installer approval flow and OS signing constraints.
 
 Startup is enabled by default with an explicit opt-out: native login-item APIs
 on Windows/macOS, XDG autostart on Linux, and a per-user LaunchAgent fallback for

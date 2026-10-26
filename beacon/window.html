@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'none'; object-src 'none'"
@@ -75,7 +76,7 @@
     </svg>
     <aside class="sidebar">
       <div class="brand">
-        <img src="icon.png" alt="" />
+        <img src="mark.svg" alt="" />
         <div><strong>ASIP</strong><span>Beacon</span></div>
       </div>
       <nav aria-label="Beacon">
@@ -127,6 +128,10 @@
         </div>
       </header>
       <main>
+        <div id="update-notice" class="update-notice" hidden>
+          <span id="update-notice-text"></span
+          ><button id="update-view" class="text-button">View update ↗</button>
+        </div>
         <section id="request" class="request-banner" hidden>
           <div class="request-icon">
             <svg aria-hidden="true"><use href="#i-agents" /></svg>
@@ -358,6 +363,26 @@
               <button id="signout" class="secondary" hidden>Sign out</button>
             </div>
           </div>
+          <section class="surface update-card" aria-labelledby="update-title">
+            <h2 id="update-title">Beacon updates</h2>
+            <p id="update-status" role="status">
+              Updates are checked automatically each day.
+            </p>
+            <p class="help">
+              Downloads start when you choose. The system installer handles
+              installation. On Mac, drag the new Beacon into Applications; on
+              Linux AppImage, replace your existing file.
+            </p>
+            <div class="buttons">
+              <button id="update-check" class="secondary">
+                Check for updates</button
+              ><button id="update-download" class="primary" hidden>
+                Download update</button
+              ><button id="update-install" class="primary" hidden>
+                Open installer
+              </button>
+            </div>
+          </section>
           <button id="quit" class="text-button">Quit Beacon</button>
           <p id="build-version" class="muted"></p>
         </section>

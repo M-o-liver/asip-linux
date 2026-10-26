@@ -845,10 +845,7 @@ test("native browser handoff stores encrypted credentials, resumes after restart
       );
       const callback = await fetch(result.redirect, { redirect: "manual" });
       assert.equal(callback.status, 303);
-      assert.equal(
-        callback.headers.get("location"),
-        "https://asip.ca/auth/access",
-      );
+      assert.equal(callback.headers.get("location"), "https://asip.ca/app");
     },
   });
   t.after(async () => {

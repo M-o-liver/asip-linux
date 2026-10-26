@@ -268,7 +268,7 @@ export class CloudSync {
             return;
           }
           res.writeHead(303, {
-            Location: this.origin + "/auth/access",
+            Location: this.origin + "/app",
             "Cache-Control": "no-store",
             "Referrer-Policy": "no-referrer",
           });

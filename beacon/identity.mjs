@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import http from "node:http";
+import { sendSignInPage } from "./signin-page.mjs";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
 export class Identity {
@@ -125,25 +126,67 @@ export class Identity {
       fail = reject;
     });
     received.catch(() => {});
-    const server = http.createServer((request, response) => {
+    let consumed = false;
+    const server = http.createServer(async (request, response) => {
       const url = new URL(request.url, "http://127.0.0.1");
       if (
+        request.method !== "GET" ||
+        request.headers.host !== "127.0.0.1:" + server.address().port ||
         url.pathname !== "/callback" ||
-        url.searchParams.get("state") !== state
+        url.searchParams.get("state") !== state ||
+        consumed
       ) {
-        response.writeHead(400);
-        response.end("Invalid sign-in response.");
+        sendSignInPage(
+          response,
+          400,
+          "Sign-in could not be verified",
+          "Return to Beacon and start sign-in again.",
+        );
         return;
       }
-      response.writeHead(200, {
-        "Content-Type": "text/plain",
-        "Cache-Control": "no-store",
-      });
-      response.end("Sign-in received. Return to ASIP Beacon.");
-      if (url.searchParams.has("error"))
+      if (url.searchParams.has("error") || !url.searchParams.get("code")) {
+        sendSignInPage(
+          response,
+          400,
+          "Sign-in cancelled",
+          "Return to Beacon to try again.",
+        );
         fail(new Error("Google sign-in was cancelled."));
-      else if (url.searchParams.get("code"))
-        finish(url.searchParams.get("code"));
+        return;
+      }
+      consumed = true;
+      try {
+        const tokens = await this.json("https://oauth2.googleapis.com/token", {
+          method: "POST",
+          signal,
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: clientId,
+            client_secret: this.config.googleClientSecret,
+            code: url.searchParams.get("code"),
+            code_verifier: verifier,
+            redirect_uri: redirect,
+            grant_type: "authorization_code",
+          }),
+        });
+        const account = await this.verifyGoogle(tokens.id_token, nonce);
+        signal?.throwIfAborted();
+        response.writeHead(303, {
+          Location: "https://asip.ca/beacon-connected.html",
+          "Cache-Control": "no-store",
+          "Referrer-Policy": "no-referrer",
+        });
+        response.end();
+        finish(account);
+      } catch (error) {
+        sendSignInPage(
+          response,
+          400,
+          "Sign-in could not be completed",
+          "Return to Beacon to try again. Your account has not been connected.",
+        );
+        fail(error);
+      }
     });
     await new Promise((resolve, reject) => {
       server.once("error", reject);
@@ -174,21 +217,7 @@ export class Identity {
         prompt: "select_account",
       }).toString();
       await this.open(url.toString());
-      const code = await received;
-      const tokens = await this.json("https://oauth2.googleapis.com/token", {
-        method: "POST",
-        signal,
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({
-          client_id: clientId,
-          client_secret: this.config.googleClientSecret,
-          code,
-          code_verifier: verifier,
-          redirect_uri: redirect,
-          grant_type: "authorization_code",
-        }),
-      });
-      return this.verifyGoogle(tokens.id_token, nonce);
+      return await received;
     } finally {
       clearTimeout(timer);
       signal?.removeEventListener("abort", cancel);
