@@ -42,12 +42,16 @@ jobs:
       - run: npm run package
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
+          # Ad-hoc signing uses no certificate or private key, including on PRs.
+          CSC_FOR_PULL_REQUEST: "true"
       - run: sudo apt-get install -y ./artifacts/*.deb
         if: runner.os == 'Linux'
       - run: xvfb-run -a node scripts/smoke-beacon.mjs --installed
         if: runner.os == 'Linux'
       - run: node scripts/smoke-beacon.mjs
-        if: runner.os != 'Linux'
+        if: runner.os == 'Windows'
+      - run: node scripts/verify-mac-release.mjs
+        if: runner.os == 'macOS'
       - uses: actions/upload-artifact@v4
         with:
           name: asip-${{ matrix.os }}

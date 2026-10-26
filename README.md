@@ -95,6 +95,11 @@ npm run package
 Build on the target operating system. Linux produces AppImage, DEB, and RPM;
 Windows produces NSIS and ZIP; macOS produces DMG and ZIP. The build includes the
 platform's helper, native plugin bundles, and source identity.
+Mac builds use an explicit ad-hoc identity (`-`) so the packaged ARM code has a
+valid bundle signature without a Developer ID certificate. This is separate
+from Apple notarization and normal downloaded-app approval. Mac CI verifies
+DMG integrity, copies the app out of the image, verifies its bundle and helper
+signatures, runs startup checks on that copy, and checks tamper rejection.
 `npm run build:all-helpers` cross-compiles x64/arm64 helpers and bundles; native
 installer qualification remains a separate check.
 
