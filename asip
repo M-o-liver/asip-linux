@@ -1,0 +1,771 @@
+#!/bin/sh
+# asip — keep a written description of this machine.
+#
+# Machines accumulate decisions that leave no trace: a driver deliberately not
+# installed, a config that must not be "fixed", a package pinned for a reason
+# nobody wrote down. This keeps that in one Markdown file and helps keep it
+# current.
+#
+# Every subcommand prints to stdout and does nothing else: no files written,
+# no packages installed, no network access, no privileges required.
+
+set -eu
+
+VERSION="1.0.0"
+PROG="${0##*/}"
+
+if [ -z "${HOME:-}" ]; then
+	HOME="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6)"
+	export HOME="${HOME:-/}"
+fi
+
+# ---------------------------------------------------------------- detection --
+
+detect_distro() {
+	if [ -r /etc/os-release ]; then
+		# shellcheck disable=SC1091
+		. /etc/os-release
+		printf '%s' "${PRETTY_NAME:-${NAME:-unknown}}"
+	else
+		printf 'unknown'
+	fi
+}
+
+detect_pkgmgr() {
+	for m in dnf apt-get pacman zypper apk xbps-install; do
+		if command -v "$m" >/dev/null 2>&1; then
+			printf '%s' "$m"
+			return
+		fi
+	done
+	printf 'unknown'
+}
+
+detect_desktop() { printf '%s' "${XDG_CURRENT_DESKTOP:-${DESKTOP_SESSION:-none}}"; }
+
+detect_assistants() {
+	for h in claude codex gemini goose qwen; do
+		command -v "$h" >/dev/null 2>&1 && printf '%s\n' "$h"
+	done
+	true
+}
+
+find_machine_md() {
+	for p in "${ASIP_MACHINE:-}" "$HOME/MACHINE.md" "$HOME/dotfiles/MACHINE.md" \
+		"$HOME/.asip/MACHINE.md" /etc/asip/MACHINE.md; do
+		[ -n "$p" ] && [ -r "$p" ] && { printf '%s' "$p"; return; }
+	done
+	printf ''
+}
+
+SECTIONS='System Identity
+Administrative Root
+Package Provenance
+Decision Log
+Recovery
+Safety Rules
+Diagnostics
+Environment Map'
+
+section_regex() {
+	case "$1" in
+	'System Identity') printf 'identity|hardware|the machine|system facts' ;;
+	'Administrative Root') printf 'administrative|admin root|repo|dotfile|how this|config root|ground rules' ;;
+	'Package Provenance') printf 'provenance|package|software source|where.*from' ;;
+	'Decision Log') printf 'decision|quirk|scar|gotcha|known issue|log' ;;
+	'Recovery') printf 'recovery|recover|rollback|roll back|restore|undo' ;;
+	'Safety Rules') printf 'safety|off.limits|hard limit|never|forbidden' ;;
+	'Diagnostics') printf 'diagnostic|triage|health|before you' ;;
+	'Environment Map') printf 'environment|env map|current state|day to day|what.s installed' ;;
+	esac
+}
+
+expected_empty() { [ "$1" = 'Decision Log' ]; }
+
+# ---------------------------------------------------------------------- help --
+
+cmd_help() {
+	cat <<EOF
+$PROG $VERSION — keep a written description of this machine.
+
+Machines accumulate decisions that leave no trace: a driver deliberately not
+installed, a config that must not be "fixed", a package pinned for a reason
+nobody wrote down. $PROG keeps that in one Markdown file, MACHINE.md, and
+helps keep it current.
+
+USAGE
+  $PROG <command>
+
+COMMANDS
+  bootstrap   The setup procedure. Six steps, start here.
+  skeleton    Print an empty MACHINE.md with its section headings.
+  discover    Print a checklist of read-only commands for filling it in,
+              chosen for this machine.
+  rule        Print the block that points a tool at MACHINE.md.
+  doctor      Report which sections are filled and what references the file.
+  drift       Report what has changed on this machine since the file was
+              last updated.
+  version     Print the version.
+
+FILES
+  ~/MACHINE.md   the description. Plain Markdown, edit it in any editor.
+
+Every command prints to stdout and writes nothing.
+EOF
+}
+
+# ----------------------------------------------------------------- bootstrap --
+
+cmd_bootstrap() {
+	existing="$(find_machine_md)"
+	# Resolved here so step 5 prints concrete values for this machine rather
+	# than a command to evaluate. These heredocs interpolate, so anything
+	# meant to appear literally has to be escaped.
+	gituser="$(id -un 2>/dev/null || echo user)"
+	githost="$(hostname 2>/dev/null || echo localhost)"
+
+	cat <<EOF
+ASIP SETUP
+==========
+
+Six steps. Takes about ten minutes, most of it reading command output.
+
+EOF
+
+	if [ -n "$existing" ]; then
+		cat <<EOF
+This machine already has a description at:
+  $existing
+Keep it. Read it, then start at step 2 and check the reference is in place.
+Run '$PROG doctor' to see which sections it is missing.
+
+EOF
+	fi
+
+	cat <<EOF
+1. CREATE THE FILE
+
+       $PROG skeleton > ~/MACHINE.md
+
+   Eight empty sections, each with a note on what belongs in it. If the file
+   already exists, keep it and skip to step 2.
+
+2. POINT YOUR TOOLS AT IT
+
+   A description helps only if something reads it. Tools that load a Markdown
+   file at startup need a line telling them where this one is:
+
+       $PROG rule <tool>
+
+   prints the block to append to that tool's config file. '$PROG rule' with
+   no argument lists the tools it knows and where their config lives.
+
+   Expect a permission prompt on this one. Some tools treat their own
+   config as protected and will ask before it is written, whatever rules
+   are already in place — that guard is there so nothing rewrites its own
+   instructions unnoticed, and it is working as intended.
+EOF
+
+	found="$(detect_assistants)"
+	if [ -n "$found" ]; then
+		printf '\n   Found on this machine:\n'
+		printf '%s\n' "$found" | sed 's/^/       /'
+		printf '   Do each of them.\n'
+	fi
+
+	cat <<EOF
+
+3. LOOK AT THE MACHINE
+
+       $PROG discover
+
+   prints read-only commands suited to this machine — its package manager
+   and desktop. Run them and read the output.
+
+4. WRITE DOWN WHAT YOU FOUND
+
+   Fill in the sections from that output. What makes this file worth having:
+
+   - Record what cannot be worked out later. A package list can be
+     regenerated any time; the reason something was installed cannot.
+   - Say which facts are load-bearing. "Hybrid graphics" is trivia. "The
+     integrated GPU drives the display and switching has corrupted it
+     before" changes what happens next.
+   - Absolute dates: 2026-03-14, not "last week".
+   - Leave the Decision Log empty for now. It records things learned the
+     hard way, and a new machine has not yet taught anyone anything. It
+     fills over months, one incident at a time.
+
+5. PUT IT UNDER VERSION CONTROL
+
+   The history is half the value — when a decision was taken, and what it
+   replaced. Version the machine's own configuration deliberately, and start
+   the repository ignoring everything so nothing sweeps up credentials:
+
+       git init
+       printf '*\n!MACHINE.md\n!.gitignore\n' > ~/.gitignore
+       git add MACHINE.md .gitignore
+       git commit -m "Add MACHINE.md"
+
+   A freshly installed machine often has no git identity at all, which stops
+   that commit. Set one for this repository only — never --global, which
+   would change how every other repository here behaves:
+
+       git config user.name "$gituser"
+       git config user.email "$gituser@$githost"
+
+   Widen the ignore file later, when there is something specific to track.
+
+6. CHECK IT
+
+       $PROG doctor
+
+   reports which sections are filled and what references the file.
+
+KEEPING IT CURRENT
+   The file describes how this machine is set up, so changes made here can
+   make it wrong. After installing something that carries its own
+   configuration, adding a repository, changing a shell, or altering a
+   service, correct the section covering that ground at the same time. A
+   description that is quietly out of date is worse than none, because it
+   gets believed.
+EOF
+}
+
+# ------------------------------------------------------------------ skeleton --
+
+cmd_skeleton() {
+	host="$(hostname 2>/dev/null || printf 'unknown')"
+	distro="$(detect_distro)"
+	desktop="$(detect_desktop)"
+
+	cat <<EOF
+# MACHINE.md — $host
+
+$distro, $desktop.
+
+What this file is for: the things about this machine that cannot be worked
+out by looking at it. Anyone — or anything — working on this machine should
+read it first, and trust it over general knowledge about $distro. Where it
+disagrees with the live system, the live system is right: check, then fix
+the file.
+
+Keeping it true is part of the work. This describes how the machine is set
+up, so changes made here can make it wrong. After installing something that
+carries its own configuration, adding a repository, changing a shell, or
+altering a service, correct the section covering that ground at the same
+time. A description that is quietly out of date is worse than none, because
+it gets believed.
+
+## System Identity
+<!-- The hardware, limited to what is load-bearing — the parts that break
+     something if assumed wrong. Chassis, CPU, graphics and which device
+     drives the display, storage layout, boot and encryption, other
+     operating systems on disk. Say what must stay as it is, and why. -->
+
+## Administrative Root
+<!-- Where configuration lives, how it is deployed, and which copy is
+     authoritative. If there is a dotfiles repository, name it and say edits
+     belong there. If changes are expected to be committed, say so — that is
+     what makes it happen. Note where the base configuration came from: a
+     file owned by a package updates with it, a file seeded from /etc/skel
+     never will. -->
+
+## Package Provenance
+<!-- A table, one row per component chosen rather than inherited:
+
+     | Component | Source | Notes |
+
+     Chosen means: the terminal, editor, shell, browser, multiplexer, file
+     manager, drivers, desktop extensions — anything another machine might
+     reasonably do differently. Plus everything from outside the default
+     repositories, and everything installed outside the package manager,
+     which updates by no mechanism at all.
+
+     Installing one of these adds a row. That obligation is what keeps the
+     section current instead of a frozen description of one day. -->
+
+## Decision Log
+<!-- The section that cannot be generated. One entry per lesson:
+
+     **Thing (YYYY-MM-DD, status):** the symptom, the cause, what was
+     decided, and what to do now — often nothing.
+
+     Include things considered and rejected, with the condition that would
+     justify revisiting. Something left broken on purpose looks identical to
+     something nobody has fixed yet; only this section tells them apart. -->
+
+## Recovery
+<!-- How this machine is rolled back, and when doing so is required rather
+     than optional. Name the mechanism and the exact command. Keep system
+     state and user configuration separate if they recover differently. -->
+
+## Safety Rules
+<!-- Handle credentials, keys and tokens carefully as a matter of course;
+     that needs no writing down. This section is for what is specific here
+     and would otherwise surprise: a disk easily mistaken for another, a
+     partition belonging to a different operating system, a service to leave
+     running. -->
+
+## Diagnostics
+<!-- The commands to run before changing anything, and what each is for.
+     The point is to make checking cheaper than guessing. -->
+
+## Environment Map
+<!-- What this machine is day to day, naming the specific programs:
+     desktop, display manager, shell, terminal emulator, multiplexer,
+     editor, file manager, browser, remote access, services expected to be
+     running.
+
+     Name them. A section that says "a desktop and a shell" cannot be made
+     wrong by anything; one that says "gnome-terminal" goes stale the moment
+     the terminal changes, and that is the point — it is what turns a swap
+     into an obvious edit rather than a judgement call. -->
+EOF
+}
+
+# ------------------------------------------------------------------ discover --
+
+cmd_discover() {
+	distro="$(detect_distro)"
+	pkg="$(detect_pkgmgr)"
+	desktop="$(detect_desktop)"
+
+	cat <<EOF
+CHECKLIST — $(hostname 2>/dev/null || printf 'this machine')
+$distro | packages: $pkg | desktop: $desktop
+
+Every command below is read-only. Run them, read the output, write what you
+find into the matching section of MACHINE.md. Anything not checked is worth
+saying so rather than assuming.
+
+SYSTEM IDENTITY
+  hostnamectl
+  lscpu | head -20
+  lspci -k | grep -A3 -Ei 'vga|3d'
+  lsblk -o NAME,SIZE,FSTYPE,MOUNTPOINT,MODEL
+  free -h
+
+  Watch for: more than one graphics device (say which drives the display),
+  encrypted volumes, more than one operating system on disk — anything that
+  makes a general answer about $distro wrong here.
+
+ADMINISTRATIVE ROOT
+  ls -la ~ | head -30
+  ls -la ~/.config | head -30
+
+  Watch for: a dotfiles repository, and whether files under ~/.config are
+  symlinks into it. If they are, that matters — writing to the live path
+  instead of the repository silently forks the configuration.
+
+  No dotfiles repository is a finding, not the end of it. Every machine has
+  a base configuration whether or not anyone set one up, and where it came
+  from decides whether edits survive an update:
+EOF
+
+	case "$pkg" in
+	pacman) printf '    ls -la /etc/skel\n    pacman -Qs config | head -20\n    pacman -Qo ~/.bashrc ~/.zshrc ~/.config/fish/config.fish 2>&1\n' ;;
+	dnf) printf '    ls -la /etc/skel\n    rpm -qf ~/.bashrc ~/.zshrc 2>&1\n' ;;
+	apt-get) printf '    ls -la /etc/skel\n    dpkg -S ~/.bashrc ~/.profile 2>&1\n' ;;
+	*) printf '    ls -la /etc/skel\n' ;;
+	esac
+
+	cat <<'EOF'
+
+  A file the package manager owns is updated with the package, and local
+  edits surface as .pacnew/.rpmnew. A file copied from /etc/skel at account
+  creation is owned by nothing: it was written once and will never be
+  updated again. The two look identical on disk and behave in opposite
+  ways, so record which this machine has.
+
+PACKAGE PROVENANCE
+EOF
+
+	case "$pkg" in
+	pacman) printf '  pacman -Qm            # installed from outside the configured repositories\n  cat /etc/pacman.conf | grep -A2 "^\\["\n' ;;
+	dnf) printf '  dnf repolist\n  dnf history | head -20\n  ls /etc/yum.repos.d/\n' ;;
+	apt-get) printf '  apt-cache policy | head -30\n  ls /etc/apt/sources.list.d/\n' ;;
+	*) printf '  Record by hand how software is installed here.\n' ;;
+	esac
+
+	cat <<'EOF'
+  ls ~/.local/bin /usr/local/bin 2>/dev/null
+
+  Anything in those last two updates by no mechanism at all. Say so.
+
+DECISION LOG
+  Nothing to run. This section records experience, not inspection.
+
+  Worth asking whoever runs this machine: is anything here broken or unusual
+  on purpose, that should be left alone? Record the answer in their words.
+  Otherwise leave it empty.
+
+RECOVERY
+  git -C ~/dotfiles log --oneline | head -5      # if a dotfiles repo exists
+
+  Record the backups that actually exist, what each covers, and how they
+  have been tested. If no system recovery mechanism exists, say so plainly.
+
+SAFETY RULES
+  Nothing to run, and nothing to go looking through. Handle credentials,
+  keys and tokens carefully as a matter of course — no list written here
+  would cover the one that mattered.
+
+  What belongs in this section is local: a disk easily mistaken for another,
+  a partition belonging to a different operating system, a service to leave
+  alone. Ask, and record the answer.
+
+DIAGNOSTICS
+  Assemble the handful of commands worth running before changing anything
+  on this machine. A starting set:
+
+    journalctl -b -p err --no-pager | tail -50
+    systemctl --failed
+EOF
+
+	[ "$pkg" = "dnf" ] && printf '    dnf history | head\n'
+	[ "$pkg" = "pacman" ] && printf '    tail -20 /var/log/pacman.log\n'
+	case "$desktop" in
+	*GNOME*) printf '    gnome-extensions list --enabled\n' ;;
+	*KDE*) printf '    plasmashell --version\n' ;;
+	esac
+
+	cat <<'EOF'
+
+  Keep 'systemctl --failed' in the list even when it is clean. A failed unit
+  hides the next one.
+
+ENVIRONMENT MAP
+  echo "$SHELL"; echo "$XDG_CURRENT_DESKTOP"; echo "$XDG_SESSION_TYPE"
+  systemctl list-units --type=service --state=running | head -20
+  ip -brief addr
+
+  Watch for: remote access expected to keep working, and anything that would
+  make this machine unreachable after a reboot — full-disk encryption, a VPN
+  that starts only after login.
+EOF
+}
+
+# ---------------------------------------------------------------------- rule --
+
+cmd_rule() {
+	tool="${1:-}"
+
+	if [ -z "$tool" ]; then
+		cat <<EOF
+Usage: $PROG rule <tool>
+
+Prints a block to append to that tool's configuration file, so it loads
+MACHINE.md when it starts.
+
+  claude    ~/.claude/CLAUDE.md
+  codex     ~/.codex/AGENTS.md
+  gemini    ~/.gemini/GEMINI.md
+  goose     ~/.config/goose/.goosehints
+  qwen      ~/.qwen/QWEN.md
+  generic   plain text, no include syntax
+
+These paths change as the tools do. Check against the tool's own
+documentation, and use 'generic' if unsure.
+EOF
+		return 0
+	fi
+
+	case "$tool" in
+	claude | gemini | qwen) ref='@~/MACHINE.md' ;;
+	codex | goose | generic)
+		# shellcheck disable=SC2088
+		ref='~/MACHINE.md — read it in full at the start of every session.'
+		;;
+	*)
+		printf '%s: unknown tool "%s". Run "%s rule" for the list.\n' \
+			"$PROG" "$tool" "$PROG" >&2
+		return 1
+		;;
+	esac
+
+	cat <<EOF
+
+## This machine
+
+Identity, quirks, package provenance and local rules are documented in:
+$ref
+
+- Read it before changing anything here. It takes precedence over general
+  knowledge about this distribution. Where it and the live system disagree,
+  the live system is right — check, then correct the file.
+
+- Keep it true. It describes how the machine is set up, so work done here
+  can make it wrong. After installing something that carries its own
+  configuration, adding a repository, changing a shell, or altering a
+  service, correct the section covering that ground at the same time.
+
+- Add to the Decision Log when something is learned the hard way: a fix that
+  made things worse, something left broken on purpose, a dead end worth not
+  repeating. Absolute dates.
+
+- The test is not whether a change felt routine. It is whether anything
+  written here is now wrong or missing. Installing a terminal adds a row to
+  Package Provenance and contradicts the line in Environment Map naming the
+  old one, however ordinary the install was — so it gets recorded, and what
+  gets recorded is the source and the reason, not the fact of the install.
+
+- A bare changelog is what to avoid, not detail. "Installed neovim" on its
+  own says nothing that the package manager cannot. "neovim, from the official
+  repos, plugins pinned by ~/.config/nvim/lazy-lock.json and updated outside
+  the package manager" is a row worth having.
+EOF
+}
+
+# -------------------------------------------------------------------- doctor --
+
+cmd_doctor() {
+	rc=0
+	md="$(find_machine_md)"
+
+	printf '%s %s — doctor\n\n' "$PROG" "$VERSION"
+
+	if [ -z "$md" ]; then
+		printf 'MACHINE.md   not found\n'
+		printf '  Looked in ~/MACHINE.md, ~/dotfiles/MACHINE.md, ~/.asip/MACHINE.md,\n'
+		# shellcheck disable=SC2016  # naming the variable, not expanding it
+		printf '  /etc/asip/MACHINE.md, and $ASIP_MACHINE.\n\n'
+		printf '  Run "%s bootstrap" to set one up.\n' "$PROG"
+		return 1
+	fi
+
+	printf 'MACHINE.md   %s\n' "$md"
+	if command -v git >/dev/null 2>&1 &&
+		git -C "$(dirname "$md")" rev-parse --git-dir >/dev/null 2>&1; then
+		last="$(git -C "$(dirname "$md")" log -1 --format='%as (%s)' -- "$md" 2>/dev/null || true)"
+		if [ -n "$last" ]; then
+			printf '  tracked, last changed %s\n' "$last"
+		else
+			printf '  in a git repository, not yet committed\n'
+			rc=1
+		fi
+	else
+		printf '  not in a git repository — the history is half the value\n'
+		rc=1
+	fi
+
+	printf '\nSections\n'
+	filled="$(awk '
+		BEGIN { inc = 0; h = ""; n = 0 }
+		{
+			line = $0
+			if (inc) { if (line ~ /-->/) { inc = 0; sub(/.*-->/, "", line) } else next }
+			if (line ~ /<!--/) {
+				if (line ~ /-->/) { gsub(/<!--.*-->/, "", line) }
+				else { sub(/<!--.*/, "", line); inc = 1 }
+			}
+			if (line ~ /^## /) {
+				if (h != "") printf "%s\t%d\n", h, n
+				h = substr(line, 4); n = 0; next
+			}
+			gsub(/^[ \t]+|[ \t]+$/, "", line)
+			if (h != "" && line != "") n++
+		}
+		END { if (h != "") printf "%s\t%d\n", h, n }
+	' "$md")"
+
+	tab="$(printf '\t')"
+	missing=0
+	blank=0
+	consumed=''
+	oldifs="$IFS"
+	IFS='
+'
+	for want in $SECTIONS; do
+		rx="$(section_regex "$want")"
+		mhead=''
+		mcount=0
+		for line in $filled; do
+			head="${line%%"$tab"*}"
+			cnt="${line##*"$tab"}"
+			case "$consumed" in *"<$head>"*) continue ;; esac
+			if printf '%s' "$head" | grep -Eiq "$rx"; then
+				mhead="$head"
+				case "$cnt" in '' | *[!0-9]*) mcount=0 ;; *) mcount="$cnt" ;; esac
+				consumed="$consumed<$head>"
+				break
+			fi
+		done
+
+		if [ -z "$mhead" ]; then
+			printf '  %-22s absent\n' "$want"
+			missing=$((missing + 1))
+		elif [ "$mcount" -eq 0 ]; then
+			if expected_empty "$want"; then
+				printf '  %-22s empty — expected, it fills over months\n' "$want"
+			else
+				printf '  %-22s empty\n' "$want"
+				blank=$((blank + 1))
+			fi
+		else
+			seen=''
+			[ "$mhead" != "$want" ] && seen="   <- \"$mhead\""
+			printf '  %-22s %3s lines%s\n' "$want" "$mcount" "$seen"
+		fi
+	done
+
+	extra=''
+	for line in $filled; do
+		head="${line%%"$tab"*}"
+		case "$consumed" in *"<$head>"*) continue ;; esac
+		extra="$extra    $head
+"
+	done
+	IFS="$oldifs"
+
+	if [ -n "$extra" ]; then
+		printf '\n  Additional sections — the list is a floor, not a limit:\n'
+		printf '%s' "$extra"
+	fi
+
+	printf '\nReferenced by\n'
+	any=0
+	for pair in \
+		"claude:$HOME/.claude/CLAUDE.md" \
+		"codex:$HOME/.codex/AGENTS.md" \
+		"gemini:$HOME/.gemini/GEMINI.md" \
+		"goose:$HOME/.config/goose/.goosehints" \
+		"qwen:$HOME/.qwen/QWEN.md"; do
+		name="${pair%%:*}"
+		file="${pair#*:}"
+		command -v "$name" >/dev/null 2>&1 || continue
+		any=1
+		if [ -r "$file" ] && grep -q 'MACHINE\.md' "$file" 2>/dev/null; then
+			printf '  %-22s yes  (%s)\n' "$name" "$file"
+		else
+			printf '  %-22s no   (%s)\n' "$name" "$file"
+			printf '  %-22s      %s rule %s >> %s\n' '' "$PROG" "$name" "$file"
+			rc=1
+		fi
+	done
+	[ "$any" -eq 0 ] && printf '  no known tools installed\n'
+
+	printf '\n'
+	[ "$missing" -gt 0 ] && {
+		printf '%s section(s) absent. "%s skeleton" shows what they are for.\n' "$missing" "$PROG"
+		rc=1
+	}
+	[ "$blank" -gt 0 ] && {
+		printf '%s section(s) empty. "%s discover" prints what to run.\n' "$blank" "$PROG"
+		rc=1
+	}
+	[ "$rc" -eq 0 ] && printf 'Complete.\n'
+	return "$rc"
+}
+
+# --------------------------------------------------------------------- drift --
+# What has changed on this machine since the description was last updated.
+# Mechanical: it compares installed software against the words in the file,
+# so it catches the ordinary-feeling install that nobody judged worth writing
+# down. Reports only; nothing here edits anything.
+
+cmd_drift() {
+	md="$(find_machine_md)"
+	if [ -z "$md" ]; then
+		printf '%s: no MACHINE.md found. Run "%s bootstrap" first.\n' "$PROG" "$PROG" >&2
+		return 1
+	fi
+
+	dir="$(dirname "$md")"
+	since=''
+	if command -v git >/dev/null 2>&1 &&
+		git -C "$dir" rev-parse --git-dir >/dev/null 2>&1; then
+		since="$(git -C "$dir" log -1 --format=%ct -- "$md" 2>/dev/null || true)"
+	fi
+	[ -n "$since" ] || since="$(stat -c %Y "$md" 2>/dev/null || echo 0)"
+	stamp="$(date -d "@$since" '+%Y-%m-%d %H:%M' 2>/dev/null || echo 'unknown')"
+
+	printf '%s %s — drift\n\n' "$PROG" "$VERSION"
+	printf '%s\nlast updated %s\n\n' "$md" "$stamp"
+
+	tmp="$(mktemp)"
+	trap 'rm -f "$tmp"' EXIT INT TERM
+	: >"$tmp"
+
+	iso="$(date -d "@$since" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || echo '')"
+	case "$(detect_pkgmgr)" in
+	pacman)
+		[ -r /var/log/pacman.log ] && [ -n "$iso" ] &&
+			awk -v s="$iso" '/\[ALPM\] installed / {
+				t = substr($1, 2, 19)
+				if (t > s) print $4
+			}' /var/log/pacman.log | sort -u >"$tmp"
+		;;
+	dnf | zypper)
+		rpm -qa --qf '%{INSTALLTIME} %{NAME}\n' 2>/dev/null |
+			awk -v s="$since" '$1 + 0 > s + 0 { print $2 }' | sort -u >"$tmp"
+		;;
+	apt-get)
+		[ -r /var/log/dpkg.log ] && [ -n "$iso" ] &&
+			awk -v s="$iso" '$3 == "install" {
+				t = $1 "T" $2
+				if (t > s) { n = $4; sub(/:.*/, "", n); print n }
+			}' /var/log/dpkg.log | sort -u >"$tmp"
+		;;
+	esac
+
+	found=0
+	if [ -s "$tmp" ]; then
+		printf 'Installed since, and not mentioned in the file:\n'
+		while IFS= read -r p; do
+			[ -n "$p" ] || continue
+			grep -qiF -- "$p" "$md" 2>/dev/null && continue
+			printf '  %s\n' "$p"
+			found=$((found + 1))
+		done <"$tmp"
+		[ "$found" -eq 0 ] && printf '  (everything installed since is mentioned)\n'
+	else
+		printf 'No package installs recorded since then.\n'
+	fi
+
+	# Software outside the package manager updates by no mechanism at all,
+	# which is exactly the kind of thing worth naming.
+	loose=0
+	for d in "$HOME/.local/bin" /usr/local/bin; do
+		[ -d "$d" ] || continue
+		for f in "$d"/*; do
+			[ -f "$f" ] && [ -x "$f" ] || continue
+			n="${f##*/}"
+			grep -qiF -- "$n" "$md" 2>/dev/null && continue
+			[ "$loose" -eq 0 ] && printf '\nOutside the package manager, and not mentioned:\n'
+			printf '  %s\n' "$f"
+			loose=$((loose + 1))
+		done
+	done
+
+	printf '\n'
+	if [ "$found" -eq 0 ] && [ "$loose" -eq 0 ]; then
+		printf 'No drift found.\n'
+		return 0
+	fi
+	printf 'Each of the above either belongs in Package Provenance, or is\n'
+	printf 'deliberately not worth recording — both are fine, but the file\n'
+	printf 'currently says nothing either way.\n'
+	return 1
+}
+
+# ------------------------------------------------------------------ dispatch --
+
+case "${1:-help}" in
+bootstrap) cmd_bootstrap ;;
+skeleton) cmd_skeleton ;;
+discover) cmd_discover ;;
+rule)
+	shift
+	cmd_rule "${1:-}"
+	;;
+doctor) cmd_doctor ;;
+drift) cmd_drift ;;
+version | --version | -V) printf '%s %s\n' "$PROG" "$VERSION" ;;
+help | --help | -h) cmd_help ;;
+*)
+	printf '%s: unknown command "%s"\n\n' "$PROG" "$1" >&2
+	cmd_help >&2
+	exit 1
+	;;
+esac
